@@ -5,10 +5,8 @@ SELECT ?item ?url ?mime ?width ?height ?bytes
 WHERE {
   ?agg edm:aggregatedCHO ?item ;
        edm:isShownBy ?url .
-  ?wr a edm:WebResource .
-  FILTER(?wr = ?url)
-  OPTIONAL { ?wr ebucore:hasMimeType ?mime }
-  OPTIONAL { ?wr ebucore:width ?width }
-  OPTIONAL { ?wr ebucore:height ?height }
-  OPTIONAL { ?wr ebucore:fileByteSize ?bytes }
+  OPTIONAL { ?url ebucore:hasMimeType ?mime }
+  OPTIONAL { ?url ebucore:width ?width }
+  OPTIONAL { ?url ebucore:height ?height }
+  OPTIONAL { ?url ebucore:fileByteSize ?bytes }
 }
