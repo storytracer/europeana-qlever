@@ -75,8 +75,7 @@ uv run europeana-qlever --help
 The full dump lives at `ftp://download.europeana.eu/dataset/TTL/` (anonymous FTP, ~15,000+ ZIP files). Configure rclone with the Europeana remote, then:
 
 ```bash
-rclone copy europeana:dataset/TTL/ ~/data/europeana/metadata/TTL/ \
-  --progress --transfers=10 --checkers=8 -v
+rclone -P copy europeana:dataset/TTL/ ~/data/europeana/metadata/TTL/ --transfers=10 --checkers=8
 ```
 
 #### 2. Merge TTL files
@@ -107,8 +106,7 @@ uv run europeana-qlever scan-prefixes --sample-size 100 --files-per-zip 5
 #### 3. Generate the Qleverfile
 
 ```bash
-uv run europeana-qlever write-qleverfile \
-  --qlever-bin /path/to/qlever/build
+uv run europeana-qlever write-qleverfile --qlever-bin /path/to/qlever/build
 ```
 
 This writes a `Qleverfile` and `settings.json` into `europeana-index/` with EDM-optimised settings (all languages kept, external prefixes for long URIs, Unicode support, etc.).
@@ -205,7 +203,7 @@ Then export: `uv run europeana-qlever export --query my_custom_export`
 
 Europeana refreshes the FTP dump weekly. To update:
 
-1. Re-download changed ZIPs: `rclone copy europeana:dataset/TTL/ ~/data/europeana/metadata/TTL/ --progress --transfers=10 --update`
+1. Re-download changed ZIPs: `rclone -P copy europeana:dataset/TTL/ ~/data/europeana/metadata/TTL/ --transfers=10`
 2. Re-merge: `uv run europeana-qlever merge`
 3. Re-index: `uv run europeana-qlever index` (QLever does not support incremental updates; full re-index is needed)
 4. Restart: `uv run europeana-qlever start`
