@@ -318,6 +318,29 @@ def index(ctx: click.Context, qlever_args: tuple[str, ...]):
 def start(ctx: click.Context):
     """Start the QLever SPARQL server (wraps `qlever start`).
 
+    Runs from <work-dir>/index/. If a server is already running on the
+    configured port, it is stopped first.
+    """
+    index_dir: Path = ctx.obj["index_dir"]
+    qleverfile = index_dir / "Qleverfile"
+    if not qleverfile.exists():
+        console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
+        raise SystemExit(1)
+
+    # Stop any existing server first
+    subprocess.run(["qlever", "stop"], cwd=index_dir,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    console.print(f"[bold]Starting QLever server from {index_dir}[/bold]")
+    subprocess.run(["qlever", "start"], cwd=index_dir, check=True)
+    console.print("[green]Server started.[/green]")
+
+
+@cli.command()
+@click.pass_context
+def stop(ctx: click.Context):
+    """Stop the QLever SPARQL server (wraps `qlever stop`).
+
     Runs from <work-dir>/index/.
     """
     index_dir: Path = ctx.obj["index_dir"]
@@ -326,13 +349,9 @@ def start(ctx: click.Context):
         console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
         raise SystemExit(1)
 
-    console.print(f"[bold]Starting QLever server from {index_dir}[/bold]")
-    result = subprocess.run(["qlever", "start"], cwd=index_dir)
-    if result.returncode == 0:
-        console.print("[green]Server started.[/green]")
-    else:
-        console.print("[yellow]qlever start exited with non-zero status "
-                      "(server may already be running).[/yellow]")
+    console.print(f"[bold]Stopping QLever server from {index_dir}[/bold]")
+    subprocess.run(["qlever", "stop"], cwd=index_dir, check=True)
+    console.print("[green]Server stopped.[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -522,6 +541,10 @@ def pipeline(
         qlever_url=f"http://localhost:{port}",
         timeout=timeout,
     )
+
+    # --- Stage 6: Stop server ---
+    console.rule("[bold cyan]Stage 6 · Stop Server[/bold cyan]")
+    ctx.invoke(stop)
 
     console.rule("[bold green]Pipeline complete[/bold green]")
     console.print(f"Parquet files in: {exports_dir}")
