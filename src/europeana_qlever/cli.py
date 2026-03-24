@@ -179,7 +179,7 @@ def write_qleverfile_cmd(
 
     index_dir.mkdir(parents=True, exist_ok=True)
 
-    settings_json = json.dumps(QLEVER_INDEX_SETTINGS, indent=2)
+    settings_json = json.dumps(QLEVER_INDEX_SETTINGS)
 
     # Build the cat command for MULTI_INPUT_JSON
     cat_cmd = f"cat {merged_dir}/europeana_*.ttl"
