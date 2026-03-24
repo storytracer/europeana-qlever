@@ -146,7 +146,6 @@ Commands:
   index            Build the QLever index from merged TTL chunks.
   start            Start the QLever SPARQL server.
   export           Export SPARQL query results from QLever as Parquet files.
-  pipeline         Run the full pipeline: merge → index → start → export.
 ```
 
 ### CLI Architecture
@@ -158,8 +157,7 @@ europeana-qlever
 ├── write-qleverfile  # Generate Qleverfile with EDM-optimised settings
 ├── index             # Build QLever index (wraps qlever CLI)
 ├── start             # Start QLever SPARQL server
-├── export            # SPARQL → TSV (httpx streaming) → Parquet (DuckDB)
-└── pipeline          # All of the above in sequence, with --skip-* flags
+└── export            # SPARQL → TSV (httpx streaming) → Parquet (DuckDB)
 ```
 
 **Source layout:**
@@ -482,31 +480,7 @@ WHERE {
 
 ---
 
-## 12. Full Pipeline (One Command)
-
-For a clean start-to-finish run:
-
-```bash
-cd ~/dev/europeana-qlever
-
-uv run europeana-qlever pipeline \
-  --qlever-bin ~/dev/qlever/qlever-code/build \
-  --workers 12
-```
-
-This runs merge → write-qleverfile → index → start → export in sequence. Use `--skip-*` flags to resume from any stage:
-
-```bash
-# Already merged, just re-index and export
-uv run europeana-qlever pipeline --skip-merge
-
-# Index exists, just start serving and export
-uv run europeana-qlever pipeline --skip-merge --skip-index
-```
-
----
-
-## 13. Operational Notes
+## 12. Operational Notes
 
 ### Refreshing the data
 
@@ -564,8 +538,6 @@ SELECT ?agent ?name ?wdDescription WHERE {
 8. uv run europeana-qlever export       → ~/europeana-exports/*.parquet
 9. Upload to HuggingFace with Croissant metadata
 ```
-
-Or in one shot: `uv run europeana-qlever pipeline --qlever-bin ~/dev/qlever/qlever-code/build`
 
 **Total time from zero to queryable:** ~12–24 hours (download + merge + index).
 **Total disk footprint:** ~600–800 GB on the 4 TB NVMe.

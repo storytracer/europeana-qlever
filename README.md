@@ -70,25 +70,6 @@ uv run europeana-qlever --help
 
 ## Usage
 
-### Full pipeline (one command)
-
-```bash
-uv run europeana-qlever pipeline \
-  --qlever-bin /path/to/qlever/build
-```
-
-This runs **merge → write-qleverfile → index → start → export** in sequence. Use `--skip-*` flags to resume from any stage:
-
-```bash
-# Already merged, just re-index and export
-uv run europeana-qlever pipeline --skip-merge
-
-# Index exists, just start serving and export
-uv run europeana-qlever pipeline --skip-merge --skip-index
-```
-
-### Step by step
-
 #### 1. Download the Europeana TTL dump
 
 The full dump lives at `ftp://download.europeana.eu/dataset/TTL/` (anonymous FTP, ~15,000+ ZIP files). Configure rclone with the Europeana remote, then:
@@ -179,8 +160,7 @@ europeana-qlever
 ├── write-qleverfile  Generate a Qleverfile configured for the Europeana dataset
 ├── index             Build the QLever index from merged TTL chunks
 ├── start             Start the QLever SPARQL server
-├── export            Export SPARQL query results as Parquet files
-└── pipeline          Run the full pipeline (merge → index → start → export)
+└── export            Export SPARQL query results as Parquet files
 ```
 
 ## Pre-defined export queries

@@ -46,7 +46,6 @@ uv run europeana-qlever write-qleverfile     # Generate Qleverfile + settings.js
 uv run europeana-qlever index                # Build QLever index
 uv run europeana-qlever start                # Start SPARQL server on :7001
 uv run europeana-qlever export               # Export all queries to Parquet
-uv run europeana-qlever pipeline             # Run everything end-to-end
 ```
 
 Always use `uv run` to invoke the CLI — never bare `python` or `pip install`.
@@ -77,4 +76,3 @@ The provider proxy (identified by `FILTER NOT EXISTS { ?proxy edm:europeanaProxy
 - CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`, configuration in `constants.py`.
 - Use `rich.console.Console` for all terminal output (not bare `print`).
 - Click options use `Path` type with `path_type=Path`.
-- The `pipeline` command reuses other commands via `click.Context.invoke()`.
