@@ -171,6 +171,8 @@ def export_all(
         pq_mb = parquet_path.stat().st_size / 1e6
         console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
 
+        tsv_path.unlink()
+
         parquet_files.append(parquet_path)
 
     # Summary

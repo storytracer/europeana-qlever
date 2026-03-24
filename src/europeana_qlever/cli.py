@@ -327,8 +327,12 @@ def start(ctx: click.Context):
         raise SystemExit(1)
 
     console.print(f"[bold]Starting QLever server from {index_dir}[/bold]")
-    subprocess.run(["qlever", "start"], cwd=index_dir, check=True)
-    console.print("[green]Server started.[/green]")
+    result = subprocess.run(["qlever", "start"], cwd=index_dir)
+    if result.returncode == 0:
+        console.print("[green]Server started.[/green]")
+    else:
+        console.print("[yellow]qlever start exited with non-zero status "
+                      "(server may already be running).[/yellow]")
 
 
 # ---------------------------------------------------------------------------
@@ -405,3 +409,119 @@ def export(
         timeout=timeout,
         skip_existing=skip_existing,
     )
+
+
+# ---------------------------------------------------------------------------
+# pipeline — full end-to-end
+# ---------------------------------------------------------------------------
+
+@cli.command()
+@click.argument("ttl_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--qlever-bin", type=click.Path(exists=True, file_okay=False, path_type=Path),
+              default=None, help="Path to qlever-code/build/ with native binaries.")
+@click.option("--docker", is_flag=True, default=False,
+              help="Use Docker runtime instead of native binaries.")
+@click.option("--workers", default=8, show_default=True,
+              help="Parallel extraction threads for merge.")
+@click.option("--chunk-size", default=5.0, show_default=True,
+              help="Target chunk file size in GB.")
+@click.option("--port", default=QLEVER_PORT, show_default=True)
+@click.option("--stxxl-memory", default="15G", show_default=True,
+              help="RAM for external sorting during index build.")
+@click.option("--query-memory", default="20G", show_default=True,
+              help="RAM budget for query execution.")
+@click.option("--cache-size", default="10G", show_default=True,
+              help="Query result cache size.")
+@click.option("--timeout", default=3600, show_default=True,
+              help="Per-query timeout in seconds for export.")
+@click.option("--skip-merge", is_flag=True, help="Skip merge if chunks already exist.")
+@click.option("--skip-index", is_flag=True, help="Skip indexing if index already exists.")
+@click.pass_context
+def pipeline(
+    ctx: click.Context,
+    ttl_dir: Path,
+    qlever_bin: Path | None,
+    docker: bool,
+    workers: int,
+    chunk_size: float,
+    port: int,
+    stxxl_memory: str,
+    query_memory: str,
+    cache_size: str,
+    timeout: int,
+    skip_merge: bool,
+    skip_index: bool,
+):
+    """Run the full pipeline: merge → write-qleverfile → index → start → export.
+
+    Takes TTL_DIR (directory of .zip files) and runs all stages in sequence.
+    Each stage can be skipped if its output already exists (use --skip-merge,
+    --skip-index).
+    """
+    from .export import export_all
+    from .merge import merge_ttl, scan_prefixes_from_sample
+
+    merged_dir: Path = ctx.obj["merged_dir"]
+    index_dir: Path = ctx.obj["index_dir"]
+    exports_dir: Path = ctx.obj["exports_dir"]
+
+    console.rule("[bold]Europeana → QLever → Parquet Pipeline[/bold]")
+
+    # --- Stage 1: Merge ---
+    chunks = sorted(merged_dir.glob("europeana_*.ttl"))
+    if skip_merge and chunks:
+        console.print(
+            f"[dim]Skipping merge ({len(chunks)} chunks already in "
+            f"{merged_dir})[/dim]\n"
+        )
+    else:
+        console.rule("[bold cyan]Stage 1 · Merge TTL[/bold cyan]")
+        prefixes = scan_prefixes_from_sample(ttl_dir)
+        merge_ttl(
+            ttl_dir, merged_dir,
+            chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
+        )
+
+    # --- Stage 2: Write Qleverfile ---
+    console.rule("[bold cyan]Stage 2 · Write Qleverfile[/bold cyan]")
+    ctx.invoke(
+        write_qleverfile_cmd,
+        qlever_bin=qlever_bin,
+        docker=docker,
+        port=port,
+        stxxl_memory=stxxl_memory,
+        query_memory=query_memory,
+        cache_size=cache_size,
+    )
+
+    # --- Stage 3: Index ---
+    index_exists = any(index_dir.glob("europeana.index.*"))
+    if skip_index and index_exists:
+        console.print(f"[dim]Skipping index (files exist in {index_dir})[/dim]\n")
+    else:
+        console.rule("[bold cyan]Stage 3 · Build Index[/bold cyan]")
+        ctx.invoke(index, qlever_args=())
+
+    # --- Stage 4: Start server ---
+    console.rule("[bold cyan]Stage 4 · Start Server[/bold cyan]")
+    ctx.invoke(start)
+
+    # --- Stage 5: Export ---
+    console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
+
+    files = _bundled_queries()
+    if not files:
+        console.print("[red]No bundled .sparql queries found.[/red]")
+        raise SystemExit(1)
+
+    queries = {_query_name(p): Path(p).read_text() for p in files}
+
+    export_all(
+        output_dir=exports_dir,
+        queries=queries,
+        qlever_url=f"http://localhost:{port}",
+        timeout=timeout,
+    )
+
+    console.rule("[bold green]Pipeline complete[/bold green]")
+    console.print(f"Parquet files in: {exports_dir}")
