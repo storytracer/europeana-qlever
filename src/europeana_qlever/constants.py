@@ -1,6 +1,13 @@
-"""Shared constants: EDM namespaces, QLever config."""
+"""Shared constants: EDM namespaces, QLever config, directory layout."""
 
 from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Subdirectory names within the work directory
+# ---------------------------------------------------------------------------
+MERGED_SUBDIR = "ttl-merged"
+INDEX_SUBDIR = "index"
+EXPORTS_SUBDIR = "exports"
 
 # ---------------------------------------------------------------------------
 # QLever defaults

@@ -8,14 +8,13 @@ Install & run::
 
 Or for a single command::
 
-    uv run europeana-qlever merge /data/TTL /data/TTL-merged --workers 12
-    uv run europeana-qlever export /exports queries/core_metadata.sparql
+    uv run europeana-qlever -w ~/europeana merge /data/TTL --workers 12
+    uv run europeana-qlever -w ~/europeana export queries/core_metadata.sparql
 """
 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -26,6 +25,9 @@ from rich.console import Console
 
 from .constants import (
     EDM_PREFIXES,
+    EXPORTS_SUBDIR,
+    INDEX_SUBDIR,
+    MERGED_SUBDIR,
     QLEVER_INDEX_SETTINGS,
     QLEVER_PORT,
 )
@@ -39,12 +41,28 @@ console = Console()
 
 @click.group()
 @click.version_option(package_name="europeana-qlever")
-def cli():
+@click.option(
+    "-w", "--work-dir",
+    required=True,
+    type=click.Path(file_okay=False, path_type=Path),
+    envvar="EUROPEANA_QLEVER_WORK_DIR",
+    help="Root working directory for all output (ttl-merged/, index/, exports/).",
+)
+@click.pass_context
+def cli(ctx: click.Context, work_dir: Path):
     """Europeana EDM → QLever → Parquet pipeline.
 
     Ingest ~66 M Europeana Turtle records into a QLever SPARQL engine,
     run analytical queries, and export the results as Parquet files.
+
+    All output is written to subdirectories of WORK_DIR: ttl-merged/,
+    index/, and exports/.
     """
+    ctx.ensure_object(dict)
+    ctx.obj["work_dir"] = work_dir
+    ctx.obj["merged_dir"] = work_dir / MERGED_SUBDIR
+    ctx.obj["index_dir"] = work_dir / INDEX_SUBDIR
+    ctx.obj["exports_dir"] = work_dir / EXPORTS_SUBDIR
 
 
 # ---------------------------------------------------------------------------
@@ -89,27 +107,30 @@ def scan_prefixes_cmd(ttl_dir: Path, sample_size: int, files_per_zip: int):
 
 @cli.command()
 @click.argument("ttl_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.argument("merged_dir", type=click.Path(file_okay=False, path_type=Path))
 @click.option("--chunk-size", default=5.0, show_default=True,
               help="Target chunk file size in GB.")
 @click.option("--workers", default=8, show_default=True,
               help="Parallel extraction threads.")
 @click.option("--sample-size", default=50, show_default=True,
               help="ZIPs to sample for prefix discovery.")
+@click.pass_context
 def merge(
+    ctx: click.Context,
     ttl_dir: Path,
-    merged_dir: Path,
     chunk_size: float,
     workers: int,
     sample_size: int,
 ):
     """Merge all Europeana TTL ZIPs into chunked, QLever-ready TTL files.
 
-    Strips per-record @prefix/@base declarations, prepends a unified prefix
-    block, and splits output into ~CHUNK_SIZE GB files. Uses WORKERS parallel
-    threads for ZIP extraction.
+    Reads ZIPs from TTL_DIR and writes merged chunks to
+    <work-dir>/ttl-merged/. Strips per-record @prefix/@base declarations,
+    prepends a unified prefix block, and splits output into ~CHUNK_SIZE GB
+    files. Uses WORKERS parallel threads for ZIP extraction.
     """
     from .merge import merge_ttl, scan_prefixes_from_sample
+
+    merged_dir: Path = ctx.obj["merged_dir"]
 
     prefixes = scan_prefixes_from_sample(ttl_dir, sample_size=sample_size)
     merge_ttl(
@@ -126,8 +147,6 @@ def merge(
 # ---------------------------------------------------------------------------
 
 @cli.command("write-qleverfile")
-@click.argument("index_dir", type=click.Path(file_okay=False, path_type=Path))
-@click.argument("merged_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--qlever-bin", type=click.Path(exists=True, file_okay=False, path_type=Path),
               default=None, help="Path to qlever-code/build/ with native binaries.")
 @click.option("--port", default=QLEVER_PORT, show_default=True)
@@ -137,9 +156,9 @@ def merge(
               help="RAM budget for query execution.")
 @click.option("--cache-size", default="10G", show_default=True,
               help="Query result cache size.")
+@click.pass_context
 def write_qleverfile_cmd(
-    index_dir: Path,
-    merged_dir: Path,
+    ctx: click.Context,
     qlever_bin: Path | None,
     port: int,
     stxxl_memory: str,
@@ -148,9 +167,16 @@ def write_qleverfile_cmd(
 ):
     """Generate a Qleverfile configured for the Europeana EDM dataset.
 
-    Writes the file to INDEX_DIR/Qleverfile. If --qlever-bin is given, the
+    Writes to <work-dir>/index/Qleverfile. If --qlever-bin is given, the
     Qleverfile uses SYSTEM=native (no Docker). Otherwise it defaults to Docker.
     """
+    index_dir: Path = ctx.obj["index_dir"]
+    merged_dir: Path = ctx.obj["merged_dir"]
+
+    if not merged_dir.is_dir():
+        console.print(f"[red]Merged TTL directory not found: {merged_dir}[/red]")
+        raise SystemExit(1)
+
     index_dir.mkdir(parents=True, exist_ok=True)
 
     settings_json = json.dumps(QLEVER_INDEX_SETTINGS, indent=2)
@@ -220,13 +246,14 @@ UI_PORT = 7000
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@click.argument("index_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
-def index(index_dir: Path):
+@click.pass_context
+def index(ctx: click.Context):
     """Build the QLever index (wraps `qlever index`).
 
-    Must be run from the directory containing the Qleverfile. Use
+    Runs in <work-dir>/index/, which must contain a Qleverfile. Use
     `write-qleverfile` first if you haven't already.
     """
+    index_dir: Path = ctx.obj["index_dir"]
     qleverfile = index_dir / "Qleverfile"
     if not qleverfile.exists():
         console.print(
@@ -274,9 +301,13 @@ def index(index_dir: Path):
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@click.argument("index_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
-def start(index_dir: Path):
-    """Start the QLever SPARQL server (wraps `qlever start`)."""
+@click.pass_context
+def start(ctx: click.Context):
+    """Start the QLever SPARQL server (wraps `qlever start`).
+
+    Runs from <work-dir>/index/.
+    """
+    index_dir: Path = ctx.obj["index_dir"]
     qleverfile = index_dir / "Qleverfile"
     if not qleverfile.exists():
         console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
@@ -292,7 +323,6 @@ def start(index_dir: Path):
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@click.argument("output_dir", type=click.Path(file_okay=False, path_type=Path))
 @click.argument("sparql_files", nargs=-1, required=True,
                 type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
@@ -301,8 +331,9 @@ def start(index_dir: Path):
               help="Per-query timeout in seconds.")
 @click.option("--skip-existing", is_flag=True, default=False,
               help="Skip queries whose .parquet already exists.")
+@click.pass_context
 def export(
-    output_dir: Path,
+    ctx: click.Context,
     sparql_files: tuple[Path, ...],
     qlever_url: str,
     timeout: int,
@@ -311,21 +342,21 @@ def export(
     """Export SPARQL query results from QLever as Parquet files.
 
     Each .sparql file becomes one TSV (streamed from QLever) and one
-    Parquet file (converted via DuckDB with zstd compression).
+    Parquet file (converted via DuckDB with zstd compression) in
+    <work-dir>/exports/.
 
     The output file name is derived from the .sparql file stem
     (e.g., core_metadata.sparql -> core_metadata.parquet).
     """
     from .export import export_all
 
+    exports_dir: Path = ctx.obj["exports_dir"]
     queries = {p.stem: p.read_text() for p in sparql_files}
 
     export_all(
-        output_dir=output_dir,
+        output_dir=exports_dir,
         queries=queries,
         qlever_url=qlever_url,
         timeout=timeout,
         skip_existing=skip_existing,
     )
-
-

@@ -16,39 +16,42 @@ A Python CLI (`europeana-qlever`) that ingests the full Europeana EDM metadata d
 ```
 pyproject.toml                    # Package metadata, dependencies, entry point
 src/europeana_qlever/
-  init.py                         # Package version
+  __init__.py                     # Package version
   cli.py                          # Click command definitions (all commands)
-  constants.py                    # Paths, EDM namespaces, QLever settings, SPARQL queries
+  constants.py                    # EDM namespaces, QLever settings
   merge.py                        # Parallel TTL extraction + rdflib prefix discovery
   export.py                       # QLever HTTP streaming + DuckDB Parquet conversion
-setup-spark.md                    # DGX Spark-specific setup guide (reference, not the README)
+queries/                          # Pre-defined SPARQL export queries (.sparql files)
 README.md                         # General-purpose project README
 ```
 
-Note: source lives under `src/europeana_qlever/` (src layout), mapped in `pyproject.toml` via `[tool.hatch.build.targets.wheel] packages = ["src/europeana_qlever"]`. The `__init__.py` file is named `init.py` on disk.
+Note: source lives under `src/europeana_qlever/` (src layout), mapped in `pyproject.toml` via `[tool.hatch.build.targets.wheel] packages = ["src/europeana_qlever"]`.
 
-### Generated directories (not in repo)
+### Work directory layout (not in repo)
 
-| Directory | Purpose |
-|-----------|---------|
-| `europeana-index/` | Qleverfile, settings.json, QLever index files |
-| `~/data/europeana/metadata/TTL/` | Downloaded ZIP files from Europeana FTP |
-| `~/data/europeana/metadata/TTL-merged/` | Merged chunk TTL files (~5 GB each) |
-| `~/europeana-exports/` | TSV + Parquet output files |
+All output lives under a single work directory specified via `-w` / `--work-dir` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Subdirectory names are defined in `constants.py`.
+
+| Subdirectory | Constant | Purpose |
+|--------------|----------|---------|
+| `ttl-merged/` | `MERGED_SUBDIR` | Merged chunk TTL files (~5 GB each) |
+| `index/` | `INDEX_SUBDIR` | Qleverfile, settings.json, QLever index files |
+| `exports/` | `EXPORTS_SUBDIR` | TSV + Parquet output files |
+
+The source TTL ZIP directory is user-managed and passed as a positional argument to `merge` and `scan-prefixes`.
 
 ## Commands to know
 
 ```bash
-uv sync                                     # Install dependencies
-uv run europeana-qlever --help               # Show all CLI commands
-uv run europeana-qlever merge                # Merge TTL ZIPs into chunks
-uv run europeana-qlever write-qleverfile     # Generate Qleverfile + settings.json
-uv run europeana-qlever index                # Build QLever index
-uv run europeana-qlever start                # Start SPARQL server on :7001
-uv run europeana-qlever export               # Export all queries to Parquet
+uv sync                                                         # Install dependencies
+uv run europeana-qlever --help                                   # Show all CLI commands
+uv run europeana-qlever -w WORK_DIR merge TTL_DIR                # Merge TTL ZIPs into chunks
+uv run europeana-qlever -w WORK_DIR write-qleverfile             # Generate Qleverfile + settings.json
+uv run europeana-qlever -w WORK_DIR index                        # Build QLever index
+uv run europeana-qlever -w WORK_DIR start                        # Start SPARQL server on :7001
+uv run europeana-qlever -w WORK_DIR export queries/*.sparql      # Export queries to Parquet
 ```
 
-Always use `uv run` to invoke the CLI — never bare `python` or `pip install`.
+All commands require `-w WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Output paths are derived automatically. Always use `uv run` — never bare `python` or `pip install`.
 
 ## Architecture notes
 
@@ -56,8 +59,7 @@ Always use `uv run` to invoke the CLI — never bare `python` or `pip install`.
 - **Prefix discovery** samples ~50 ZIPs via rdflib to catch non-standard prefixes. Falls back to regex if rdflib fails on a file. The canonical EDM prefix set is in `constants.py` as `EDM_PREFIXES`.
 - **Export** streams multi-GB SPARQL results via httpx (chunked reads, never loaded into memory), writes TSV, then converts to Parquet with DuckDB (`zstd` compression).
 - **Qleverfile generation** supports both native (compiled from source) and Docker modes. Native is preferred for performance.
-- Default paths are defined in `constants.py` as `DEFAULT_TTL_SOURCE`, `DEFAULT_MERGED_DIR`, `DEFAULT_INDEX_DIR`, `DEFAULT_EXPORT_DIR`.
-- Export queries are defined in `constants.py` as `EXPORT_QUERIES` dict — add new entries there for custom exports.
+- Export queries live as standalone `.sparql` files in the `queries/` directory. The `export` command reads them directly from disk.
 
 ## Europeana EDM domain context
 
