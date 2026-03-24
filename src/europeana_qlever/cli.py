@@ -149,6 +149,8 @@ def merge(
 @cli.command("write-qleverfile")
 @click.option("--qlever-bin", type=click.Path(exists=True, file_okay=False, path_type=Path),
               default=None, help="Path to qlever-code/build/ with native binaries.")
+@click.option("--docker", is_flag=True, default=False,
+              help="Use Docker runtime instead of native binaries.")
 @click.option("--port", default=QLEVER_PORT, show_default=True)
 @click.option("--stxxl-memory", default="15G", show_default=True,
               help="RAM for external sorting during index build.")
@@ -160,6 +162,7 @@ def merge(
 def write_qleverfile_cmd(
     ctx: click.Context,
     qlever_bin: Path | None,
+    docker: bool,
     port: int,
     stxxl_memory: str,
     query_memory: str,
@@ -167,8 +170,9 @@ def write_qleverfile_cmd(
 ):
     """Generate a Qleverfile configured for the Europeana EDM dataset.
 
-    Writes to <work-dir>/index/Qleverfile. If --qlever-bin is given, the
-    Qleverfile uses SYSTEM=native (no Docker). Otherwise it defaults to Docker.
+    Writes to <work-dir>/index/Qleverfile. Defaults to SYSTEM=native (binaries
+    on PATH). Use --qlever-bin to specify a custom binary directory, or --docker
+    to use Docker instead.
     """
     index_dir: Path = ctx.obj["index_dir"]
     merged_dir: Path = ctx.obj["merged_dir"]
@@ -184,8 +188,13 @@ def write_qleverfile_cmd(
     # Build the cat command for MULTI_INPUT_JSON
     cat_cmd = f"cat {merged_dir}/europeana_*.ttl"
 
-    system_block = ""
-    if qlever_bin is not None:
+    if docker:
+        system_block = """\
+[runtime]
+SYSTEM = docker
+IMAGE = adfreiburg/qlever
+"""
+    elif qlever_bin is not None:
         system_block = f"""\
 [runtime]
 SYSTEM = native
@@ -194,18 +203,16 @@ QLEVER_BIN_DIR = {qlever_bin}
     else:
         system_block = """\
 [runtime]
-SYSTEM = docker
-IMAGE = adfreiburg/qlever
+SYSTEM = native
 """
 
     qleverfile = f"""\
-[general]
-NAME = europeana
-
 [data]
+NAME = europeana
 # Data already downloaded via rclone and merged by `europeana-qlever merge`
 
 [index]
+INPUT_FILES = {merged_dir}/europeana_*.ttl
 MULTI_INPUT_JSON = {{"cmd": "{cat_cmd}", "format": "ttl", "parallel": true}}
 
 SETTINGS_JSON = {settings_json}
