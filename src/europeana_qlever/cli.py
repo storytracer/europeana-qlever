@@ -15,6 +15,7 @@ Or for a single command::
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -185,7 +186,9 @@ def write_qleverfile_cmd(
 
     settings_json = json.dumps(QLEVER_INDEX_SETTINGS)
 
-    # Build the cat command for MULTI_INPUT_JSON
+    # Build paths for MULTI_INPUT_JSON and INPUT_FILES.
+    # INPUT_FILES must be relative to index_dir (qlever uses pathlib.glob).
+    merged_rel = os.path.relpath(merged_dir, index_dir)
     cat_cmd = f"cat {merged_dir}/europeana_*.ttl"
 
     if docker:
@@ -212,8 +215,8 @@ NAME = europeana
 # Data already downloaded via rclone and merged by `europeana-qlever merge`
 
 [index]
-INPUT_FILES = {merged_dir}/europeana_*.ttl
-MULTI_INPUT_JSON = {{"cmd": "{cat_cmd}", "format": "ttl", "parallel": true}}
+INPUT_FILES = {merged_rel}/europeana_*.ttl
+MULTI_INPUT_JSON = {{"cmd": "{cat_cmd}", "format": "ttl", "parallel": "true"}}
 
 SETTINGS_JSON = {settings_json}
 
@@ -252,13 +255,15 @@ UI_PORT = 7000
 # index
 # ---------------------------------------------------------------------------
 
-@cli.command()
+@cli.command(context_settings={"ignore_unknown_options": True})
+@click.argument("qlever_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
-def index(ctx: click.Context):
+def index(ctx: click.Context, qlever_args: tuple[str, ...]):
     """Build the QLever index (wraps `qlever index`).
 
     Runs in <work-dir>/index/, which must contain a Qleverfile. Use
-    `write-qleverfile` first if you haven't already.
+    `write-qleverfile` first if you haven't already. Extra options are
+    forwarded to `qlever index` (e.g. --overwrite-existing).
     """
     index_dir: Path = ctx.obj["index_dir"]
     qleverfile = index_dir / "Qleverfile"
@@ -283,7 +288,7 @@ def index(ctx: click.Context):
 
     with open(log_path, "w") as log_fh:
         proc = subprocess.Popen(
-            ["qlever", "index"],
+            ["qlever", "index", *qlever_args],
             cwd=index_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
