@@ -1,0 +1,23 @@
+PREFIX dc:      <http://purl.org/dc/elements/1.1/>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX edm:     <http://www.europeana.eu/schemas/edm/>
+PREFIX ore:     <http://www.openarchives.org/ore/terms/>
+
+SELECT ?item ?title ?creator ?date ?type ?subject ?language
+       ?rights ?country ?dataProvider
+WHERE {
+  ?proxy ore:proxyFor ?item .
+  FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" }
+  ?proxy dc:title ?title ;
+         edm:type ?type .
+  OPTIONAL { ?proxy dc:creator ?creator }
+  OPTIONAL { ?proxy dc:date ?date }
+  OPTIONAL { ?proxy dc:subject ?subject }
+  OPTIONAL { ?proxy dc:language ?language }
+  ?agg edm:aggregatedCHO ?item ;
+       edm:rights ?rights ;
+       edm:dataProvider ?dataProvider .
+  ?eAgg edm:aggregatedCHO ?item ;
+        edm:country ?country .
+  ?eAgg a edm:EuropeanaAggregation .
+}

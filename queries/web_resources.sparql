@@ -1,0 +1,14 @@
+PREFIX edm:     <http://www.europeana.eu/schemas/edm/>
+PREFIX ebucore: <http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#>
+
+SELECT ?item ?url ?mime ?width ?height ?bytes
+WHERE {
+  ?agg edm:aggregatedCHO ?item ;
+       edm:isShownBy ?url .
+  ?wr a edm:WebResource .
+  FILTER(?wr = ?url)
+  OPTIONAL { ?wr ebucore:hasMimeType ?mime }
+  OPTIONAL { ?wr ebucore:width ?width }
+  OPTIONAL { ?wr ebucore:height ?height }
+  OPTIONAL { ?wr ebucore:fileByteSize ?bytes }
+}

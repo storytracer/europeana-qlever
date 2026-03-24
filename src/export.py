@@ -22,7 +22,7 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
-from .constants import DEFAULT_EXPORT_DIR, EXPORT_QUERIES, QLEVER_PORT
+from .constants import QLEVER_PORT
 
 console = Console()
 
@@ -135,9 +135,9 @@ def tsv_to_parquet(
 
 
 def export_all(
-    output_dir: Path = DEFAULT_EXPORT_DIR,
+    output_dir: Path,
+    queries: dict[str, str],
     qlever_url: str = f"http://localhost:{QLEVER_PORT}",
-    queries: dict[str, str] | None = None,
     timeout: int = 3600,
     skip_existing: bool = False,
 ) -> list[Path]:
@@ -147,10 +147,10 @@ def export_all(
     ----------
     output_dir : Path
         Directory for TSV + Parquet outputs.
+    queries : dict[str, str]
+        Mapping of query name to SPARQL query text.
     qlever_url : str
         QLever HTTP endpoint.
-    queries : dict or None
-        Override the default EXPORT_QUERIES.
     timeout : int
         Per-query timeout in seconds.
     skip_existing : bool
@@ -162,7 +162,6 @@ def export_all(
         Paths to the generated Parquet files.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    queries = queries or EXPORT_QUERIES
     parquet_files: list[Path] = []
 
     for name, query in queries.items():

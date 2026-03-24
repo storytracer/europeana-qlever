@@ -8,8 +8,8 @@ Install & run::
 
 Or for a single command::
 
-    uv run europeana-qlever merge --workers 12
-    uv run europeana-qlever export --query core_metadata
+    uv run europeana-qlever merge /data/TTL /data/TTL-merged --workers 12
+    uv run europeana-qlever export /exports queries/core_metadata.sparql
 """
 
 from __future__ import annotations
@@ -23,54 +23,14 @@ from pathlib import Path
 
 import click
 from rich.console import Console
-from rich.table import Table
 
 from .constants import (
-    DEFAULT_EXPORT_DIR,
-    DEFAULT_INDEX_DIR,
-    DEFAULT_MERGED_DIR,
-    DEFAULT_TTL_SOURCE,
     EDM_PREFIXES,
-    EXPORT_QUERIES,
     QLEVER_INDEX_SETTINGS,
     QLEVER_PORT,
 )
 
 console = Console()
-
-
-# ---------------------------------------------------------------------------
-# Shared option decorators
-# ---------------------------------------------------------------------------
-
-def _ttl_dir_option(fn):
-    return click.option(
-        "--ttl-dir",
-        type=click.Path(exists=True, file_okay=False, path_type=Path),
-        default=DEFAULT_TTL_SOURCE,
-        show_default=True,
-        help="Directory containing Europeana .zip TTL files.",
-    )(fn)
-
-
-def _merged_dir_option(fn):
-    return click.option(
-        "--merged-dir",
-        type=click.Path(file_okay=False, path_type=Path),
-        default=DEFAULT_MERGED_DIR,
-        show_default=True,
-        help="Output directory for merged TTL chunk files.",
-    )(fn)
-
-
-def _index_dir_option(fn):
-    return click.option(
-        "--index-dir",
-        type=click.Path(file_okay=False, path_type=Path),
-        default=DEFAULT_INDEX_DIR,
-        show_default=True,
-        help="Working directory for the QLever index.",
-    )(fn)
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +52,7 @@ def cli():
 # ---------------------------------------------------------------------------
 
 @cli.command("scan-prefixes")
-@_ttl_dir_option
+@click.argument("ttl_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--sample-size", default=50, show_default=True,
               help="Number of ZIPs to sample.")
 @click.option("--files-per-zip", default=3, show_default=True,
@@ -103,6 +63,8 @@ def scan_prefixes_cmd(ttl_dir: Path, sample_size: int, files_per_zip: int):
     Parses a sample of ZIPs with rdflib and prints the merged prefix table.
     The canonical EDM set is always included; extra prefixes are highlighted.
     """
+    from rich.table import Table
+
     from .merge import scan_prefixes_from_sample
 
     prefixes = scan_prefixes_from_sample(
@@ -126,8 +88,8 @@ def scan_prefixes_cmd(ttl_dir: Path, sample_size: int, files_per_zip: int):
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@_ttl_dir_option
-@_merged_dir_option
+@click.argument("ttl_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("merged_dir", type=click.Path(file_okay=False, path_type=Path))
 @click.option("--chunk-size", default=5.0, show_default=True,
               help="Target chunk file size in GB.")
 @click.option("--workers", default=8, show_default=True,
@@ -164,8 +126,8 @@ def merge(
 # ---------------------------------------------------------------------------
 
 @cli.command("write-qleverfile")
-@_index_dir_option
-@_merged_dir_option
+@click.argument("index_dir", type=click.Path(file_okay=False, path_type=Path))
+@click.argument("merged_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--qlever-bin", type=click.Path(exists=True, file_okay=False, path_type=Path),
               default=None, help="Path to qlever-code/build/ with native binaries.")
 @click.option("--port", default=QLEVER_PORT, show_default=True)
@@ -258,7 +220,7 @@ UI_PORT = 7000
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@_index_dir_option
+@click.argument("index_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 def index(index_dir: Path):
     """Build the QLever index (wraps `qlever index`).
 
@@ -312,7 +274,7 @@ def index(index_dir: Path):
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@_index_dir_option
+@click.argument("index_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 def start(index_dir: Path):
     """Start the QLever SPARQL server (wraps `qlever start`)."""
     qleverfile = index_dir / "Qleverfile"
@@ -330,64 +292,38 @@ def start(index_dir: Path):
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path),
-              default=DEFAULT_EXPORT_DIR, show_default=True,
-              help="Directory for TSV + Parquet output.")
+@click.argument("output_dir", type=click.Path(file_okay=False, path_type=Path))
+@click.argument("sparql_files", nargs=-1, required=True,
+                type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
               show_default=True, help="QLever HTTP endpoint.")
-@click.option("--query", "query_names", multiple=True, default=None,
-              help="Export only these queries (repeat for multiple). "
-                   "Omit for all.")
 @click.option("--timeout", default=3600, show_default=True,
               help="Per-query timeout in seconds.")
 @click.option("--skip-existing", is_flag=True, default=False,
               help="Skip queries whose .parquet already exists.")
-@click.option("--list-queries", is_flag=True, default=False,
-              help="List available query names and exit.")
 def export(
     output_dir: Path,
+    sparql_files: tuple[Path, ...],
     qlever_url: str,
-    query_names: tuple[str, ...],
     timeout: int,
     skip_existing: bool,
-    list_queries: bool,
 ):
     """Export SPARQL query results from QLever as Parquet files.
 
-    Each registered query becomes one TSV (streamed from QLever) and one
+    Each .sparql file becomes one TSV (streamed from QLever) and one
     Parquet file (converted via DuckDB with zstd compression).
+
+    The output file name is derived from the .sparql file stem
+    (e.g., core_metadata.sparql -> core_metadata.parquet).
     """
     from .export import export_all
 
-    if list_queries:
-        table = Table(title="Available export queries")
-        table.add_column("Name", style="cyan")
-        table.add_column("Variables", style="dim")
-        for name, q in EXPORT_QUERIES.items():
-            # Extract SELECT variables
-            for line in q.splitlines():
-                if line.strip().upper().startswith("SELECT"):
-                    vars_line = line.strip()
-                    break
-            else:
-                vars_line = "—"
-            table.add_row(name, vars_line[:80])
-        console.print(table)
-        return
-
-    queries = EXPORT_QUERIES
-    if query_names:
-        unknown = set(query_names) - set(EXPORT_QUERIES)
-        if unknown:
-            console.print(f"[red]Unknown queries: {unknown}[/red]")
-            console.print(f"Available: {list(EXPORT_QUERIES.keys())}")
-            raise SystemExit(1)
-        queries = {k: v for k, v in EXPORT_QUERIES.items() if k in query_names}
+    queries = {p.stem: p.read_text() for p in sparql_files}
 
     export_all(
         output_dir=output_dir,
-        qlever_url=qlever_url,
         queries=queries,
+        qlever_url=qlever_url,
         timeout=timeout,
         skip_existing=skip_existing,
     )
@@ -398,11 +334,10 @@ def export(
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@_ttl_dir_option
-@_merged_dir_option
-@_index_dir_option
-@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path),
-              default=DEFAULT_EXPORT_DIR, show_default=True)
+@click.argument("ttl_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("merged_dir", type=click.Path(file_okay=False, path_type=Path))
+@click.argument("index_dir", type=click.Path(file_okay=False, path_type=Path))
+@click.argument("output_dir", type=click.Path(file_okay=False, path_type=Path))
 @click.option("--qlever-bin", type=click.Path(exists=True, file_okay=False, path_type=Path),
               default=None, help="Path to qlever-code/build/.")
 @click.option("--workers", default=8, show_default=True)
@@ -410,6 +345,10 @@ def export(
 @click.option("--port", default=QLEVER_PORT, show_default=True)
 @click.option("--skip-merge", is_flag=True, help="Skip merge if chunks exist.")
 @click.option("--skip-index", is_flag=True, help="Skip indexing if index exists.")
+@click.option("--queries-dir", type=click.Path(exists=True, file_okay=False, path_type=Path),
+              default=None,
+              help="Directory of .sparql files for export. "
+                   "Defaults to queries/ in the project root.")
 def pipeline(
     ttl_dir: Path,
     merged_dir: Path,
@@ -421,6 +360,7 @@ def pipeline(
     port: int,
     skip_merge: bool,
     skip_index: bool,
+    queries_dir: Path | None,
 ):
     """Run the full pipeline: merge → index → start → export.
 
@@ -477,8 +417,20 @@ def pipeline(
 
     # --- Stage 5: Export ---
     console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
+
+    if queries_dir is None:
+        queries_dir = Path(__file__).resolve().parent.parent.parent / "queries"
+
+    sparql_files = sorted(queries_dir.glob("*.sparql"))
+    if not sparql_files:
+        console.print(f"[red]No .sparql files found in {queries_dir}[/red]")
+        raise SystemExit(1)
+
+    queries = {f.stem: f.read_text() for f in sparql_files}
+
     export_all(
         output_dir=output_dir,
+        queries=queries,
         qlever_url=f"http://localhost:{port}",
     )
 
