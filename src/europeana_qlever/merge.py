@@ -18,6 +18,7 @@ that memory stays bounded even with 15,000+ ZIPs.
 from __future__ import annotations
 
 import io
+import logging
 import os
 import re
 import threading
@@ -119,7 +120,15 @@ def scan_prefixes_from_sample(
                         # Try rdflib first (robust namespace extraction)
                         try:
                             g = rdflib.Graph()
-                            g.parse(data=text, format="turtle")
+                            # Suppress rdflib warnings about malformed literals
+                            # (e.g. odd-length xsd:hexBinary values in Europeana data)
+                            _rdflib_logger = logging.getLogger("rdflib.term")
+                            _prev_level = _rdflib_logger.level
+                            _rdflib_logger.setLevel(logging.ERROR)
+                            try:
+                                g.parse(data=text, format="turtle")
+                            finally:
+                                _rdflib_logger.setLevel(_prev_level)
                             for prefix, ns in g.namespaces():
                                 uri = str(ns)
                                 if prefix and uri not in known_uris:
