@@ -212,6 +212,7 @@ SYSTEM = native
     qleverfile = f"""\
 [data]
 NAME = europeana
+DESCRIPTION = Europeana metadata
 # Data already downloaded via rclone and merged by `europeana-qlever merge`
 
 [index]
@@ -227,7 +228,7 @@ PORT = {port}
 MEMORY_FOR_QUERIES = {query_memory}
 CACHE_MAX_SIZE = {cache_size}
 CACHE_MAX_SIZE_SINGLE_ENTRY = 3G
-TIMEOUT = 600
+TIMEOUT = 600s
 ACCESS_TOKEN =
 
 {system_block}
