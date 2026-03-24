@@ -21,7 +21,7 @@ src/europeana_qlever/
   constants.py                    # EDM namespaces, QLever settings
   merge.py                        # Parallel TTL extraction + rdflib prefix discovery
   export.py                       # QLever HTTP streaming + DuckDB Parquet conversion
-queries/                          # Pre-defined SPARQL export queries (.sparql files)
+  queries/                        # Bundled SPARQL export queries (.sparql files, numbered)
 README.md                         # General-purpose project README
 ```
 
@@ -35,7 +35,7 @@ All output lives under a single work directory specified via `-w` / `--work-dir`
 |--------------|----------|---------|
 | `ttl-merged/` | `MERGED_SUBDIR` | Merged chunk TTL files (~5 GB each) |
 | `index/` | `INDEX_SUBDIR` | Qleverfile, settings.json, QLever index files |
-| `exports/` | `EXPORTS_SUBDIR` | TSV + Parquet output files |
+| `exports/` | `EXPORTS_SUBDIR` | Parquet output files (TSV intermediates are deleted) |
 
 The source TTL ZIP directory is user-managed and passed as a positional argument to `merge` and `scan-prefixes`.
 
@@ -48,7 +48,10 @@ uv run europeana-qlever -w WORK_DIR merge TTL_DIR                # Merge TTL ZIP
 uv run europeana-qlever -w WORK_DIR write-qleverfile             # Generate Qleverfile + settings.json
 uv run europeana-qlever -w WORK_DIR index                        # Build QLever index
 uv run europeana-qlever -w WORK_DIR start                        # Start SPARQL server on :7001
-uv run europeana-qlever -w WORK_DIR export queries/*.sparql      # Export queries to Parquet
+uv run europeana-qlever -w WORK_DIR stop                         # Stop SPARQL server
+uv run europeana-qlever -w WORK_DIR export --all                 # Export all bundled queries to Parquet
+uv run europeana-qlever -w WORK_DIR export FILE.sparql           # Export a specific query file
+uv run europeana-qlever -w WORK_DIR pipeline TTL_DIR             # Run full pipeline end-to-end
 ```
 
 All commands require `-w WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Output paths are derived automatically. Always use `uv run` — never bare `python` or `pip install`.
@@ -57,9 +60,10 @@ All commands require `-w WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Out
 
 - **Merge** is I/O-bound: uses `ThreadPoolExecutor` for parallel ZIP extraction with a batched submission pattern to bound memory. A single writer thread assembles chunks. Per-file `@prefix`/`@base` lines are stripped and replaced with a unified prefix header per chunk.
 - **Prefix discovery** samples ~50 ZIPs via rdflib to catch non-standard prefixes. Falls back to regex if rdflib fails on a file. The canonical EDM prefix set is in `constants.py` as `EDM_PREFIXES`.
-- **Export** streams multi-GB SPARQL results via httpx (chunked reads, never loaded into memory), writes TSV, then converts to Parquet with DuckDB (`zstd` compression).
+- **Export** streams multi-GB SPARQL results via httpx (chunked reads, never loaded into memory), writes TSV, converts to Parquet with DuckDB (`zstd` compression), then deletes the intermediate TSV.
 - **Qleverfile generation** supports both native (compiled from source) and Docker modes. Native is preferred for performance.
-- Export queries live as standalone `.sparql` files in the `queries/` directory. The `export` command reads them directly from disk.
+- **Pipeline** (`pipeline` command) runs all stages end-to-end: merge → write-qleverfile → index → start → export → stop. Supports `--skip-merge` and `--skip-index` flags.
+- Export queries are bundled inside the package at `src/europeana_qlever/queries/`, numbered for execution order (e.g. `01_core_metadata.sparql`). The `export --all` flag runs them all; explicit file paths can also be passed.
 
 ## Europeana EDM domain context
 

@@ -78,7 +78,7 @@ The work directory contains these subdirectories (created automatically as neede
 <work-dir>/
 ├── ttl-merged/    # Merged chunk TTL files
 ├── index/         # Qleverfile, settings.json, QLever index files
-└── exports/       # TSV + Parquet output files
+└── exports/       # Parquet output files
 ```
 
 #### 1. Download the Europeana TTL dump
@@ -145,17 +145,34 @@ curl -Gs http://localhost:7001 \
 
 #### 6. Export to Parquet
 
-Export takes one or more `.sparql` files and writes results to `<work-dir>/exports/`:
+Export runs SPARQL queries against the server and writes Parquet files to `<work-dir>/exports/` (intermediate TSV files are deleted automatically):
 
 ```bash
-# Export specific queries
-uv run europeana-qlever -w /data/europeana export queries/core_metadata.sparql queries/agents.sparql
+# Export all bundled queries
+uv run europeana-qlever -w /data/europeana export --all
 
-# Export all pre-defined queries
-uv run europeana-qlever -w /data/europeana export queries/*.sparql
+# Export specific query files
+uv run europeana-qlever -w /data/europeana export path/to/custom_query.sparql
 
 # Skip already-exported queries
-uv run europeana-qlever -w /data/europeana export queries/*.sparql --skip-existing --timeout 7200
+uv run europeana-qlever -w /data/europeana export --all --skip-existing --timeout 7200
+```
+
+#### 7. Stop the server
+
+```bash
+uv run europeana-qlever -w /data/europeana stop
+```
+
+#### Full pipeline
+
+Run everything end-to-end (merge → write-qleverfile → index → start → export → stop):
+
+```bash
+uv run europeana-qlever -w /data/europeana pipeline ~/data/europeana/TTL
+
+# Skip stages whose output already exists
+uv run europeana-qlever -w /data/europeana pipeline ~/data/europeana/TTL --skip-merge --skip-index
 ```
 
 ## CLI commands
@@ -169,28 +186,36 @@ europeana-qlever -w WORK_DIR
 ├── write-qleverfile           Generate a Qleverfile configured for the Europeana dataset
 ├── index                      Build the QLever index from merged TTL chunks
 ├── start                      Start the QLever SPARQL server
-└── export SPARQL_FILES...     Export SPARQL query results as Parquet files
+├── stop                       Stop the QLever SPARQL server
+├── export [FILES...] | --all  Export SPARQL query results as Parquet files
+└── pipeline TTL_DIR           Run the full pipeline: merge → index → start → export → stop
 ```
 
 ## Pre-defined export queries
 
-SPARQL queries live as standalone `.sparql` files in the `queries/` directory:
+SPARQL queries are bundled inside the package at `src/europeana_qlever/queries/`. They are numbered for execution order:
 
 | File | Description |
 |------|-------------|
-| `core_metadata.sparql` | Title, creator, date, type, subject, language, rights, country, data provider |
-| `web_resources.sparql` | Digital representation URLs with MIME type, dimensions, file size |
-| `agents.sparql` | People/orgs with multilingual labels, dates, profession, Wikidata links |
-| `places.sparql` | Locations with coordinates, labels, Wikidata links |
-| `concepts.sparql` | SKOS concepts with hierarchy, scheme, cross-scheme matches |
-| `rights_and_providers.sparql` | Item-level rights statements with provider, country, completeness score |
+| `01_core_metadata.sparql` | Title, creator, date, type, subject, language, rights, country, data provider |
+| `02_web_resources.sparql` | Digital representation URLs with MIME type, dimensions, file size |
+| `03_rights_and_providers.sparql` | Item-level rights statements with provider, country, completeness score |
+| `04_agents.sparql` | People/orgs with multilingual labels, dates, profession, Wikidata links |
+| `05_places.sparql` | Locations with coordinates, labels, Wikidata links |
+| `06_concepts.sparql` | SKOS concepts with hierarchy, scheme, cross-scheme matches |
+
+Run all bundled queries with `--all`:
+
+```bash
+uv run europeana-qlever -w /data/europeana export --all
+```
 
 ### Adding custom queries
 
-Create a new `.sparql` file in `queries/`:
+You can also pass custom `.sparql` files directly:
 
 ```sparql
-# queries/vermeer_titles.sparql
+# vermeer_titles.sparql
 PREFIX dc: <http://purl.org/dc/elements/1.1/>
 PREFIX ore: <http://www.openarchives.org/ore/terms/>
 SELECT ?item ?title WHERE {
@@ -200,7 +225,7 @@ SELECT ?item ?title WHERE {
 }
 ```
 
-Then export: `uv run europeana-qlever -w /data/europeana export queries/vermeer_titles.sparql`
+Then export: `uv run europeana-qlever -w /data/europeana export vermeer_titles.sparql`
 
 ## Directory layout
 
@@ -209,7 +234,7 @@ Then export: `uv run europeana-qlever -w /data/europeana export queries/vermeer_
 | Directory | Purpose |
 |-----------|---------|
 | `src/europeana_qlever/` | Python CLI source code |
-| `queries/` | Pre-defined SPARQL export queries (`.sparql` files) |
+| `src/europeana_qlever/queries/` | Bundled SPARQL export queries (`.sparql` files) |
 
 **Work directory** (specified via `-w`):
 
@@ -217,16 +242,21 @@ Then export: `uv run europeana-qlever -w /data/europeana export queries/vermeer_
 |--------------|---------|
 | `ttl-merged/` | Merged chunk TTL files |
 | `index/` | Qleverfile, settings.json, and QLever index files |
-| `exports/` | TSV + Parquet output files |
+| `exports/` | Parquet output files |
 
 ## Refreshing the data
 
 Europeana refreshes the FTP dump weekly. To update:
 
 1. Re-download changed ZIPs: `rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10`
-2. Re-merge: `uv run europeana-qlever -w /data/europeana merge ~/data/europeana/TTL`
-3. Re-index: `uv run europeana-qlever -w /data/europeana index` (QLever does not support incremental updates; full re-index is needed)
-4. Restart: `uv run europeana-qlever -w /data/europeana start`
+2. Re-run the pipeline: `uv run europeana-qlever -w /data/europeana pipeline ~/data/europeana/TTL`
+
+Or step by step (QLever does not support incremental updates; full re-index is needed):
+
+1. Re-merge: `uv run europeana-qlever -w /data/europeana merge ~/data/europeana/TTL`
+2. Re-index: `uv run europeana-qlever -w /data/europeana index`
+3. Restart: `uv run europeana-qlever -w /data/europeana start`
+4. Re-export: `uv run europeana-qlever -w /data/europeana export --all`
 
 ## License
 
