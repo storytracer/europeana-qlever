@@ -335,9 +335,30 @@ def start(ctx: click.Context):
 # export
 # ---------------------------------------------------------------------------
 
+def _bundled_queries() -> list[Path]:
+    """Return bundled .sparql files sorted by filename (numeric prefix)."""
+    import importlib.resources as pkg_resources
+
+    queries_dir = pkg_resources.files("europeana_qlever") / "queries"
+    return sorted(
+        p for p in queries_dir.iterdir()
+        if str(p).endswith(".sparql")
+    )
+
+
+def _query_name(path: Path) -> str:
+    """Derive a query name from a .sparql filename, stripping numeric prefix."""
+    import re
+
+    stem = path.stem
+    return re.sub(r"^\d+_", "", stem)
+
+
 @cli.command()
-@click.argument("sparql_files", nargs=-1, required=True,
+@click.argument("sparql_files", nargs=-1,
                 type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--all", "run_all", is_flag=True, default=False,
+              help="Run all bundled queries (from the package queries/ dir).")
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
               show_default=True, help="QLever HTTP endpoint.")
 @click.option("--timeout", default=3600, show_default=True,
@@ -348,6 +369,7 @@ def start(ctx: click.Context):
 def export(
     ctx: click.Context,
     sparql_files: tuple[Path, ...],
+    run_all: bool,
     qlever_url: str,
     timeout: int,
     skip_existing: bool,
@@ -358,13 +380,23 @@ def export(
     Parquet file (converted via DuckDB with zstd compression) in
     <work-dir>/exports/.
 
-    The output file name is derived from the .sparql file stem
-    (e.g., core_metadata.sparql -> core_metadata.parquet).
+    Pass individual .sparql files as arguments, or use --all to run
+    every bundled query in order.
     """
     from .export import export_all
 
+    if run_all and sparql_files:
+        raise click.UsageError("Cannot combine --all with explicit SPARQL files.")
+    if not run_all and not sparql_files:
+        raise click.UsageError("Provide .sparql files or use --all.")
+
+    if run_all:
+        files = _bundled_queries()
+    else:
+        files = list(sparql_files)
+
     exports_dir: Path = ctx.obj["exports_dir"]
-    queries = {p.stem: p.read_text() for p in sparql_files}
+    queries = {_query_name(p): Path(p).read_text() for p in files}
 
     export_all(
         output_dir=exports_dir,

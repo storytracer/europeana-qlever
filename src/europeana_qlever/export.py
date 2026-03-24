@@ -13,7 +13,6 @@ import duckdb
 import httpx
 from rich.console import Console
 from rich.progress import (
-    BarColumn,
     DownloadColumn,
     Progress,
     SpinnerColumn,
@@ -35,27 +34,8 @@ def run_query_to_tsv(
 ) -> int:
     """Stream a SPARQL query result from QLever directly to a TSV file.
 
-    Parameters
-    ----------
-    query : str
-        SPARQL SELECT query.
-    output_path : Path
-        Where to write the TSV.
-    qlever_url : str
-        QLever HTTP endpoint (no trailing slash).
-    timeout : int
-        Server-side query timeout in seconds.
-
-    Returns
-    -------
-    int
-        Approximate row count (newline count minus header).
+    Returns approximate row count (newline count minus header).
     """
-    params = {
-        "query": query,
-        "action": "tsv_export",
-        "timeout": str(timeout),
-    }
     total_bytes = 0
     newlines = 0
 
@@ -70,12 +50,19 @@ def run_query_to_tsv(
         task = progress.add_task(f"→ {output_path.name}", total=None)
 
         with httpx.stream(
-            "GET",
+            "POST",
             qlever_url,
-            params=params,
+            data={"query": query, "action": "tsv_export"},
             timeout=httpx.Timeout(timeout + 120, connect=30),
         ) as response:
-            response.raise_for_status()
+            if response.status_code != 200:
+                error_body = response.read().decode("utf-8", errors="replace")[:2000]
+                console.print(
+                    f"[red]QLever export failed ({response.status_code}):[/red]"
+                )
+                console.print(error_body)
+                response.raise_for_status()
+
             with open(output_path, "wb") as fh:
                 for chunk in response.iter_bytes(chunk_size=1_048_576):
                     fh.write(chunk)
@@ -83,9 +70,7 @@ def run_query_to_tsv(
                     newlines += chunk.count(b"\n")
                     progress.update(task, completed=total_bytes)
 
-    # Subtract 1 for the header row
-    rows = max(0, newlines - 1)
-    return rows
+    return max(0, newlines - 1)
 
 
 def tsv_to_parquet(
