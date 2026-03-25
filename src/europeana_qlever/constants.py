@@ -115,6 +115,16 @@ MONITOR_INTERVAL_SECONDS = 5.0
 MONITOR_WARN_MEMORY_PCT = 80.0
 MONITOR_CRITICAL_MEMORY_PCT = 90.0
 
+# ---------------------------------------------------------------------------
+# Pipeline state and logging
+# ---------------------------------------------------------------------------
+STATE_FILENAME = "pipeline_state.json"
+LOG_FILENAME = "pipeline.log"
+LOG_MAX_BYTES = 50_000_000  # 50 MB
+LOG_BACKUP_COUNT = 3
+EXPORT_MAX_RETRIES = 2
+EXPORT_RETRY_DELAYS = (5, 15)  # seconds between retry attempts
+
 QLEVER_INDEX_SETTINGS = {
     "languages-internal": [],
     "prefixes-external": [

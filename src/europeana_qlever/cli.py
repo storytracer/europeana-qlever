@@ -32,6 +32,7 @@ from .constants import (
     MERGED_SUBDIR,
     QLEVER_INDEX_SETTINGS,
     QLEVER_PORT,
+    STATE_FILENAME,
 )
 
 console = Console()
@@ -60,11 +61,15 @@ def cli(ctx: click.Context, work_dir: Path):
     All output is written to subdirectories of WORK_DIR: ttl-merged/,
     index/, and exports/.
     """
+    from .state import setup_logging
+
     ctx.ensure_object(dict)
     ctx.obj["work_dir"] = work_dir
     ctx.obj["merged_dir"] = work_dir / MERGED_SUBDIR
     ctx.obj["index_dir"] = work_dir / INDEX_SUBDIR
     ctx.obj["exports_dir"] = work_dir / EXPORTS_SUBDIR
+
+    setup_logging(work_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -138,13 +143,18 @@ def merge(
 
     prefixes = scan_prefixes_from_sample(ttl_dir, sample_size=sample_size)
     with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=console) as monitor:
-        merge_ttl(
+        result = merge_ttl(
             ttl_dir,
             merged_dir,
             chunk_size_gb=chunk_size,
             workers=workers,
             prefixes=prefixes,
             monitor=monitor,
+        )
+    if result.failed_zips:
+        console.print(
+            f"\n[yellow]Warning: {len(result.failed_zips)} ZIP(s) failed "
+            f"({result.error_rate:.1%} error rate)[/yellow]"
         )
 
 
@@ -519,7 +529,7 @@ def export(
 
     exports_dir: Path = ctx.obj["exports_dir"]
 
-    export_all(
+    result = export_all(
         output_dir=exports_dir,
         queries=queries,
         qlever_url=qlever_url,
@@ -528,6 +538,8 @@ def export(
         memory_limit="4GB",
         temp_directory=exports_dir / ".duckdb_tmp",
     )
+    if result.failed:
+        raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +567,8 @@ def export(
               help="Per-query timeout in seconds for export.")
 @click.option("--skip-merge", is_flag=True, help="Skip merge if chunks already exist.")
 @click.option("--skip-index", is_flag=True, help="Skip indexing if index already exists.")
+@click.option("--force", is_flag=True, default=False,
+              help="Ignore checkpoint and start fresh.")
 @click.pass_context
 def pipeline(
     ctx: click.Context,
@@ -570,85 +584,165 @@ def pipeline(
     timeout: int,
     skip_merge: bool,
     skip_index: bool,
+    force: bool,
 ):
     """Run the full pipeline: merge → write-qleverfile → index → start → export.
 
     Takes TTL_DIR (directory of .zip files) and runs all stages in sequence.
     Each stage can be skipped if its output already exists (use --skip-merge,
-    --skip-index).
+    --skip-index). Progress is checkpointed to pipeline_state.json so that
+    a failed run can be resumed by re-running the same command.
+
+    Use --force to ignore the checkpoint and start fresh.
     """
+    import logging
+
     from .export import export_all
     from .merge import merge_ttl, scan_prefixes_from_sample
     from .monitor import ResourceMonitor
     from .query import QueryBuilder
+    from .state import PipelineState
+
+    log = logging.getLogger(__name__)
 
     work_dir: Path = ctx.obj["work_dir"]
     merged_dir: Path = ctx.obj["merged_dir"]
     index_dir: Path = ctx.obj["index_dir"]
     exports_dir: Path = ctx.obj["exports_dir"]
 
+    # -- Checkpoint state --
+    state_path = work_dir / STATE_FILENAME
+    if force and state_path.exists():
+        state_path.unlink()
+        console.print("[dim]Checkpoint cleared (--force)[/dim]")
+
+    state = PipelineState.load(state_path) if state_path.exists() else PipelineState.fresh()
+    log.info("Pipeline started (force=%s)", force)
+
     console.rule("[bold]Europeana → QLever → Parquet Pipeline[/bold]")
 
-    with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=console) as monitor:
+    server_started = False
+    failures: list[str] = []
 
-        # --- Stage 1: Merge ---
-        chunks = sorted(merged_dir.glob("europeana_*.ttl"))
-        if skip_merge and chunks:
-            console.print(
-                f"[dim]Skipping merge ({len(chunks)} chunks already in "
-                f"{merged_dir})[/dim]\n"
+    try:
+        with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=console) as monitor:
+
+            # --- Stage 1: Merge ---
+            chunks = sorted(merged_dir.glob("europeana_*.ttl"))
+            if state.is_complete("merge"):
+                console.print("[dim]Merge already complete (from checkpoint)[/dim]\n")
+            elif skip_merge and chunks:
+                console.print(
+                    f"[dim]Skipping merge ({len(chunks)} chunks already in "
+                    f"{merged_dir})[/dim]\n"
+                )
+                state.mark_complete("merge")
+            else:
+                console.rule("[bold cyan]Stage 1 · Merge TTL[/bold cyan]")
+                prefixes = scan_prefixes_from_sample(ttl_dir)
+
+                # Resume: skip ZIPs already processed in a prior run
+                merge_stage = state.get_stage("merge")
+                skip_zips = frozenset(merge_stage.processed_zips)
+
+                merge_result = merge_ttl(
+                    ttl_dir, merged_dir,
+                    chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
+                    monitor=monitor, skip_zips=skip_zips,
+                )
+                state.update_merge(merge_result)
+                state.save(state_path)
+
+                if merge_result.failed_zips:
+                    msg = (
+                        f"Merge: {len(merge_result.failed_zips)} ZIP(s) failed "
+                        f"({merge_result.error_rate:.1%} error rate)"
+                    )
+                    console.print(f"[yellow]{msg}[/yellow]")
+                    log.warning(msg)
+                    failures.append(msg)
+
+            # --- Stage 2: Write Qleverfile ---
+            if not state.is_complete("write_qleverfile"):
+                console.rule("[bold cyan]Stage 2 · Write Qleverfile[/bold cyan]")
+                ctx.invoke(
+                    write_qleverfile_cmd,
+                    qlever_bin=qlever_bin,
+                    docker=docker,
+                    port=port,
+                    stxxl_memory=stxxl_memory,
+                    query_memory=query_memory,
+                    cache_size=cache_size,
+                )
+                state.mark_complete("write_qleverfile")
+                state.save(state_path)
+            else:
+                console.print("[dim]Qleverfile already written (from checkpoint)[/dim]\n")
+
+            # --- Stage 3: Index ---
+            index_exists = any(index_dir.glob("europeana.index.*"))
+            if state.is_complete("index"):
+                console.print("[dim]Index already built (from checkpoint)[/dim]\n")
+            elif skip_index and index_exists:
+                console.print(f"[dim]Skipping index (files exist in {index_dir})[/dim]\n")
+                state.mark_complete("index")
+                state.save(state_path)
+            else:
+                console.rule("[bold cyan]Stage 3 · Build Index[/bold cyan]")
+                ctx.invoke(index, qlever_args=())
+                state.mark_complete("index")
+                state.save(state_path)
+
+            # --- Stage 4: Start server ---
+            console.rule("[bold cyan]Stage 4 · Start Server[/bold cyan]")
+            ctx.invoke(start)
+            server_started = True
+
+            # --- Stage 5: Export ---
+            console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
+
+            qb = QueryBuilder()
+            queries = qb.all_base_queries()
+
+            export_result = export_all(
+                output_dir=exports_dir,
+                queries=queries,
+                qlever_url=f"http://localhost:{port}",
+                timeout=timeout,
+                skip_existing=True,  # enables natural resume
+                memory_limit="4GB",
+                temp_directory=exports_dir / ".duckdb_tmp",
             )
-        else:
-            console.rule("[bold cyan]Stage 1 · Merge TTL[/bold cyan]")
-            prefixes = scan_prefixes_from_sample(ttl_dir)
-            merge_ttl(
-                ttl_dir, merged_dir,
-                chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
-                monitor=monitor,
-            )
+            state.update_export(export_result)
+            state.save(state_path)
 
-        # --- Stage 2: Write Qleverfile ---
-        console.rule("[bold cyan]Stage 2 · Write Qleverfile[/bold cyan]")
-        ctx.invoke(
-            write_qleverfile_cmd,
-            qlever_bin=qlever_bin,
-            docker=docker,
-            port=port,
-            stxxl_memory=stxxl_memory,
-            query_memory=query_memory,
-            cache_size=cache_size,
-        )
+            if export_result.failed:
+                for name, err in export_result.failed.items():
+                    failures.append(f"Export {name}: {err}")
 
-        # --- Stage 3: Index ---
-        index_exists = any(index_dir.glob("europeana.index.*"))
-        if skip_index and index_exists:
-            console.print(f"[dim]Skipping index (files exist in {index_dir})[/dim]\n")
-        else:
-            console.rule("[bold cyan]Stage 3 · Build Index[/bold cyan]")
-            ctx.invoke(index, qlever_args=())
+    except Exception as exc:
+        log.exception("Pipeline failed")
+        state.mark_failed("pipeline", str(exc))
+        state.save(state_path)
+        raise
+    finally:
+        # Always stop server if we started it
+        if server_started:
+            try:
+                console.rule("[bold cyan]Stage 6 · Stop Server[/bold cyan]")
+                ctx.invoke(stop)
+            except Exception:
+                log.warning("Failed to stop server during cleanup")
+                console.print("[yellow]Warning: failed to stop server[/yellow]")
 
-        # --- Stage 4: Start server ---
-        console.rule("[bold cyan]Stage 4 · Start Server[/bold cyan]")
-        ctx.invoke(start)
-
-        # --- Stage 5: Export ---
-        console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
-
-        qb = QueryBuilder()
-        queries = qb.all_base_queries()
-
-        export_all(
-            output_dir=exports_dir,
-            queries=queries,
-            qlever_url=f"http://localhost:{port}",
-            timeout=timeout,
-            memory_limit="4GB",
-            temp_directory=exports_dir / ".duckdb_tmp",
-        )
-
-        # --- Stage 6: Stop server ---
-        console.rule("[bold cyan]Stage 6 · Stop Server[/bold cyan]")
-        ctx.invoke(stop)
-
-    console.rule("[bold green]Pipeline complete[/bold green]")
-    console.print(f"Parquet files in: {exports_dir}")
+    # -- Final report --
+    if failures:
+        console.rule("[bold yellow]Pipeline completed with errors[/bold yellow]")
+        for f in failures:
+            console.print(f"  [red]- {f}[/red]")
+        log.warning("Pipeline completed with %d error(s)", len(failures))
+        raise SystemExit(1)
+    else:
+        console.rule("[bold green]Pipeline complete[/bold green]")
+        console.print(f"Parquet files in: {exports_dir}")
+        log.info("Pipeline completed successfully")

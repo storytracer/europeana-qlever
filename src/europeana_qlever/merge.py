@@ -42,8 +42,10 @@ from rich.progress import (
 )
 
 from .constants import EDM_PREFIXES
+from .state import MergeResult
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 # Matches @prefix and @base declarations at the start of a line
 _PREFIX_RE = re.compile(r"^@(?:prefix|base)\s", re.IGNORECASE)
@@ -210,7 +212,8 @@ def merge_ttl(
     workers: int = 4,
     prefixes: dict[str, str] | None = None,
     monitor: object | None = None,
-) -> list[Path]:
+    skip_zips: frozenset[str] = frozenset(),
+) -> MergeResult:
     """Merge all TTL ZIPs into chunked output files with parallel extraction.
 
     Parameters
@@ -230,11 +233,13 @@ def merge_ttl(
         Optional resource monitor for memory backpressure. When provided
         and memory is critical, new submissions are paused until memory
         recovers.
+    skip_zips : frozenset[str]
+        ZIP filenames to skip (for resuming a previous merge).
 
     Returns
     -------
-    list[Path]
-        Paths to the chunk files that were written.
+    MergeResult
+        Outcome with chunk files, processed/failed ZIP lists, and totals.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -244,11 +249,23 @@ def merge_ttl(
         prefixes = scan_prefixes_from_sample(ttl_dir)
     prefix_block = generate_prefix_block(prefixes).encode("utf-8")
 
-    # 2. Enumerate source ZIPs
-    zip_files = sorted(ttl_dir.glob("*.zip"))
+    # 2. Enumerate source ZIPs (filtering out already-processed ones)
+    all_zips = sorted(ttl_dir.glob("*.zip"))
+    if skip_zips:
+        zip_files = [z for z in all_zips if z.name not in skip_zips]
+        logger.info(
+            "Resuming merge: %d ZIPs total, %d already processed, %d remaining",
+            len(all_zips), len(skip_zips), len(zip_files),
+        )
+        if skip_zips:
+            console.print(
+                f"[dim]Resuming: skipping {len(skip_zips):,} already-processed ZIPs[/dim]"
+            )
+    else:
+        zip_files = all_zips
     if not zip_files:
         console.print(f"[red]No ZIP files found in {ttl_dir}[/red]")
-        return []
+        return MergeResult(total_zips=len(all_zips))
 
     console.print(
         f"[bold]Phase 2/2 · Merging {len(zip_files):,} ZIPs "
@@ -280,6 +297,39 @@ def merge_ttl(
     # Semaphore limits in-flight work (workers extracting + completed awaiting write)
     sem = threading.Semaphore(workers * 2)
 
+    # Track processed/failed ZIPs for result reporting
+    processed_zips: list[str] = list(skip_zips)
+    failed_zips: list[str] = []
+    # Map futures to (tmp_path, zip_path) for failure tracking
+    future_meta: dict[Future[int], tuple[Path, Path]] = {}
+
+    def _drain_future(fut: Future[int]) -> None:
+        nonlocal current_size, chunk_num, fh
+        temp, zp = future_meta.pop(fut)
+        bytes_written = fut.result()
+        if bytes_written > 0 and temp.exists():
+            with open(temp, "rb") as src:
+                while buf := src.read(_COPY_BUF):
+                    fh.write(buf)
+                    current_size += len(buf)
+            temp.unlink()
+            processed_zips.append(zp.name)
+
+            if current_size >= chunk_size_bytes:
+                fh.close()
+                chunk_num += 1
+                fh = _open_chunk()
+        else:
+            if temp.exists():
+                temp.unlink(missing_ok=True)
+            if bytes_written == 0:
+                failed_zips.append(zp.name)
+                logger.warning("ZIP extraction failed: %s", zp.name)
+
+        sem.release()
+
+    logger.info("Starting merge of %d ZIPs with %d workers", len(zip_files), workers)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -294,7 +344,6 @@ def merge_ttl(
         task = progress.add_task("Merging", total=len(zip_files))
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures: dict[Future[int], Path] = {}
 
             for i, zp in enumerate(zip_files):
                 # Backpressure: wait if system memory is critical
@@ -307,51 +356,17 @@ def merge_ttl(
 
                 tmp_path = tmp_dir / f"{i:06d}.tmp"
                 future = pool.submit(_extract_zip_to_file, zp, tmp_path)
-                futures[future] = tmp_path
+                future_meta[future] = (tmp_path, zp)
 
                 # Drain any completed futures to free memory and disk
-                done = [f for f in futures if f.done()]
+                done = [f for f in future_meta if f.done()]
                 for fut in done:
-                    temp = futures.pop(fut)
-                    bytes_written = fut.result()
-                    if bytes_written > 0 and temp.exists():
-                        # Copy temp file to current chunk in 1 MB reads
-                        with open(temp, "rb") as src:
-                            while buf := src.read(_COPY_BUF):
-                                fh.write(buf)
-                                current_size += len(buf)
-                        temp.unlink()
-
-                        # Roll over to the next chunk if needed
-                        if current_size >= chunk_size_bytes:
-                            fh.close()
-                            chunk_num += 1
-                            fh = _open_chunk()
-                    elif temp.exists():
-                        temp.unlink(missing_ok=True)
-
-                    sem.release()
+                    _drain_future(fut)
                     progress.advance(task)
 
             # Drain remaining futures
-            for future in as_completed(futures):
-                temp = futures[future]
-                bytes_written = future.result()
-                if bytes_written > 0 and temp.exists():
-                    with open(temp, "rb") as src:
-                        while buf := src.read(_COPY_BUF):
-                            fh.write(buf)
-                            current_size += len(buf)
-                    temp.unlink()
-
-                    if current_size >= chunk_size_bytes:
-                        fh.close()
-                        chunk_num += 1
-                        fh = _open_chunk()
-                elif temp.exists():
-                    temp.unlink(missing_ok=True)
-
-                sem.release()
+            for future in as_completed(future_meta.copy()):
+                _drain_future(future)
                 progress.advance(task)
 
     fh.close()
@@ -369,4 +384,25 @@ def merge_ttl(
     for p in chunk_files:
         console.print(f"  {p.name}  ({p.stat().st_size / 1e9:.2f} GB)")
 
-    return chunk_files
+    if failed_zips:
+        console.print(
+            f"\n[yellow]{len(failed_zips):,} ZIP(s) failed during merge[/yellow]"
+        )
+        logger.warning(
+            "Merge completed with %d failed ZIPs out of %d",
+            len(failed_zips), len(zip_files),
+        )
+
+    result = MergeResult(
+        chunk_files=chunk_files,
+        total_zips=len(all_zips),
+        processed_zips=processed_zips,
+        failed_zips=failed_zips,
+        total_bytes=total_bytes,
+    )
+    logger.info(
+        "Merge complete: %d chunks, %d processed, %d failed, %.1f GB",
+        len(chunk_files), len(processed_zips), len(failed_zips),
+        total_bytes / 1e9,
+    )
+    return result

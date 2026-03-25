@@ -10,6 +10,7 @@ when the system is under pressure.
 from __future__ import annotations
 
 import csv
+import logging
 import shutil
 import threading
 import time
@@ -19,6 +20,8 @@ from pathlib import Path
 
 import psutil
 from rich.console import Console
+
+logger = logging.getLogger(__name__)
 
 from .constants import (
     MONITOR_CRITICAL_MEMORY_PCT,
@@ -212,23 +215,22 @@ class ResourceMonitor:
     def _emit_transition(
         self, old: str, new: str, snap: ResourceSnapshot,
     ) -> None:
+        msg = (
+            f"Memory {new}: {snap.memory_pct:.1f}% used "
+            f"(RSS {snap.rss_mb:.0f} MB, available {snap.available_mb:.0f} MB)"
+        )
         if new == "critical":
-            self._console.print(
-                f"[red bold]Memory CRITICAL: {snap.memory_pct:.1f}% used "
-                f"(RSS {snap.rss_mb:.0f} MB, "
-                f"available {snap.available_mb:.0f} MB)[/red bold]"
-            )
+            self._console.print(f"[red bold]{msg}[/red bold]")
+            logger.warning(msg)
         elif new == "warn":
-            self._console.print(
-                f"[yellow]Memory warning: {snap.memory_pct:.1f}% used "
-                f"(RSS {snap.rss_mb:.0f} MB, "
-                f"available {snap.available_mb:.0f} MB)[/yellow]"
-            )
+            self._console.print(f"[yellow]{msg}[/yellow]")
+            logger.warning(msg)
         elif new == "ok" and old in ("warn", "critical"):
             self._console.print(
                 f"[green]Memory recovered: {snap.memory_pct:.1f}% used "
                 f"(available {snap.available_mb:.0f} MB)[/green]"
             )
+            logger.info(msg)
 
     def _log_sample(self, snap: ResourceSnapshot) -> None:
         buf = StringIO()

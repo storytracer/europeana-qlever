@@ -48,7 +48,6 @@ A background **resource monitor** (`psutil`) runs throughout the pipeline, sampl
 - **[uv](https://docs.astral.sh/uv/)** — Python project manager
 - **[QLever](https://github.com/ad-freiburg/qlever)** — either compiled from source or installed via package. The `qlever` CLI tool should also be installed (`uv tool install qlever`).
 - **[rclone](https://rclone.org/)** — for downloading the Europeana FTP dump
-- **Docker** (optional) — only needed for the QLever UI
 
 ### Building QLever from source
 

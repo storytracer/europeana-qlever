@@ -7,6 +7,8 @@ zero-copy columnar write with zstd compression).
 
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 
 import duckdb
@@ -21,21 +23,38 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
-from .constants import QLEVER_PORT
+from .constants import EXPORT_MAX_RETRIES, EXPORT_RETRY_DELAYS, QLEVER_PORT
+from .state import ExportResult
 
 console = Console()
+logger = logging.getLogger(__name__)
+
+_TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
 
 
-def run_query_to_tsv(
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _cleanup_partial(*paths: Path) -> None:
+    """Remove partially written files, ignoring errors."""
+    for p in paths:
+        try:
+            if p.exists():
+                p.unlink()
+                logger.info("Removed partial file: %s", p)
+        except OSError:
+            pass
+
+
+def _stream_query(
     query: str,
     output_path: Path,
-    qlever_url: str = f"http://localhost:{QLEVER_PORT}",
-    timeout: int = 3600,
+    qlever_url: str,
+    timeout: int,
 ) -> int:
-    """Stream a SPARQL query result from QLever directly to a TSV file.
-
-    Returns approximate row count (newline count minus header).
-    """
+    """Stream a single SPARQL query to a TSV file. Returns approx row count."""
     total_bytes = 0
     newlines = 0
 
@@ -71,6 +90,57 @@ def run_query_to_tsv(
                     progress.update(task, completed=total_bytes)
 
     return max(0, newlines - 1)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Return True if the exception looks transient and worth retrying."""
+    if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _TRANSIENT_STATUS_CODES
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def run_query_to_tsv(
+    query: str,
+    output_path: Path,
+    qlever_url: str = f"http://localhost:{QLEVER_PORT}",
+    timeout: int = 3600,
+) -> int:
+    """Stream a SPARQL query result from QLever directly to a TSV file.
+
+    Retries up to ``EXPORT_MAX_RETRIES`` times on transient errors.
+    Returns approximate row count (newline count minus header).
+    """
+    last_exc: Exception | None = None
+
+    for attempt in range(EXPORT_MAX_RETRIES + 1):
+        try:
+            return _stream_query(query, output_path, qlever_url, timeout)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < EXPORT_MAX_RETRIES and _is_transient(exc):
+                delay = EXPORT_RETRY_DELAYS[attempt]
+                logger.warning(
+                    "Query to %s failed (attempt %d/%d): %s. Retrying in %ds",
+                    output_path.name,
+                    attempt + 1,
+                    EXPORT_MAX_RETRIES + 1,
+                    exc,
+                    delay,
+                )
+                _cleanup_partial(output_path)
+                time.sleep(delay)
+            else:
+                raise
+
+    # Unreachable, but keeps type checker happy
+    raise last_exc  # type: ignore[misc]
 
 
 def tsv_to_parquet(
@@ -138,8 +208,11 @@ def export_all(
     skip_existing: bool = False,
     memory_limit: str = "4GB",
     temp_directory: Path | None = None,
-) -> list[Path]:
+) -> ExportResult:
     """Run every registered SPARQL export and convert results to Parquet.
+
+    Continues past individual query failures and reports all errors at the
+    end.  Returns an :class:`ExportResult` with succeeded/failed lists.
 
     Parameters
     ----------
@@ -160,11 +233,11 @@ def export_all(
 
     Returns
     -------
-    list[Path]
-        Paths to the generated Parquet files.
+    ExportResult
+        Outcome with succeeded/failed query lists and Parquet file paths.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    parquet_files: list[Path] = []
+    result = ExportResult()
 
     for name, query in queries.items():
         tsv_path = output_dir / f"{name}.tsv"
@@ -172,34 +245,53 @@ def export_all(
 
         if skip_existing and parquet_path.exists():
             console.print(f"[dim]Skipping {name} (parquet exists)[/dim]")
-            parquet_files.append(parquet_path)
+            result.succeeded.append(name)
+            result.parquet_files.append(parquet_path)
             continue
 
         console.print(f"\n[bold]━━━ {name} ━━━[/bold]")
 
-        # 1. Query → TSV
-        rows = run_query_to_tsv(query, tsv_path, qlever_url, timeout)
-        tsv_mb = tsv_path.stat().st_size / 1e6
-        console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
+        try:
+            # 1. Query → TSV
+            rows = run_query_to_tsv(query, tsv_path, qlever_url, timeout)
+            tsv_mb = tsv_path.stat().st_size / 1e6
+            console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
-        # 2. TSV → Parquet
-        console.print("  Converting to Parquet…")
-        duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
-        count = tsv_to_parquet(
-            tsv_path, parquet_path,
-            memory_limit=memory_limit,
-            temp_directory=duckdb_tmp,
-        )
-        pq_mb = parquet_path.stat().st_size / 1e6
-        console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+            # 2. TSV → Parquet
+            console.print("  Converting to Parquet…")
+            duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
+            count = tsv_to_parquet(
+                tsv_path, parquet_path,
+                memory_limit=memory_limit,
+                temp_directory=duckdb_tmp,
+            )
+            pq_mb = parquet_path.stat().st_size / 1e6
+            console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
 
-        tsv_path.unlink()
+            tsv_path.unlink()
 
-        parquet_files.append(parquet_path)
+            result.succeeded.append(name)
+            result.parquet_files.append(parquet_path)
+            logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
+
+        except Exception as exc:
+            logger.error("Export failed for %s: %s", name, exc)
+            console.print(f"  [red]FAILED: {exc}[/red]")
+            result.failed[name] = str(exc)
+            _cleanup_partial(tsv_path, parquet_path)
 
     # Summary
-    console.print("\n[green bold]All exports complete.[/green bold]")
-    for p in parquet_files:
-        console.print(f"  {p.name}: {p.stat().st_size / 1e6:.1f} MB")
+    if result.failed:
+        console.print(
+            f"\n[yellow bold]{len(result.failed)} query(ies) failed:[/yellow bold]"
+        )
+        for name, err in result.failed.items():
+            console.print(f"  [red]{name}: {err}[/red]")
+    if result.parquet_files:
+        console.print(
+            f"\n[green bold]{len(result.succeeded)} export(s) complete.[/green bold]"
+        )
+        for p in result.parquet_files:
+            console.print(f"  {p.name}: {p.stat().st_size / 1e6:.1f} MB")
 
-    return parquet_files
+    return result
