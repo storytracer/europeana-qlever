@@ -24,10 +24,23 @@ Europeana FTP (15,000+ ZIPs)
 | Compressed TTL on FTP | ~50–120 GB |
 | Uncompressed TTL | ~200–500 GB |
 | QLever index size | ~100–250 GB |
-| RAM for indexing | ~20–30 GB |
-| RAM for query serving | ~10–20 GB |
+| RAM for indexing | ~8–15 GB (configurable via `--stxxl-memory`) |
+| RAM for query serving | ~10–15 GB (configurable via `--query-memory`) |
 
 Total disk footprint is approximately 600–800 GB (ZIPs + merged TTL + index + working space).
+
+### Memory management
+
+The pipeline is designed to run within bounded memory. Each stage has explicit memory controls:
+
+| Stage | Default | How memory is bounded |
+|-------|---------|----------------------|
+| **Merge** | 4 workers | Workers stream line-by-line to temp files; semaphore limits in-flight work; backpressure pauses submissions when system memory is critical |
+| **Index** | 8 GB stxxl | Configurable via `--stxxl-memory` |
+| **Query serving** | 10 GB query / 5 GB cache | Configurable via `--query-memory` / `--cache-size` |
+| **Parquet export** | 4 GB DuckDB | DuckDB spills to disk when memory limit is exceeded |
+
+A background **resource monitor** (`psutil`) runs throughout the pipeline, sampling RSS, available memory, and disk space every 5 seconds. Samples are logged to `<work-dir>/monitor.log` (CSV). Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, critical memory pressure pauses new work until memory recovers.
 
 ## Prerequisites
 
@@ -102,9 +115,11 @@ Options:
 ```bash
 uv run europeana-qlever -w /data/europeana merge ~/data/europeana/TTL \
   --chunk-size 5.0 \
-  --workers 12 \
+  --workers 4 \
   --sample-size 100
 ```
+
+Resource usage is logged to `<work-dir>/monitor.log` during merge.
 
 You can also run prefix discovery standalone:
 
@@ -279,11 +294,12 @@ This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
 
 **Work directory** (specified via `-w`):
 
-| Subdirectory | Purpose |
-|--------------|---------|
+| Path | Purpose |
+|------|---------|
 | `ttl-merged/` | Merged chunk TTL files |
 | `index/` | Qleverfile, settings.json, and QLever index files |
 | `exports/` | Parquet output files |
+| `monitor.log` | Resource monitor log (CSV: timestamp, RSS, available memory, disk free) |
 
 ## Refreshing the data
 

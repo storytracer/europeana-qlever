@@ -7,7 +7,7 @@ A Python CLI (`europeana-qlever`) that ingests the full Europeana EDM metadata d
 ## Tech stack
 
 - **Python 3.11+**, managed with **uv** (not pip)
-- **click** for CLI, **rich** for progress/output, **rdflib** for RDF parsing, **httpx** for streaming HTTP, **duckdb** for Parquet conversion, **pyarrow**
+- **click** for CLI, **rich** for progress/output, **rdflib** for RDF parsing, **httpx** for streaming HTTP, **duckdb** for Parquet conversion, **pyarrow**, **psutil** for resource monitoring
 - **QLever** as the SPARQL engine (C++, compiled from source or installed natively)
 - Build system: **hatchling**
 
@@ -18,9 +18,10 @@ pyproject.toml                    # Package metadata, dependencies, entry point
 src/europeana_qlever/
   __init__.py                     # Package version
   cli.py                          # Click command definitions (all commands)
-  constants.py                    # EDM namespaces, QLever settings, rights URIs
+  constants.py                    # EDM namespaces, QLever settings, rights URIs, monitor thresholds
   merge.py                        # Parallel TTL extraction + rdflib prefix discovery
   export.py                       # QLever HTTP streaming + DuckDB Parquet conversion
+  monitor.py                      # Background resource monitor (memory, disk, backpressure)
   query.py                        # Dynamic SPARQL query generator (QueryBuilder, QueryFilters)
 tests/
   test_query.py                   # Unit tests for query generation
@@ -39,6 +40,7 @@ All output lives under a single work directory specified via `-w` / `--work-dir`
 | `ttl-merged/` | `MERGED_SUBDIR` | Merged chunk TTL files (~5 GB each) |
 | `index/` | `INDEX_SUBDIR` | Qleverfile, settings.json, QLever index files |
 | `exports/` | `EXPORTS_SUBDIR` | Parquet output files (TSV intermediates are deleted) |
+| `monitor.log` | — | CSV resource monitor log (RSS, available memory, disk free) |
 
 The source TTL ZIP directory is user-managed and passed as a positional argument to `merge` and `scan-prefixes`.
 
@@ -65,12 +67,13 @@ All commands require `-w WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Out
 
 ## Architecture notes
 
-- **Merge** is I/O-bound: uses `ThreadPoolExecutor` for parallel ZIP extraction with a batched submission pattern to bound memory. A single writer thread assembles chunks. Per-file `@prefix`/`@base` lines are stripped and replaced with a unified prefix header per chunk.
+- **Merge** is I/O-bound: uses `ThreadPoolExecutor` (default 4 workers) for parallel ZIP extraction. Workers stream line-by-line from ZIP entries to temp files on disk — never holding more than one line in memory — then a writer thread copies temp files into chunked output files in 1 MB reads. A semaphore (`workers * 2`) bounds in-flight work. Per-file `@prefix`/`@base` lines are stripped and replaced with a unified prefix header per chunk. Temp files live in `output_dir/.merge_tmp/` and are cleaned up automatically.
 - **Prefix discovery** samples ~50 ZIPs via rdflib to catch non-standard prefixes. Falls back to regex if rdflib fails on a file. The canonical EDM prefix set is in `constants.py` as `EDM_PREFIXES`.
-- **Export** streams multi-GB SPARQL results via httpx (chunked reads, never loaded into memory), writes TSV, converts to Parquet with DuckDB (`zstd` compression), then deletes the intermediate TSV.
+- **Export** streams multi-GB SPARQL results via httpx (chunked reads, never loaded into memory), writes TSV, converts to Parquet with DuckDB (`zstd` compression, explicit `memory_limit="4GB"`, spill-to-disk via `temp_directory`), then deletes the intermediate TSV.
+- **Resource monitoring** (`monitor.py`): `ResourceMonitor` runs as a daemon thread, sampling process RSS, system available memory, and disk free space every 5 seconds. Samples are logged to `monitor.log` (CSV format). Console warnings fire on state transitions at 80% (warn) and 90% (critical) system memory usage. The merge phase uses `monitor.is_memory_critical()` and `monitor.wait_for_memory()` as a backpressure mechanism — pausing new ZIP submissions when memory is under pressure. Thresholds are configurable in `constants.py` (`MONITOR_WARN_MEMORY_PCT`, `MONITOR_CRITICAL_MEMORY_PCT`).
 - **Query generation** (`query.py`) uses `QueryBuilder` to dynamically generate SPARQL queries from composable fragments. `QueryFilters` dataclass carries filter parameters (country, type, rights category, year range, etc.). Queries are grouped into base (7), AI dataset (5), and analytics (24) categories — 36 total. The builder produces `dict[str, str]` consumed by `export_all()`.
-- **Qleverfile generation** supports both native (compiled from source) and Docker modes. Native is preferred for performance.
-- **Pipeline** (`pipeline` command) runs all stages end-to-end: merge → write-qleverfile → index → start → export → stop. Supports `--skip-merge` and `--skip-index` flags.
+- **Qleverfile generation** supports both native (compiled from source) and Docker modes. Native is preferred for performance. Default memory settings: stxxl 8G, query 10G, cache 5G.
+- **Pipeline** (`pipeline` command) runs all stages end-to-end: merge → write-qleverfile → index → start → export → stop. Supports `--skip-merge` and `--skip-index` flags. The entire pipeline runs inside a `ResourceMonitor` context for continuous resource tracking.
 - Export queries are generated by `QueryBuilder` in `query.py`. The `export --all` flag runs all base queries; `--query-set` runs a category; `-q` runs individual named queries. Custom `.sparql` file paths can also be passed.
 
 ## Europeana EDM domain context
