@@ -13,7 +13,6 @@ from pathlib import Path
 
 import duckdb
 import httpx
-from rich.console import Console
 from rich.progress import (
     DownloadColumn,
     Progress,
@@ -23,10 +22,9 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
+from . import display
 from .constants import EXPORT_MAX_RETRIES, EXPORT_RETRY_DELAYS, QLEVER_PORT
 from .state import ExportResult
-
-console = Console()
 logger = logging.getLogger(__name__)
 
 _TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
@@ -58,15 +56,21 @@ def _stream_query(
     total_bytes = 0
     newlines = 0
 
-    with Progress(
+    columns = [
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         DownloadColumn(),
-        TransferSpeedColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task(f"→ {output_path.name}", total=None)
+    ]
+    if not display.is_narrow():
+        columns.append(TransferSpeedColumn())
+    columns.append(TimeElapsedColumn())
+
+    desc = output_path.stem
+    if display.is_narrow() and len(desc) > 15:
+        desc = desc[:14] + "…"
+
+    with Progress(*columns, console=display.console) as progress:
+        task = progress.add_task(f"→ {desc}", total=None)
 
         with httpx.stream(
             "POST",
@@ -76,10 +80,10 @@ def _stream_query(
         ) as response:
             if response.status_code != 200:
                 error_body = response.read().decode("utf-8", errors="replace")[:2000]
-                console.print(
+                display.console.print(
                     f"[red]QLever export failed ({response.status_code}):[/red]"
                 )
-                console.print(error_body)
+                display.console.print(error_body)
                 response.raise_for_status()
 
             with open(output_path, "wb") as fh:
@@ -244,21 +248,21 @@ def export_all(
         parquet_path = output_dir / f"{name}.parquet"
 
         if skip_existing and parquet_path.exists():
-            console.print(f"[dim]Skipping {name} (parquet exists)[/dim]")
+            display.console.print(f"[dim]Skipping {name} (parquet exists)[/dim]")
             result.succeeded.append(name)
             result.parquet_files.append(parquet_path)
             continue
 
-        console.print(f"\n[bold]━━━ {name} ━━━[/bold]")
+        display.console.print(f"\n[bold]━━━ {name} ━━━[/bold]")
 
         try:
             # 1. Query → TSV
             rows = run_query_to_tsv(query, tsv_path, qlever_url, timeout)
             tsv_mb = tsv_path.stat().st_size / 1e6
-            console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
+            display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
             # 2. TSV → Parquet
-            console.print("  Converting to Parquet…")
+            display.console.print("  Converting to Parquet…")
             duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
             count = tsv_to_parquet(
                 tsv_path, parquet_path,
@@ -266,7 +270,7 @@ def export_all(
                 temp_directory=duckdb_tmp,
             )
             pq_mb = parquet_path.stat().st_size / 1e6
-            console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+            display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
 
             tsv_path.unlink()
 
@@ -276,22 +280,22 @@ def export_all(
 
         except Exception as exc:
             logger.error("Export failed for %s: %s", name, exc)
-            console.print(f"  [red]FAILED: {exc}[/red]")
+            display.console.print(f"  [red]FAILED: {exc}[/red]")
             result.failed[name] = str(exc)
             _cleanup_partial(tsv_path, parquet_path)
 
     # Summary
     if result.failed:
-        console.print(
+        display.console.print(
             f"\n[yellow bold]{len(result.failed)} query(ies) failed:[/yellow bold]"
         )
         for name, err in result.failed.items():
-            console.print(f"  [red]{name}: {err}[/red]")
+            display.console.print(f"  [red]{name}: {err}[/red]")
     if result.parquet_files:
-        console.print(
+        display.console.print(
             f"\n[green bold]{len(result.succeeded)} export(s) complete.[/green bold]"
         )
         for p in result.parquet_files:
-            console.print(f"  {p.name}: {p.stat().st_size / 1e6:.1f} MB")
+            display.console.print(f"  {p.name}: {p.stat().st_size / 1e6:.1f} MB")
 
     return result

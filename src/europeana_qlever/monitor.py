@@ -17,9 +17,14 @@ import time
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import psutil
-from rich.console import Console
+
+from . import display
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +74,7 @@ class ResourceMonitor:
         self._warn_pct = warn_pct
         self._critical_pct = critical_pct
         self._log_path = log_file or (work_dir / "monitor.log")
-        self._console = console or Console()
+        self._console = console or display.console
 
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None

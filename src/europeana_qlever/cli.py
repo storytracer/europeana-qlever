@@ -23,8 +23,8 @@ import sys
 from pathlib import Path
 
 import click
-from rich.console import Console
 
+from . import display
 from .constants import (
     EDM_PREFIXES,
     EXPORTS_SUBDIR,
@@ -34,8 +34,6 @@ from .constants import (
     QLEVER_PORT,
     STATE_FILENAME,
 )
-
-console = Console()
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +49,13 @@ console = Console()
     envvar="EUROPEANA_QLEVER_WORK_DIR",
     help="Root working directory for all output (ttl-merged/, index/, exports/).",
 )
+@click.option(
+    "--width", type=int, default=None,
+    envvar="EUROPEANA_QLEVER_WIDTH",
+    help="Fixed console width (e.g. 50 for phone). Default: auto-detect.",
+)
 @click.pass_context
-def cli(ctx: click.Context, work_dir: Path):
+def cli(ctx: click.Context, work_dir: Path, width: int | None):
     """Europeana EDM → QLever → Parquet pipeline.
 
     Ingest ~66 M Europeana Turtle records into a QLever SPARQL engine,
@@ -62,6 +65,9 @@ def cli(ctx: click.Context, work_dir: Path):
     index/, and exports/.
     """
     from .state import setup_logging
+
+    if width is not None:
+        display.set_width(width)
 
     ctx.ensure_object(dict)
     ctx.obj["work_dir"] = work_dir
@@ -105,7 +111,7 @@ def scan_prefixes_cmd(ttl_dir: Path, sample_size: int, files_per_zip: int):
         source = "EDM canonical" if p in EDM_PREFIXES else "[bold green]discovered[/]"
         table.add_row(p, u, source)
 
-    console.print(table)
+    display.console.print(table)
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +148,7 @@ def merge(
     work_dir: Path = ctx.obj["work_dir"]
 
     prefixes = scan_prefixes_from_sample(ttl_dir, sample_size=sample_size)
-    with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=console) as monitor:
+    with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=display.console) as monitor:
         result = merge_ttl(
             ttl_dir,
             merged_dir,
@@ -152,7 +158,7 @@ def merge(
             monitor=monitor,
         )
     if result.failed_zips:
-        console.print(
+        display.console.print(
             f"\n[yellow]Warning: {len(result.failed_zips)} ZIP(s) failed "
             f"({result.error_rate:.1%} error rate)[/yellow]"
         )
@@ -194,7 +200,7 @@ def write_qleverfile_cmd(
     merged_dir: Path = ctx.obj["merged_dir"]
 
     if not merged_dir.is_dir():
-        console.print(f"[red]Merged TTL directory not found: {merged_dir}[/red]")
+        display.console.print(f"[red]Merged TTL directory not found: {merged_dir}[/red]")
         raise SystemExit(1)
 
     index_dir.mkdir(parents=True, exist_ok=True)
@@ -259,12 +265,12 @@ UI_PORT = 7000
     settings_path = index_dir / "settings.json"
     settings_path.write_text(json.dumps(QLEVER_INDEX_SETTINGS, indent=2))
 
-    console.print(f"[green]Qleverfile written to {qleverfile_path}[/green]")
-    console.print(f"[green]settings.json written to {settings_path}[/green]")
-    console.print(f"\nNext steps:")
-    console.print(f"  cd {index_dir}")
-    console.print(f"  qlever index   # build the index (~2–5 hours)")
-    console.print(f"  qlever start   # launch the SPARQL server on :{port}")
+    display.console.print(f"[green]Qleverfile written to {display.short_path(qleverfile_path)}[/green]")
+    display.console.print(f"[green]settings.json written to {display.short_path(settings_path)}[/green]")
+    display.console.print(f"\nNext steps:")
+    display.console.print(f"  cd {index_dir}")
+    display.console.print(f"  qlever index   # build index")
+    display.console.print(f"  qlever start   # serve on :{port}")
 
 
 # ---------------------------------------------------------------------------
@@ -284,23 +290,23 @@ def index(ctx: click.Context, qlever_args: tuple[str, ...]):
     index_dir: Path = ctx.obj["index_dir"]
     qleverfile = index_dir / "Qleverfile"
     if not qleverfile.exists():
-        console.print(
+        display.console.print(
             f"[red]No Qleverfile found in {index_dir}.[/red]\n"
             "Run `europeana-qlever write-qleverfile` first."
         )
         raise SystemExit(1)
 
     if not shutil.which("qlever"):
-        console.print(
+        display.console.print(
             "[red]`qlever` CLI not found.[/red] "
             "Install it with: pip install qlever --break-system-packages"
         )
         raise SystemExit(1)
 
     log_path = index_dir / "europeana-index.log"
-    console.print(f"[bold]Building QLever index in {index_dir}[/bold]")
-    console.print(f"Logging to {log_path}")
-    console.print("[dim]This typically takes 2–5 hours on the DGX Spark.[/dim]\n")
+    display.console.print(f"[bold]Building QLever index in {display.short_path(index_dir)}[/bold]")
+    display.console.print(f"Logging to {display.short_path(log_path)}")
+    display.console.print("[dim]This typically takes 2–5 hours.[/dim]\n")
 
     with open(log_path, "w") as log_fh:
         proc = subprocess.Popen(
@@ -317,10 +323,10 @@ def index(ctx: click.Context, qlever_args: tuple[str, ...]):
         proc.wait()
 
     if proc.returncode == 0:
-        console.print("\n[green bold]Index build complete.[/green bold]")
+        display.console.print("\n[green bold]Index build complete.[/green bold]")
     else:
-        console.print(f"\n[red]Index build failed (exit {proc.returncode}).[/red]")
-        console.print(f"See {log_path} for details.")
+        display.console.print(f"\n[red]Index build failed (exit {proc.returncode}).[/red]")
+        display.console.print(f"See {log_path} for details.")
         raise SystemExit(proc.returncode)
 
 
@@ -339,16 +345,16 @@ def start(ctx: click.Context):
     index_dir: Path = ctx.obj["index_dir"]
     qleverfile = index_dir / "Qleverfile"
     if not qleverfile.exists():
-        console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
+        display.console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
         raise SystemExit(1)
 
     # Stop any existing server first
     subprocess.run(["qlever", "stop"], cwd=index_dir,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    console.print(f"[bold]Starting QLever server from {index_dir}[/bold]")
+    display.console.print(f"[bold]Starting QLever server from {display.short_path(index_dir)}[/bold]")
     subprocess.run(["qlever", "start"], cwd=index_dir, check=True)
-    console.print("[green]Server started.[/green]")
+    display.console.print("[green]Server started.[/green]")
 
 
 @cli.command()
@@ -361,12 +367,12 @@ def stop(ctx: click.Context):
     index_dir: Path = ctx.obj["index_dir"]
     qleverfile = index_dir / "Qleverfile"
     if not qleverfile.exists():
-        console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
+        display.console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
         raise SystemExit(1)
 
-    console.print(f"[bold]Stopping QLever server from {index_dir}[/bold]")
+    display.console.print(f"[bold]Stopping QLever server from {display.short_path(index_dir)}[/bold]")
     subprocess.run(["qlever", "stop"], cwd=index_dir, check=True)
-    console.print("[green]Server stopped.[/green]")
+    display.console.print("[green]Server stopped.[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -393,8 +399,8 @@ def list_queries_cmd(ctx: click.Context):
         table.add_column("Description")
         for name in queries:
             table.add_row(name, qb.describe(name))
-        console.print(table)
-        console.print()
+        display.console.print(table)
+        display.console.print()
 
 
 # ---------------------------------------------------------------------------
@@ -614,31 +620,31 @@ def pipeline(
     state_path = work_dir / STATE_FILENAME
     if force and state_path.exists():
         state_path.unlink()
-        console.print("[dim]Checkpoint cleared (--force)[/dim]")
+        display.console.print("[dim]Checkpoint cleared (--force)[/dim]")
 
     state = PipelineState.load(state_path) if state_path.exists() else PipelineState.fresh()
     log.info("Pipeline started (force=%s)", force)
 
-    console.rule("[bold]Europeana → QLever → Parquet Pipeline[/bold]")
+    display.console.rule("[bold]Europeana → QLever → Parquet Pipeline[/bold]")
 
     server_started = False
     failures: list[str] = []
 
     try:
-        with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=console) as monitor:
+        with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=display.console) as monitor:
 
             # --- Stage 1: Merge ---
             chunks = sorted(merged_dir.glob("europeana_*.ttl"))
             if state.is_complete("merge"):
-                console.print("[dim]Merge already complete (from checkpoint)[/dim]\n")
+                display.console.print("[dim]Merge already complete (from checkpoint)[/dim]\n")
             elif skip_merge and chunks:
-                console.print(
+                display.console.print(
                     f"[dim]Skipping merge ({len(chunks)} chunks already in "
                     f"{merged_dir})[/dim]\n"
                 )
                 state.mark_complete("merge")
             else:
-                console.rule("[bold cyan]Stage 1 · Merge TTL[/bold cyan]")
+                display.console.rule("[bold cyan]Stage 1 · Merge TTL[/bold cyan]")
                 prefixes = scan_prefixes_from_sample(ttl_dir)
 
                 # Resume: skip ZIPs already processed in a prior run
@@ -658,13 +664,13 @@ def pipeline(
                         f"Merge: {len(merge_result.failed_zips)} ZIP(s) failed "
                         f"({merge_result.error_rate:.1%} error rate)"
                     )
-                    console.print(f"[yellow]{msg}[/yellow]")
+                    display.console.print(f"[yellow]{msg}[/yellow]")
                     log.warning(msg)
                     failures.append(msg)
 
             # --- Stage 2: Write Qleverfile ---
             if not state.is_complete("write_qleverfile"):
-                console.rule("[bold cyan]Stage 2 · Write Qleverfile[/bold cyan]")
+                display.console.rule("[bold cyan]Stage 2 · Write Qleverfile[/bold cyan]")
                 ctx.invoke(
                     write_qleverfile_cmd,
                     qlever_bin=qlever_bin,
@@ -677,29 +683,29 @@ def pipeline(
                 state.mark_complete("write_qleverfile")
                 state.save(state_path)
             else:
-                console.print("[dim]Qleverfile already written (from checkpoint)[/dim]\n")
+                display.console.print("[dim]Qleverfile already written (from checkpoint)[/dim]\n")
 
             # --- Stage 3: Index ---
             index_exists = any(index_dir.glob("europeana.index.*"))
             if state.is_complete("index"):
-                console.print("[dim]Index already built (from checkpoint)[/dim]\n")
+                display.console.print("[dim]Index already built (from checkpoint)[/dim]\n")
             elif skip_index and index_exists:
-                console.print(f"[dim]Skipping index (files exist in {index_dir})[/dim]\n")
+                display.console.print(f"[dim]Skipping index (files exist in {index_dir})[/dim]\n")
                 state.mark_complete("index")
                 state.save(state_path)
             else:
-                console.rule("[bold cyan]Stage 3 · Build Index[/bold cyan]")
+                display.console.rule("[bold cyan]Stage 3 · Build Index[/bold cyan]")
                 ctx.invoke(index, qlever_args=())
                 state.mark_complete("index")
                 state.save(state_path)
 
             # --- Stage 4: Start server ---
-            console.rule("[bold cyan]Stage 4 · Start Server[/bold cyan]")
+            display.console.rule("[bold cyan]Stage 4 · Start Server[/bold cyan]")
             ctx.invoke(start)
             server_started = True
 
             # --- Stage 5: Export ---
-            console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
+            display.console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
 
             qb = QueryBuilder()
             queries = qb.all_base_queries()
@@ -729,20 +735,20 @@ def pipeline(
         # Always stop server if we started it
         if server_started:
             try:
-                console.rule("[bold cyan]Stage 6 · Stop Server[/bold cyan]")
+                display.console.rule("[bold cyan]Stage 6 · Stop Server[/bold cyan]")
                 ctx.invoke(stop)
             except Exception:
                 log.warning("Failed to stop server during cleanup")
-                console.print("[yellow]Warning: failed to stop server[/yellow]")
+                display.console.print("[yellow]Warning: failed to stop server[/yellow]")
 
     # -- Final report --
     if failures:
-        console.rule("[bold yellow]Pipeline completed with errors[/bold yellow]")
+        display.console.rule("[bold yellow]Pipeline completed with errors[/bold yellow]")
         for f in failures:
-            console.print(f"  [red]- {f}[/red]")
+            display.console.print(f"  [red]- {f}[/red]")
         log.warning("Pipeline completed with %d error(s)", len(failures))
         raise SystemExit(1)
     else:
-        console.rule("[bold green]Pipeline complete[/bold green]")
-        console.print(f"Parquet files in: {exports_dir}")
+        display.console.rule("[bold green]Pipeline complete[/bold green]")
+        display.console.print(f"Parquet files in: {display.short_path(exports_dir)}")
         log.info("Pipeline completed successfully")

@@ -30,7 +30,6 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import rdflib
-from rich.console import Console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -41,10 +40,9 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from . import display
 from .constants import EDM_PREFIXES
 from .state import MergeResult
-
-console = Console()
 logger = logging.getLogger(__name__)
 
 # Matches @prefix and @base declarations at the start of a line
@@ -100,7 +98,7 @@ def scan_prefixes_from_sample(
 
     zip_files = sorted(ttl_dir.glob("*.zip"))
     if not zip_files:
-        console.print(f"[yellow]No .zip files found in {ttl_dir}[/yellow]")
+        display.console.print(f"[yellow]No .zip files found in {ttl_dir}[/yellow]")
         return discovered
 
     sample = zip_files[:sample_size]
@@ -112,7 +110,7 @@ def scan_prefixes_from_sample(
         BarColumn(),
         MofNCompleteColumn(),
         TimeElapsedColumn(),
-        console=console,
+        console=display.console,
     ) as progress:
         task = progress.add_task("Scanning prefixes", total=len(sample))
 
@@ -151,17 +149,17 @@ def scan_prefixes_from_sample(
                                     discovered[p] = u
                                     known_uris.add(u)
             except (zipfile.BadZipFile, OSError) as exc:
-                console.print(f"[yellow]Skipping {zp.name}: {exc}[/yellow]")
+                display.console.print(f"[yellow]Skipping {zp.name}: {exc}[/yellow]")
 
             progress.advance(task)
 
     extra = len(discovered) - len(EDM_PREFIXES)
-    console.print(
+    display.console.print(
         f"[green]Prefix scan complete.[/green] "
         f"{len(EDM_PREFIXES)} canonical + {extra} extra = {len(discovered)} total"
     )
     if parse_errors:
-        console.print(
+        display.console.print(
             f"[yellow]{parse_errors} file(s) fell back to regex parsing[/yellow]"
         )
     return discovered
@@ -191,7 +189,7 @@ def _extract_zip_to_file(zip_path: Path, output_file: Path) -> int:
                                 out.write(raw_line)
                                 bytes_written += len(raw_line)
     except (zipfile.BadZipFile, OSError) as exc:
-        console.print(f"[yellow]Warning: skipping {zip_path.name}: {exc}[/yellow]")
+        display.console.print(f"[yellow]Warning: skipping {zip_path.name}: {exc}[/yellow]")
         # Clean up partial temp file
         try:
             output_file.unlink(missing_ok=True)
@@ -245,7 +243,7 @@ def merge_ttl(
 
     # 1. Resolve prefixes
     if prefixes is None:
-        console.print("[bold]Phase 1/2 · Scanning prefixes from sample…[/bold]")
+        display.console.print("[bold]Phase 1/2 · Scanning prefixes from sample…[/bold]")
         prefixes = scan_prefixes_from_sample(ttl_dir)
     prefix_block = generate_prefix_block(prefixes).encode("utf-8")
 
@@ -258,16 +256,16 @@ def merge_ttl(
             len(all_zips), len(skip_zips), len(zip_files),
         )
         if skip_zips:
-            console.print(
+            display.console.print(
                 f"[dim]Resuming: skipping {len(skip_zips):,} already-processed ZIPs[/dim]"
             )
     else:
         zip_files = all_zips
     if not zip_files:
-        console.print(f"[red]No ZIP files found in {ttl_dir}[/red]")
+        display.console.print(f"[red]No ZIP files found in {ttl_dir}[/red]")
         return MergeResult(total_zips=len(all_zips))
 
-    console.print(
+    display.console.print(
         f"[bold]Phase 2/2 · Merging {len(zip_files):,} ZIPs "
         f"(chunk ≈ {chunk_size_gb:.1f} GB, {workers} workers)…[/bold]"
     )
@@ -330,17 +328,26 @@ def merge_ttl(
 
     logger.info("Starting merge of %d ZIPs with %d workers", len(zip_files), workers)
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TextColumn("·"),
-        TimeElapsedColumn(),
-        TextColumn("·"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
+    if display.is_narrow():
+        _columns = [
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+        ]
+    else:
+        _columns = [
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn("·"),
+            TimeElapsedColumn(),
+            TextColumn("·"),
+            TimeRemainingColumn(),
+        ]
+
+    with Progress(*_columns, console=display.console) as progress:
         task = progress.add_task("Merging", total=len(zip_files))
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -376,16 +383,16 @@ def merge_ttl(
 
     # Summary
     total_bytes = sum(p.stat().st_size for p in chunk_files)
-    console.print(
+    display.console.print(
         f"\n[green]Done.[/green] {len(zip_files):,} ZIPs → "
         f"{len(chunk_files)} chunk(s) "
-        f"({total_bytes / 1e9:.1f} GB) in {output_dir}"
+        f"({total_bytes / 1e9:.1f} GB) in {display.short_path(output_dir)}"
     )
     for p in chunk_files:
-        console.print(f"  {p.name}  ({p.stat().st_size / 1e9:.2f} GB)")
+        display.console.print(f"  {p.name}  ({p.stat().st_size / 1e9:.2f} GB)")
 
     if failed_zips:
-        console.print(
+        display.console.print(
             f"\n[yellow]{len(failed_zips):,} ZIP(s) failed during merge[/yellow]"
         )
         logger.warning(
