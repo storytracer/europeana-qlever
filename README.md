@@ -275,6 +275,7 @@ This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
 |-----------|---------|
 | `src/europeana_qlever/` | Python CLI source code |
 | `tests/` | Unit tests |
+| `EDM.md` | Europeana Data Model reference — entity relationships, RDF namespaces, rights framework, and domain context |
 
 **Work directory** (specified via `-w`):
 
