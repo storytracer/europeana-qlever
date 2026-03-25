@@ -187,45 +187,66 @@ europeana-qlever -w WORK_DIR
 ├── index                      Build the QLever index from merged TTL chunks
 ├── start                      Start the QLever SPARQL server
 ├── stop                       Stop the QLever SPARQL server
-├── export [FILES...] | --all  Export SPARQL query results as Parquet files
+├── export                     Export SPARQL query results as Parquet files
+├── list-queries               List all available named queries
 └── pipeline TTL_DIR           Run the full pipeline: merge → index → start → export → stop
 ```
 
-## Pre-defined export queries
+## Export queries
 
-SPARQL queries are bundled inside the package at `src/europeana_qlever/queries/`. They are numbered for execution order:
+SPARQL queries are generated dynamically by the `QueryBuilder` class in `query.py`. There are 36 named queries in three categories:
 
-| File | Description |
-|------|-------------|
-| `01_core_metadata.sparql` | Title, creator, date, type, subject, language, rights, country, data provider |
-| `02_web_resources.sparql` | Digital representation URLs with MIME type, dimensions, file size |
-| `03_rights_and_providers.sparql` | Item-level rights statements with provider, country, completeness score |
-| `04_agents.sparql` | People/orgs with multilingual labels, dates, profession, Wikidata links |
-| `05_places.sparql` | Locations with coordinates, labels, Wikidata links |
-| `06_concepts.sparql` | SKOS concepts with hierarchy, scheme, cross-scheme matches |
+- **Base queries** (7) — core metadata, web resources, rights/providers, agents, places, concepts, timespans
+- **AI dataset queries** (5) — items_enriched (denormalized), text_corpus, image_metadata, entity_links, temporal_coverage
+- **Analytics queries** (24) — rights/type/country cross-tabs, language distribution, provider landscape, entity graph stats, and more
 
-Run all bundled queries with `--all`:
+List all available queries:
 
 ```bash
+uv run europeana-qlever -w /data/europeana list-queries
+```
+
+### Export examples
+
+```bash
+# Backward compatible — runs all 7 base queries
 uv run europeana-qlever -w /data/europeana export --all
+
+# Run specific queries by name
+uv run europeana-qlever -w /data/europeana export -q items_enriched -q open_reusable_inventory
+
+# Run all analytics queries
+uv run europeana-qlever -w /data/europeana export --query-set analytics
+
+# Run every query (base + AI + analytics = 36)
+uv run europeana-qlever -w /data/europeana export --query-set all
+
+# Filtered export: openly-licensed images from the Netherlands
+uv run europeana-qlever -w /data/europeana export -q items_enriched \
+  --country Netherlands --type IMAGE --rights-category open
+
+# Sample 10,000 items for development
+uv run europeana-qlever -w /data/europeana export -q items_enriched --limit 10000
+
+# Custom .sparql files still work
+uv run europeana-qlever -w /data/europeana export path/to/custom_query.sparql
 ```
 
-### Adding custom queries
+### Filter options
 
-You can also pass custom `.sparql` files directly:
+All filter options apply to named queries (`-q`, `--query-set`, `--all`):
 
-```sparql
-# vermeer_titles.sparql
-PREFIX dc: <http://purl.org/dc/elements/1.1/>
-PREFIX ore: <http://www.openarchives.org/ore/terms/>
-SELECT ?item ?title WHERE {
-  ?proxy ore:proxyFor ?item ;
-         dc:title ?title .
-  FILTER(CONTAINS(LCASE(?title), "vermeer"))
-}
-```
-
-Then export: `uv run europeana-qlever -w /data/europeana export vermeer_titles.sparql`
+| Option | Description |
+|--------|-------------|
+| `--country` | Filter by country (repeatable) |
+| `--type` | Filter by edm:type: TEXT, IMAGE, SOUND, VIDEO, 3D (repeatable) |
+| `--rights-category` | Filter by rights: open, restricted, permission |
+| `--provider` | Filter by dataProvider (repeatable) |
+| `--min-completeness` | Minimum completeness score (1-10) |
+| `--year-from` / `--year-to` | edm:year range |
+| `--language` | Language priority/filter (repeatable) |
+| `--dataset-name` | Filter by datasetName (repeatable) |
+| `--limit` | LIMIT clause for all queries |
 
 ## Directory layout
 
@@ -234,7 +255,7 @@ Then export: `uv run europeana-qlever -w /data/europeana export vermeer_titles.s
 | Directory | Purpose |
 |-----------|---------|
 | `src/europeana_qlever/` | Python CLI source code |
-| `src/europeana_qlever/queries/` | Bundled SPARQL export queries (`.sparql` files) |
+| `tests/` | Unit tests |
 
 **Work directory** (specified via `-w`):
 

@@ -9,13 +9,14 @@ Install & run::
 Or for a single command::
 
     uv run europeana-qlever -w ~/europeana merge /data/TTL --workers 12
-    uv run europeana-qlever -w ~/europeana export queries/core_metadata.sparql
+    uv run europeana-qlever -w ~/europeana export -q core_metadata
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -310,7 +311,7 @@ def index(ctx: click.Context, qlever_args: tuple[str, ...]):
 
 
 # ---------------------------------------------------------------------------
-# start
+# start / stop
 # ---------------------------------------------------------------------------
 
 @cli.command()
@@ -355,33 +356,63 @@ def stop(ctx: click.Context):
 
 
 # ---------------------------------------------------------------------------
-# export
+# list-queries
 # ---------------------------------------------------------------------------
 
-def _bundled_queries() -> list[Path]:
-    """Return bundled .sparql files sorted by filename (numeric prefix)."""
-    import importlib.resources as pkg_resources
+@cli.command("list-queries")
+@click.pass_context
+def list_queries_cmd(ctx: click.Context):
+    """List all available named queries grouped by category."""
+    from rich.table import Table
 
-    queries_dir = pkg_resources.files("europeana_qlever") / "queries"
-    return sorted(
-        p for p in queries_dir.iterdir()
-        if str(p).endswith(".sparql")
-    )
+    from .query import QueryBuilder
+
+    qb = QueryBuilder()
+
+    for category, queries in [
+        ("Base queries", qb.all_base_queries()),
+        ("AI dataset queries", qb.all_ai_queries()),
+        ("Analytics queries", qb.all_analytics_queries()),
+    ]:
+        table = Table(title=category)
+        table.add_column("Name", style="cyan")
+        table.add_column("Description")
+        for name in queries:
+            table.add_row(name, qb.describe(name))
+        console.print(table)
+        console.print()
 
 
-def _query_name(path: Path) -> str:
-    """Derive a query name from a .sparql filename, stripping numeric prefix."""
-    import re
-
-    stem = path.stem
-    return re.sub(r"^\d+_", "", stem)
-
+# ---------------------------------------------------------------------------
+# export
+# ---------------------------------------------------------------------------
 
 @cli.command()
 @click.argument("sparql_files", nargs=-1,
                 type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--all", "run_all", is_flag=True, default=False,
-              help="Run all bundled queries (from the package queries/ dir).")
+              help="Run all base queries (backward-compatible).")
+@click.option("-q", "--query", "query_names", multiple=True,
+              help="Named query from QueryBuilder (repeatable).")
+@click.option("--query-set", type=click.Choice(["base", "ai", "analytics", "all"]),
+              help="Run a predefined set of queries.")
+@click.option("--country", "countries", multiple=True,
+              help="Filter by country (repeatable).")
+@click.option("--type", "types", multiple=True,
+              help="Filter by edm:type (repeatable).")
+@click.option("--rights-category", type=click.Choice(["open", "restricted", "permission"]),
+              help="Filter by rights category.")
+@click.option("--provider", "providers", multiple=True,
+              help="Filter by dataProvider (repeatable).")
+@click.option("--min-completeness", type=int,
+              help="Minimum completeness score (1-10).")
+@click.option("--year-from", type=int, help="Minimum edm:year.")
+@click.option("--year-to", type=int, help="Maximum edm:year.")
+@click.option("--language", "filter_languages", multiple=True,
+              help="Language priority/filter (repeatable).")
+@click.option("--dataset-name", "dataset_names", multiple=True,
+              help="Filter by datasetName (repeatable).")
+@click.option("--limit", type=int, help="LIMIT clause for all queries.")
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
               show_default=True, help="QLever HTTP endpoint.")
 @click.option("--timeout", default=3600, show_default=True,
@@ -393,33 +424,95 @@ def export(
     ctx: click.Context,
     sparql_files: tuple[Path, ...],
     run_all: bool,
+    query_names: tuple[str, ...],
+    query_set: str | None,
+    countries: tuple[str, ...],
+    types: tuple[str, ...],
+    rights_category: str | None,
+    providers: tuple[str, ...],
+    min_completeness: int | None,
+    year_from: int | None,
+    year_to: int | None,
+    filter_languages: tuple[str, ...],
+    dataset_names: tuple[str, ...],
+    limit: int | None,
     qlever_url: str,
     timeout: int,
     skip_existing: bool,
 ):
     """Export SPARQL query results from QLever as Parquet files.
 
-    Each .sparql file becomes one TSV (streamed from QLever) and one
-    Parquet file (converted via DuckDB with zstd compression) in
-    <work-dir>/exports/.
-
-    Pass individual .sparql files as arguments, or use --all to run
-    every bundled query in order.
+    Use --all for base queries, --query-set for a category, -q for
+    specific named queries, or pass .sparql file paths directly.
+    Filter options (--country, --type, etc.) apply to named queries.
     """
     from .export import export_all
+    from .query import QueryBuilder, QueryFilters
 
-    if run_all and sparql_files:
-        raise click.UsageError("Cannot combine --all with explicit SPARQL files.")
-    if not run_all and not sparql_files:
-        raise click.UsageError("Provide .sparql files or use --all.")
+    # Validate mutually-exclusive modes
+    modes = sum([
+        bool(run_all),
+        bool(query_names),
+        bool(query_set),
+        bool(sparql_files),
+    ])
+    if modes == 0:
+        raise click.UsageError(
+            "Provide one of: --all, -q QUERY, --query-set SET, or .sparql files."
+        )
+    if modes > 1 and not (bool(query_names) and not run_all and not query_set and not sparql_files):
+        # Allow multiple -q flags, but not mixing modes
+        if not (modes == 1 or (bool(query_names) and modes == 1)):
+            raise click.UsageError(
+                "Cannot combine --all, -q, --query-set, and .sparql files."
+            )
 
-    if run_all:
-        files = _bundled_queries()
-    else:
-        files = list(sparql_files)
+    # Build filters
+    filters = QueryFilters(
+        countries=list(countries) or None,
+        types=list(types) or None,
+        rights_category=rights_category,
+        providers=list(providers) or None,
+        min_completeness=min_completeness,
+        year_from=year_from,
+        year_to=year_to,
+        languages=list(filter_languages) or None,
+        dataset_names=list(dataset_names) or None,
+        limit=limit,
+    )
+
+    qb = QueryBuilder()
+    queries: dict[str, str] = {}
+
+    if sparql_files:
+        # Legacy mode: read .sparql files directly
+        for p in sparql_files:
+            stem = p.stem
+            name = re.sub(r"^\d+_", "", stem)
+            queries[name] = p.read_text()
+    elif run_all:
+        queries = qb.all_base_queries(filters)
+    elif query_set:
+        registry = {
+            "base": qb.all_base_queries,
+            "ai": qb.all_ai_queries,
+            "analytics": qb.all_analytics_queries,
+            "all": qb.all_queries,
+        }
+        queries = registry[query_set](filters)
+    elif query_names:
+        for name in query_names:
+            method = getattr(qb, name, None)
+            if method is None or name.startswith("_") or name.startswith("all_"):
+                raise click.UsageError(
+                    f"Unknown query: '{name}'. Use `list-queries` to see available queries."
+                )
+            if name == "entity_links":
+                queries[name] = method(filters=filters)
+            else:
+                queries[name] = method(filters)
 
     exports_dir: Path = ctx.obj["exports_dir"]
-    queries = {_query_name(p): Path(p).read_text() for p in files}
 
     export_all(
         output_dir=exports_dir,
@@ -479,6 +572,7 @@ def pipeline(
     """
     from .export import export_all
     from .merge import merge_ttl, scan_prefixes_from_sample
+    from .query import QueryBuilder
 
     merged_dir: Path = ctx.obj["merged_dir"]
     index_dir: Path = ctx.obj["index_dir"]
@@ -528,12 +622,8 @@ def pipeline(
     # --- Stage 5: Export ---
     console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
 
-    files = _bundled_queries()
-    if not files:
-        console.print("[red]No bundled .sparql queries found.[/red]")
-        raise SystemExit(1)
-
-    queries = {_query_name(p): Path(p).read_text() for p in files}
+    qb = QueryBuilder()
+    queries = qb.all_base_queries()
 
     export_all(
         output_dir=exports_dir,
