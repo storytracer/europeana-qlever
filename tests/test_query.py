@@ -109,14 +109,74 @@ class TestQueryBuilder:
             assert isinstance(desc, str)
             assert len(desc) > 10
 
-    # --- Language tests ---
+    # --- Language resolution tests ---
 
-    def test_custom_languages(self):
-        qb = QueryBuilder(languages=["nl", "en"])
+    def test_default_produces_en_native_any(self):
+        """Default config: title_en, title_native, title (resolved), no extra lang columns."""
+        qb = QueryBuilder()
         sparql = qb.items_enriched()
-        assert "COALESCE" in sparql
+        assert "title_en" in sparql
+        assert "title_native" in sparql
+        assert "title_native_lang" in sparql
+        # No French/German/etc. unless user specifies
+        assert "title_fr" not in sparql
+        assert "title_de" not in sparql
 
-    def test_default_languages(self):
+    def test_parallel_columns_in_items_enriched(self):
+        """items_enriched exposes en, native, and resolved columns."""
+        qb = QueryBuilder()
+        sparql = qb.items_enriched()
+        assert "SAMPLE(" in sparql
+        for col in ["title_en", "title_native", "title_native_lang"]:
+            assert col in sparql
+
+    def test_base_query_single_resolved_column(self):
+        """core_metadata produces a single ?title column, not parallel columns."""
+        qb = QueryBuilder()
+        sparql = qb.core_metadata()
+        assert "?title" in sparql
+        # Should NOT expose title_en, title_native as separate SELECT columns
+        select_clause = sparql.split("WHERE")[0]
+        assert "title_en" not in select_clause
+        assert "title_native" not in select_clause
+
+    def test_extra_languages_add_columns(self):
+        """Extra languages produce additional columns."""
+        qb = QueryBuilder(languages=["fr", "de"])
+        sparql = qb.items_enriched()
+        assert "title_fr" in sparql
+        assert "title_de" in sparql
+
+    def test_filter_languages_override_constructor(self):
+        """QueryFilters.languages overrides constructor."""
+        qb = QueryBuilder(languages=["fr"])
+        f = QueryFilters(languages=["nl", "pl"])
+        sparql = qb.items_enriched(f)
+        assert "title_nl" in sparql
+        assert "title_pl" in sparql
+        assert "title_fr" not in sparql
+
+    def test_entity_resolution_no_vernacular(self):
+        """Entity labels resolve via en → extras → any, no vernacular."""
+        qb = QueryBuilder()
+        sparql = qb.entity_links(entity_type="agent")
+        assert "vernacular" not in sparql.lower()
+
+    def test_entity_resolution_has_wildcard(self):
+        """Entity label chain ends with a wildcard fallback."""
+        qb = QueryBuilder()
+        sparql = qb.entity_links(entity_type="agent")
+        assert "_any" in sparql
+
+    def test_vernacular_bound_from_dc_language(self):
+        """The vernacular language is bound from dc:language."""
+        qb = QueryBuilder()
+        sparql = qb.items_enriched()
+        assert "dc:language" in sparql
+        assert "vernacularLang" in sparql
+
+    def test_coalesce_in_resolved_title(self):
+        """The resolved title uses COALESCE."""
         sparql = self.qb.items_enriched()
         assert "COALESCE" in sparql
 
@@ -204,3 +264,29 @@ class TestQueryBuilder:
         sparql = qb.items_enriched()
         assert " ; " in sparql
         assert " ||| " not in sparql
+
+    # --- Description columns in AI queries ---
+
+    def test_items_enriched_has_description_columns(self):
+        sparql = self.qb.items_enriched()
+        assert "description_en" in sparql
+        assert "description_native" in sparql
+        assert "description_native_lang" in sparql
+
+    def test_text_corpus_has_parallel_columns(self):
+        sparql = self.qb.text_corpus()
+        assert "title_en" in sparql
+        assert "title_native" in sparql
+        assert "description_en" in sparql
+
+    def test_image_metadata_has_parallel_title_columns(self):
+        sparql = self.qb.image_metadata()
+        assert "title_en" in sparql
+        assert "title_native" in sparql
+
+    # --- Geolocated places uses entity resolution ---
+
+    def test_geolocated_places_uses_entity_resolution(self):
+        sparql = self.qb.geolocated_places()
+        assert "COALESCE" in sparql
+        assert "_any" in sparql

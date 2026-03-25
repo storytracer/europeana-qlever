@@ -244,9 +244,28 @@ All filter options apply to named queries (`-q`, `--query-set`, `--all`):
 | `--provider` | Filter by dataProvider (repeatable) |
 | `--min-completeness` | Minimum completeness score (1-10) |
 | `--year-from` / `--year-to` | edm:year range |
-| `--language` | Language priority/filter (repeatable) |
+| `--language` | Additional language(s) for label resolution, beyond English and the item's own language. Produces extra columns. Repeatable |
 | `--dataset-name` | Filter by datasetName (repeatable) |
 | `--limit` | LIMIT clause for all queries |
+
+### Language resolution
+
+Queries resolve multilingual labels using a parallel English + vernacular model:
+
+- **AI queries** (`items_enriched`, `text_corpus`, `image_metadata`) produce parallel
+  columns: `title_en` (English), `title_native` (item's own language from `dc:language`),
+  `title_native_lang` (ISO 639 code), and `title` (resolved best-available).
+- **Base queries** (`core_metadata`) produce a single resolved column for backward
+  compatibility.
+- **Entity labels** (creator names, subject terms) resolve via English → any available.
+
+Add more languages with `--language`:
+
+```bash
+uv run europeana-qlever -w /data/europeana export -q items_enriched --language fr --language de
+```
+
+This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
 
 ## Directory layout
 

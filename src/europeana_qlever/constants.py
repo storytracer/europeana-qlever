@@ -99,7 +99,11 @@ RIGHTS_LABELS: dict[str, str] = {
 
 SEPARATOR = " ||| "
 
-DEFAULT_LANGUAGES: list[str] = ["en", "fr", "de", "es", "it", "nl", ""]
+# Language resolution strategy:
+# - Item properties: English + vernacular (from dc:language) queried in parallel,
+#   plus optional user-specified extras, with a wildcard fallback.
+# - Entity labels: English + optional extras + wildcard fallback.
+# Users add languages via QueryBuilder(languages=[...]) or --language CLI options.
 
 # ---------------------------------------------------------------------------
 # QLever index settings (JSON blob for the Qleverfile)

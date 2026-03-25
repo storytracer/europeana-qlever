@@ -12,7 +12,6 @@ import textwrap
 from dataclasses import dataclass, field
 
 from .constants import (
-    DEFAULT_LANGUAGES,
     EDM_PREFIXES,
     OPEN_RIGHTS_URIS,
     PERMISSION_RIGHTS_URIS,
@@ -37,7 +36,7 @@ class QueryFilters:
     min_completeness: int | None = None
     year_from: int | None = None
     year_to: int | None = None
-    languages: list[str] | None = None
+    languages: list[str] | None = None      # Additional languages beyond English + vernacular
     dataset_names: list[str] | None = None
     limit: int | None = None
     offset: int | None = None
@@ -57,8 +56,15 @@ _DESCRIPTIONS: dict[str, str] = {
     "concepts": "SKOS concepts with hierarchy, scheme, and cross-scheme matches",
     "timespans": "Time periods with multilingual labels, begin/end dates, and Wikidata links",
     # AI dataset queries
-    "items_enriched": "Fully denormalized one-row-per-item with GROUP_CONCAT for multi-valued properties",
-    "text_corpus": "NLP training corpus: title and description in target language(s)",
+    "items_enriched": (
+        "Fully denormalized one-row-per-item export with parallel English and "
+        "vernacular title/description columns, resolved entity labels, and "
+        "GROUP_CONCAT for multi-valued properties"
+    ),
+    "text_corpus": (
+        "NLP training corpus with parallel English and vernacular title/description "
+        "columns, filtered to items that have a title"
+    ),
     "image_metadata": "Computer vision training: IMAGE items with technical metadata from web resources",
     "entity_links": "owl:sameAs cross-reference table for contextual entities",
     "temporal_coverage": "Items with normalised edm:year from the Europeana proxy",
@@ -102,7 +108,17 @@ class QueryBuilder:
         languages: list[str] | None = None,
         separator: str = SEPARATOR,
     ) -> None:
-        self.languages = languages or list(DEFAULT_LANGUAGES)
+        """
+        Parameters
+        ----------
+        languages
+            Additional languages to query beyond English and the item's
+            vernacular. For example, ``["fr", "de"]`` produces extra columns
+            ``title_fr``, ``title_de`` and adds them to the COALESCE chain.
+        separator
+            Delimiter for GROUP_CONCAT multi-valued columns.
+        """
+        self.extra_languages = languages or []
         self.separator = separator
 
     # -----------------------------------------------------------------------
@@ -227,30 +243,114 @@ class QueryBuilder:
             parts.append(f"OFFSET {f.offset}")
         return "\n".join(parts)
 
-    def _lang_priority(
-        self, var_base: str, prop_uri: str, subject_var: str
-    ) -> str:
-        """Generate nested OPTIONAL + COALESCE for language priority.
+    # -- Language resolution helpers -----------------------------------------
 
-        Produces OPTIONAL blocks for each language in priority order and a
-        BIND(COALESCE(...)) to pick the best available.
+    def _extra_langs(self, filters: QueryFilters | None) -> list[str]:
+        """Return effective extra languages, preferring filter override."""
+        if filters and filters.languages:
+            return list(filters.languages)
+        return list(self.extra_languages)
+
+    def _bind_vernacular(self, proxy_var: str = "?proxy") -> str:
+        """Bind the item's vernacular language from dc:language."""
+        return f"OPTIONAL {{ {proxy_var} dc:language ?_vernacularLang }}"
+
+    def _lang_resolve_item(
+        self,
+        prop_uri: str,
+        subject_var: str,
+        base_name: str,
+        extra_langs: list[str] | None = None,
+        vernacular_var: str = "?_vernacularLang",
+    ) -> tuple[str, dict[str, str]]:
+        """Generate parallel language columns for an item-level property.
+
+        Returns (sparql_fragment, var_map) where var_map maps logical names
+        to SPARQL variable names:
+            "resolved", "en", "native", "native_lang", and any extras.
         """
-        optionals: list[str] = []
+        langs = extra_langs if extra_langs is not None else self.extra_languages
+        parts: list[str] = []
         coalesce_vars: list[str] = []
-        for i, lang in enumerate(self.languages):
-            v = f"?_{var_base}_{i}"
+        var_map: dict[str, str] = {}
+
+        # 1. English
+        en_var = f"?_{base_name}_en"
+        parts.append(f'OPTIONAL {{ {subject_var} {prop_uri} {en_var} . FILTER(LANG({en_var}) = "en") }}')
+        coalesce_vars.append(en_var)
+        var_map["en"] = en_var
+
+        # 2. Vernacular (item's own language)
+        native_var = f"?_{base_name}_native"
+        native_lang_var = f"?_{base_name}_native_lang"
+        parts.append(
+            f"OPTIONAL {{ {subject_var} {prop_uri} {native_var} . "
+            f"FILTER(LANG({native_var}) = {vernacular_var}) }}"
+        )
+        parts.append(f"BIND(LANG({native_var}) AS {native_lang_var})")
+        coalesce_vars.append(native_var)
+        var_map["native"] = native_var
+        var_map["native_lang"] = native_lang_var
+
+        # 3. Extra languages
+        for lang in langs:
+            safe = lang.replace("-", "_")
+            v = f"?_{base_name}_{safe}"
+            parts.append(f'OPTIONAL {{ {subject_var} {prop_uri} {v} . FILTER(LANG({v}) = "{lang}") }}')
             coalesce_vars.append(v)
-            if lang == "":
-                optionals.append(
-                    f'OPTIONAL {{ {subject_var} {prop_uri} {v} . FILTER(LANG({v}) = "") }}'
-                )
-            else:
-                optionals.append(
-                    f'OPTIONAL {{ {subject_var} {prop_uri} {v} . FILTER(LANG({v}) = "{lang}") }}'
-                )
+            var_map[lang] = v
+
+        # 4. Wildcard fallback
+        any_var = f"?_{base_name}_any"
+        parts.append(f"OPTIONAL {{ {subject_var} {prop_uri} {any_var} }}")
+        coalesce_vars.append(any_var)
+
+        # Resolved column
+        resolved_var = f"?_{base_name}_resolved"
         coalesce = ", ".join(coalesce_vars)
-        bind = f"BIND(COALESCE({coalesce}) AS ?{var_base})"
-        return "\n  ".join(optionals) + f"\n  {bind}"
+        parts.append(f"BIND(COALESCE({coalesce}) AS {resolved_var})")
+        var_map["resolved"] = resolved_var
+
+        return "\n  ".join(parts), var_map
+
+    def _lang_resolve_entity(
+        self,
+        prop_uri: str,
+        subject_var: str,
+        output_var: str,
+        extra_langs: list[str] | None = None,
+    ) -> str:
+        """Language resolution for entity labels: en → extras → any.
+
+        No vernacular concept for entities. Returns SPARQL fragment ending
+        with a BIND to output_var.
+        """
+        langs = extra_langs if extra_langs is not None else self.extra_languages
+        parts: list[str] = []
+        coalesce_vars: list[str] = []
+        base = output_var.lstrip("?")
+
+        # English
+        en_var = f"?_{base}_en"
+        parts.append(f'OPTIONAL {{ {subject_var} {prop_uri} {en_var} . FILTER(LANG({en_var}) = "en") }}')
+        coalesce_vars.append(en_var)
+
+        # Extras
+        for lang in langs:
+            safe = lang.replace("-", "_")
+            v = f"?_{base}_{safe}"
+            parts.append(f'OPTIONAL {{ {subject_var} {prop_uri} {v} . FILTER(LANG({v}) = "{lang}") }}')
+            coalesce_vars.append(v)
+
+        # Wildcard
+        any_var = f"?_{base}_any"
+        parts.append(f"OPTIONAL {{ {subject_var} {prop_uri} {any_var} }}")
+        coalesce_vars.append(any_var)
+
+        parts.append(f"BIND(COALESCE({', '.join(coalesce_vars)}) AS {output_var})")
+        return "\n  ".join(parts)
+
+    # -- Entity resolution ---------------------------------------------------
 
     def _resolve_entity(
         self,
@@ -260,14 +360,26 @@ class QueryBuilder:
         uri_var: str,
         wd_var: str,
         entity_class: str,
+        extra_langs: list[str] | None = None,
     ) -> str:
-        """Generate IRI/literal branching + label resolution for entity refs."""
+        """Generate IRI/literal branching + label resolution for entity refs.
+
+        Uses _lang_resolve_entity for the skos:prefLabel lookup.
+        """
         ref_var = f"{label_var}Ref"
         lbl_var = f"{label_var}Lbl"
         lit_var = f"{label_var}Lit"
+
+        # Build entity label resolution inside the OPTIONAL
+        label_resolve = self._lang_resolve_entity(
+            "skos:prefLabel", ref_var, lbl_var, extra_langs=extra_langs,
+        )
+        # Indent label_resolve for nesting inside OPTIONAL
+        label_lines = label_resolve.replace("\n  ", "\n    ")
+
         return textwrap.dedent(f"""\
             OPTIONAL {{ {subject_var} {prop_uri} {ref_var} . FILTER(isIRI({ref_var}))
-              {ref_var} skos:prefLabel {lbl_var} . FILTER(LANG({lbl_var}) = "en" || LANG({lbl_var}) = "")
+              {label_lines}
               OPTIONAL {{ {ref_var} owl:sameAs {wd_var} . FILTER(STRSTARTS(STR({wd_var}), "http://www.wikidata.org/entity/")) }}
               BIND({ref_var} AS {uri_var})
             }}
@@ -299,15 +411,22 @@ class QueryBuilder:
         eagg = self._europeana_aggregation()
         filter_block = self._build_filters(f)
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
+
+        vernacular = self._bind_vernacular()
+        title_fragment, title_vars = self._lang_resolve_item(
+            "dc:title", "?proxy", "title", extra_langs=extras,
+        )
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?item ?title ?creator ?date ?type ?subject ?language
+            SELECT ?item ({title_vars["resolved"]} AS ?title) ?creator ?date ?type ?subject ?language
                    ?rights ?country ?dataProvider
             WHERE {{
               {proxy}
-              ?proxy dc:title ?title ;
-                     edm:type ?type .
+              {vernacular}
+              ?proxy edm:type ?type .
+              {title_fragment}
               OPTIONAL {{ ?proxy dc:creator ?creator }}
               OPTIONAL {{ ?proxy dc:date ?date }}
               OPTIONAL {{ ?proxy dc:subject ?subject }}
@@ -467,15 +586,52 @@ class QueryBuilder:
         sep = self.separator
         filter_block = self._build_filters(f, year_var="?_year")
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
 
-        title_priority = self._lang_priority("title", "dc:title", "?proxy")
-        desc_priority = self._lang_priority("desc", "dc:description", "?proxy")
+        vernacular = self._bind_vernacular()
+        title_fragment, title_vars = self._lang_resolve_item(
+            "dc:title", "?proxy", "title", extra_langs=extras,
+        )
+        desc_fragment, desc_vars = self._lang_resolve_item(
+            "dc:description", "?proxy", "desc", extra_langs=extras,
+        )
+
+        # Build SELECT columns for title
+        title_select = [
+            f"(SAMPLE({title_vars['resolved']}) AS ?title)",
+            f"(SAMPLE({title_vars['en']}) AS ?title_en)",
+            f"(SAMPLE({title_vars['native']}) AS ?title_native)",
+            f"(SAMPLE({title_vars['native_lang']}) AS ?title_native_lang)",
+        ]
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            title_select.append(f"(SAMPLE({title_vars[lang]}) AS ?title_{safe})")
+
+        # Build SELECT columns for description
+        desc_select = [
+            f"(SAMPLE({desc_vars['resolved']}) AS ?description)",
+            f"(SAMPLE({desc_vars['en']}) AS ?description_en)",
+            f"(SAMPLE({desc_vars['native']}) AS ?description_native)",
+            f"(SAMPLE({desc_vars['native_lang']}) AS ?description_native_lang)",
+        ]
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            desc_select.append(f"(SAMPLE({desc_vars[lang]}) AS ?description_{safe})")
+
+        title_cols = "\n  ".join(title_select)
+        desc_cols = "\n  ".join(desc_select)
+
+        # Creator entity resolution with language chain
+        creator_label_resolve = self._lang_resolve_entity(
+            "skos:prefLabel", "?_creatorRef", "?_creatorLabel", extra_langs=extras,
+        )
+        creator_label_indented = creator_label_resolve.replace("\n  ", "\n    ")
 
         return textwrap.dedent(f"""\
             {prefixes}
             SELECT ?item
-              (SAMPLE(?_title) AS ?title)
-              (SAMPLE(?_desc) AS ?description)
+              {title_cols}
+              {desc_cols}
               (GROUP_CONCAT(DISTINCT ?_creator; SEPARATOR="{sep}") AS ?creators)
               (GROUP_CONCAT(DISTINCT ?_creatorURI; SEPARATOR="{sep}") AS ?creator_uris)
               (GROUP_CONCAT(DISTINCT ?_subject; SEPARATOR="{sep}") AS ?subjects)
@@ -494,12 +650,13 @@ class QueryBuilder:
               (SAMPLE(?_datasetName) AS ?dataset_name)
             WHERE {{
               {proxy}
+              {vernacular}
               ?proxy edm:type ?_type .
-              {title_priority}
-              {desc_priority}
+              {title_fragment}
+              {desc_fragment}
               OPTIONAL {{
                 ?proxy dc:creator ?_creatorRef . FILTER(isIRI(?_creatorRef))
-                ?_creatorRef skos:prefLabel ?_creatorLabel . FILTER(LANG(?_creatorLabel) = "en" || LANG(?_creatorLabel) = "")
+                {creator_label_indented}
                 BIND(STR(?_creatorRef) AS ?_creatorURI)
               }}
               OPTIONAL {{ ?proxy dc:creator ?_creatorLit . FILTER(isLiteral(?_creatorLit)) }}
@@ -537,26 +694,47 @@ class QueryBuilder:
         eagg = self._europeana_aggregation()
         filter_block = self._build_filters(f)
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
 
-        # Build language filter for title/description
-        lang_filter_parts = []
-        for lang in self.languages:
-            if lang == "":
-                lang_filter_parts.append('LANG(?title) = ""')
-            else:
-                lang_filter_parts.append(f'LANG(?title) = "{lang}"')
-        lang_filter = " || ".join(lang_filter_parts)
+        vernacular = self._bind_vernacular()
+        title_fragment, title_vars = self._lang_resolve_item(
+            "dc:title", "?proxy", "title", extra_langs=extras,
+        )
+        desc_fragment, desc_vars = self._lang_resolve_item(
+            "dc:description", "?proxy", "desc", extra_langs=extras,
+        )
+
+        # Build extra title columns
+        extra_title_cols = ""
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            extra_title_cols += f"\n       {title_vars[lang]} AS ?title_{safe}"
+
+        # Build extra desc columns
+        extra_desc_cols = ""
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            extra_desc_cols += f"\n       {desc_vars[lang]} AS ?description_{safe}"
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?item ?title ?description ?language ?type ?rights ?country ?dataProvider
+            SELECT ?item
+                   ({title_vars["resolved"]} AS ?title)
+                   ({title_vars["en"]} AS ?title_en)
+                   ({title_vars["native"]} AS ?title_native)
+                   ({title_vars["native_lang"]} AS ?title_native_lang){extra_title_cols}
+                   ({desc_vars["resolved"]} AS ?description)
+                   ({desc_vars["en"]} AS ?description_en)
+                   ({desc_vars["native"]} AS ?description_native)
+                   ({desc_vars["native_lang"]} AS ?description_native_lang){extra_desc_cols}
+                   ?language ?type ?rights ?country ?dataProvider
             WHERE {{
               {proxy}
-              ?proxy dc:title ?title .
-              FILTER({lang_filter})
+              {vernacular}
               ?proxy edm:type ?type .
-              OPTIONAL {{ ?proxy dc:description ?description .
-                FILTER(LANG(?description) = LANG(?title)) }}
+              {title_fragment}
+              FILTER(BOUND({title_vars["resolved"]}))
+              {desc_fragment}
               OPTIONAL {{ ?proxy dc:language ?language }}
               {agg}
               ?agg edm:rights ?rights ;
@@ -576,16 +754,34 @@ class QueryBuilder:
         eagg = self._europeana_aggregation()
         filter_block = self._build_filters(f)
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
+
+        vernacular = self._bind_vernacular()
+        title_fragment, title_vars = self._lang_resolve_item(
+            "dc:title", "?proxy", "title", extra_langs=extras,
+        )
+
+        # Build extra title columns for SELECT
+        extra_title_cols = ""
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            extra_title_cols += f"\n       {title_vars[lang]} AS ?title_{safe}"
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?item ?title ?rights ?country ?dataProvider
+            SELECT ?item
+                   ({title_vars["resolved"]} AS ?title)
+                   ({title_vars["en"]} AS ?title_en)
+                   ({title_vars["native"]} AS ?title_native)
+                   ({title_vars["native_lang"]} AS ?title_native_lang){extra_title_cols}
+                   ?rights ?country ?dataProvider
                    ?url ?mime ?width ?height ?bytes
             WHERE {{
               {proxy}
-              ?proxy dc:title ?title ;
-                     edm:type ?type .
+              {vernacular}
+              ?proxy edm:type ?type .
               FILTER(?type = "IMAGE")
+              {title_fragment}
               {agg}
               ?agg edm:rights ?rights ;
                    edm:dataProvider ?dataProvider ;
@@ -607,6 +803,7 @@ class QueryBuilder:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "skos", "owl"})
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
 
         type_map = {
             "agent": "edm:Agent",
@@ -616,14 +813,17 @@ class QueryBuilder:
         }
         rdf_type = type_map.get(entity_type, "edm:Agent")
 
+        label_resolve = self._lang_resolve_entity(
+            "skos:prefLabel", "?entity", "?label", extra_langs=extras,
+        )
+
         return textwrap.dedent(f"""\
             {prefixes}
             SELECT ?entity ?label ?sameAs
             WHERE {{
               ?entity a {rdf_type} ;
-                      skos:prefLabel ?label ;
                       owl:sameAs ?sameAs .
-              FILTER(LANG(?label) = "en" || LANG(?label) = "")
+              {label_resolve}
             }}
             {limit_block}
         """).strip()
@@ -1006,16 +1206,20 @@ class QueryBuilder:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "skos", "wgs84_pos", "owl"})
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
+
+        name_resolve = self._lang_resolve_entity(
+            "skos:prefLabel", "?place", "?name", extra_langs=extras,
+        )
 
         return textwrap.dedent(f"""\
             {prefixes}
             SELECT ?place ?name ?lat ?lon ?wikidata
             WHERE {{
               ?place a edm:Place ;
-                     skos:prefLabel ?name ;
                      wgs84_pos:lat ?lat ;
                      wgs84_pos:long ?lon .
-              FILTER(LANG(?name) = "en" || LANG(?name) = "")
+              {name_resolve}
               OPTIONAL {{
                 ?place owl:sameAs ?wikidata .
                 FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))

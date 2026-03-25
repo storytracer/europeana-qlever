@@ -409,7 +409,8 @@ def list_queries_cmd(ctx: click.Context):
 @click.option("--year-from", type=int, help="Minimum edm:year.")
 @click.option("--year-to", type=int, help="Maximum edm:year.")
 @click.option("--language", "filter_languages", multiple=True,
-              help="Language priority/filter (repeatable).")
+              help="Additional language(s) for label resolution beyond English "
+                   "and the item's own language. Produces extra columns. Repeatable.")
 @click.option("--dataset-name", "dataset_names", multiple=True,
               help="Filter by datasetName (repeatable).")
 @click.option("--limit", type=int, help="LIMIT clause for all queries.")

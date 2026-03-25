@@ -87,6 +87,8 @@ The provider proxy (identified by `FILTER NOT EXISTS { ?proxy edm:europeanaProxy
 
 `QueryBuilder` generates all SPARQL queries via composable fragment methods (`_provider_proxy()`, `_aggregation()`, `_rights_category_bind()`, etc.). `QueryFilters` is a dataclass with optional filter fields (countries, types, rights_category, year_from/to, limit, etc.) that are injected as FILTER clauses. Rights URIs are classified into "open", "restricted", and "permission" categories using STRSTARTS/CONTAINS patterns in the `_rights_category_bind()` fragment. Constants for rights URI lists and labels live in `constants.py`.
 
+**Language resolution** uses a parallel English + vernacular model. Item-level properties (dc:title, dc:description) produce separate English and vernacular columns plus a COALESCE-resolved fallback. The vernacular language is bound from `dc:language` on the provider proxy. Entity labels (skos:prefLabel) use a simpler chain: en → user extras → any. Users add languages via `QueryBuilder(languages=[...])` or the `--language` CLI flag, which produces extra output columns. Base queries expose only the resolved column; AI queries expose all parallel columns.
+
 ## Conventions
 
 - All data-processing logic is in the Python CLI. No bash scripts for pipeline steps.
