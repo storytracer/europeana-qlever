@@ -5,16 +5,17 @@ Strategy
 1. **scan_prefixes** — Sample a subset of ZIPs and use rdflib to parse
    individual TTL files, collecting every @prefix declaration. This catches
    provider-specific prefixes not in the canonical EDM set.
-2. **merge** — Process all ZIPs in parallel (ThreadPoolExecutor, I/O-bound).
-   Each worker extracts TTL content from a ZIP using a fast two-phase
-   approach: line-by-line header stripping then bulk binary copying.
+2. **merge** — Process all ZIPs in parallel (ProcessPoolExecutor, CPU-bound
+   due to rdflib validation). Each worker reads TTL entries, validates them
+   with rdflib, strips prefix/base declarations, and writes valid content
+   to a temp file. Invalid entries are skipped and logged.
    A dedicated writer thread assembles temp files into chunked output
    files, each prepended with the master prefix block.
 
-Memory efficiency: workers write to temp files (bulk byte copies), the
-writer reads temp files in 8 MB chunks. A semaphore bounds concurrent
-in-flight work, and an optional ResourceMonitor provides graduated
-backpressure when system memory is under pressure.
+Memory efficiency: workers write to temp files, the writer reads temp files
+in 8 MB chunks. A semaphore bounds concurrent in-flight work, and an
+optional ResourceMonitor provides graduated backpressure when system
+memory is under pressure.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ import shutil
 import threading
 import time
 import zipfile
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import rdflib
@@ -43,7 +44,7 @@ from rich.progress import (
 )
 
 from . import display
-from .constants import DEFAULT_BULK_READ_SIZE, DEFAULT_COPY_BUF_SIZE, EDM_PREFIXES
+from .constants import DEFAULT_COPY_BUF_SIZE, EDM_PREFIXES
 from .state import MergeResult
 
 logger = logging.getLogger(__name__)
@@ -53,14 +54,6 @@ _PREFIX_RE = re.compile(r"^@(?:prefix|base)\s", re.IGNORECASE)
 
 # Fallback regex to extract prefix declarations without full rdflib parse
 _PREFIX_DECL_RE = re.compile(r"@prefix\s+(\S+):\s+<([^>]+)>")
-
-# Byte markers for safety check during bulk copy
-_PREFIX_MARKER = b"@prefix"
-_BASE_MARKER = b"@base"
-_STRAY_AT_MARKER = b"\n@ "
-
-# Defense-in-depth: catch lines starting with @ that aren't @prefix or @base
-_BAD_AT_LINE_RE = re.compile(r"^@(?!prefix\s|base\s)\S", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -174,135 +167,78 @@ def scan_prefixes_from_sample(
 
 
 # ---------------------------------------------------------------------------
-# Fallback: line-by-line filtering for entries with stray prefix lines
-# ---------------------------------------------------------------------------
-
-def _should_filter_line(line: str) -> bool:
-    """Return True if *line* should be stripped from merged output.
-
-    Catches @prefix/@base declarations **and** malformed @ directives
-    (e.g. ``@ spa .``) as a defense-in-depth safety net.
-    """
-    return bool(_PREFIX_RE.match(line) or _BAD_AT_LINE_RE.match(line))
-
-
-def _fallback_line_filter(
-    initial_chunk: bytes,
-    entry: io.BufferedIOBase,
-    out: io.BufferedWriter,
-) -> int:
-    """Filter prefix/base/bad-@ lines from *initial_chunk* + rest of *entry*.
-
-    Called when the bulk copy phase detects a stray ``@prefix``, ``@base``,
-    or suspicious ``@ `` marker in a read chunk. Switches to line-by-line
-    filtering for the remainder of that ZIP entry.
-
-    Returns bytes written.
-    """
-    bytes_written = 0
-    # Process the chunk that triggered the fallback
-    for raw_line in initial_chunk.split(b"\n"):
-        if not raw_line.strip():
-            continue
-        line = raw_line.decode("utf-8", errors="replace")
-        if _should_filter_line(line):
-            continue
-        # Re-add newline stripped by split
-        data = raw_line + b"\n"
-        out.write(data)
-        bytes_written += len(data)
-    # Continue line-by-line for the rest of the entry
-    for raw_line in entry:
-        line = raw_line.decode("utf-8", errors="replace")
-        if line.strip() and not _should_filter_line(line):
-            out.write(raw_line)
-            bytes_written += len(raw_line)
-    return bytes_written
-
-
-# ---------------------------------------------------------------------------
-# Single-ZIP extraction (worker function — two-phase: header then bulk)
+# Single-ZIP extraction with inline rdflib validation
 # ---------------------------------------------------------------------------
 
 def _extract_zip_to_file(
     zip_path: Path,
     output_file: Path,
-    bulk_read_size: int = DEFAULT_BULK_READ_SIZE,
-    skip_entries: frozenset[str] = frozenset(),
-) -> int:
-    """Extract all TTL from *zip_path*, stripping prefix/base declarations.
+) -> tuple[int, int]:
+    """Extract validated TTL from *zip_path*, skipping invalid entries.
 
-    Uses a two-phase approach per TTL entry:
-      1. **Header phase**: read lines one at a time, skipping @prefix/@base.
-      2. **Bulk phase**: once past the header, copy raw bytes in chunks
-         (no decode, no regex) for maximum throughput.
+    Each ``.ttl`` entry is read into memory, parsed with rdflib to validate
+    Turtle syntax, and only written if parsing succeeds. Invalid entries are
+    logged and skipped. MD5 checksum is verified if a companion ``.md5sum``
+    file exists.
 
-    If a stray @prefix/@base is detected during bulk copy, falls back to
-    line-by-line filtering for the remainder of that entry.
-
-    Entries whose names appear in *skip_entries* (populated from the
-    validation manifest) are silently skipped.
-
-    Returns bytes written, or 0 on error.
+    Returns ``(bytes_written, invalid_count)``.
     """
+    from .validate import validate_entry, verify_one_checksum
+
+    # Verify checksum first
+    _name, cs_ok, cs_err = verify_one_checksum(zip_path)
+    if cs_ok is False:
+        logger.warning("Checksum failed for %s: %s — skipping ZIP", zip_path.name, cs_err)
+        return (0, 0)
+
     bytes_written = 0
+    invalid_count = 0
+
     try:
         with open(output_file, "wb") as out:
             with zipfile.ZipFile(zip_path) as zf:
                 for name in zf.namelist():
                     if not name.endswith(".ttl"):
                         continue
-                    if name in skip_entries:
-                        logger.debug(
-                            "Skipping invalid entry %s:%s (validation)",
-                            zip_path.name, name,
+
+                    try:
+                        data = zf.read(name)
+                    except Exception as exc:
+                        invalid_count += 1
+                        logger.warning(
+                            "Cannot read %s/%s: %s", zip_path.name, name, exc,
                         )
                         continue
-                    with zf.open(name) as entry:
-                        # Phase 1: skip prefix/base header lines
-                        for raw_line in entry:
-                            line = raw_line.decode("utf-8", errors="replace")
-                            if not line.strip():
-                                continue
-                            if _PREFIX_RE.match(line):
-                                continue
-                            # First data line — write it and switch to bulk
-                            out.write(raw_line)
-                            bytes_written += len(raw_line)
-                            break
-                        # Phase 2: bulk copy remainder (no decode, no regex)
-                        while True:
-                            chunk = entry.read(bulk_read_size)
-                            if not chunk:
-                                break
-                            if (
-                                _PREFIX_MARKER in chunk
-                                or _BASE_MARKER in chunk
-                                or _STRAY_AT_MARKER in chunk
-                                or chunk.startswith(b"@ ")
-                            ):
-                                # Rare: stray directive in data — fall back
-                                logger.debug(
-                                    "Stray @prefix/@base/@ in %s:%s, "
-                                    "falling back to line-by-line",
-                                    zip_path.name, name,
-                                )
-                                bytes_written += _fallback_line_filter(
-                                    chunk, entry, out,
-                                )
-                                break
-                            out.write(chunk)
-                            bytes_written += len(chunk)
+
+                    # Validate with rdflib
+                    issue = validate_entry(name, data)
+                    if issue is not None:
+                        invalid_count += 1
+                        logger.warning(
+                            "Invalid TTL %s/%s: %s",
+                            zip_path.name, name, issue.error,
+                        )
+                        continue
+
+                    # Strip prefix/base headers and write
+                    for raw_line in data.split(b"\n"):
+                        line = raw_line.decode("utf-8", errors="replace")
+                        if not line.strip():
+                            continue
+                        if _PREFIX_RE.match(line):
+                            continue
+                        out.write(raw_line + b"\n")
+                        bytes_written += len(raw_line) + 1
+
     except (zipfile.BadZipFile, OSError) as exc:
-        display.console.print(
-            f"[yellow]Warning: skipping {zip_path.name}: {exc}[/yellow]"
-        )
-        # Clean up partial temp file
+        logger.warning("Skipping %s: %s", zip_path.name, exc)
         try:
             output_file.unlink(missing_ok=True)
         except OSError:
             pass
-    return bytes_written
+        return (0, invalid_count)
+
+    return (bytes_written, invalid_count)
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +253,7 @@ def _writer_loop(
     chunk_files: list[Path],
     processed_zips: list[str],
     failed_zips: list[str],
+    skipped_entries_total: list[int],
     sem: threading.Semaphore,
     progress_cb: callable | None,
     dashboard: object | None,
@@ -325,8 +262,8 @@ def _writer_loop(
 ) -> None:
     """Background writer that assembles temp files into chunk output files.
 
-    Reads ``(tmp_path, zip_path, bytes_written)`` tuples from *write_q*.
-    A ``None`` sentinel signals shutdown.
+    Reads ``(tmp_path, zip_path, bytes_written, invalid_count)`` tuples
+    from *write_q*. A ``None`` sentinel signals shutdown.
     """
     chunk_num = 0
     current_size = 0
@@ -347,12 +284,13 @@ def _writer_loop(
             item = write_q.get()
             if item is None:
                 break
-            tmp_path, zip_path, bytes_written = item
+            tmp_path, zip_path, bytes_written, invalid_count = item
+
+            skipped_entries_total[0] += invalid_count
 
             if bytes_written > 0 and tmp_path.exists():
                 with open(tmp_path, "rb") as src:
                     shutil.copyfileobj(src, fh, length=copy_buf_size)
-                    # Track size from file stat (faster than counting bytes)
                     current_size += tmp_path.stat().st_size
                 tmp_path.unlink()
                 processed_zips.append(zip_path.name)
@@ -398,15 +336,20 @@ def merge_ttl(
     prefixes: dict[str, str] | None = None,
     monitor: object | None = None,
     skip_zips: frozenset[str] = frozenset(),
-    manifest: dict | None = None,
     dashboard: object | None = None,
-    bulk_read_size: int = DEFAULT_BULK_READ_SIZE,
     copy_buf_size: int = DEFAULT_COPY_BUF_SIZE,
     backpressure_thresholds: tuple[float, float, float] = (70.0, 80.0, 90.0),
     backpressure_sleeps: tuple[float, float] = (0.1, 0.5),
     writer_join_timeout: int = 300,
 ) -> MergeResult:
     """Merge all TTL ZIPs into chunked output files with parallel extraction.
+
+    Each TTL entry is validated with rdflib before writing. Invalid entries
+    are skipped and logged. Checksum verification is performed per-ZIP
+    when companion ``.md5sum`` files exist.
+
+    Uses ProcessPoolExecutor for true parallelism (rdflib parsing is
+    CPU-bound and would be serialised by the GIL with threads).
 
     Parameters
     ----------
@@ -417,7 +360,7 @@ def merge_ttl(
     chunk_size_gb : float
         Approximate maximum size of each output chunk in gigabytes.
     workers : int
-        Number of parallel threads for ZIP extraction.
+        Number of parallel processes for ZIP extraction + validation.
     prefixes : dict or None
         Prefix map to use. If ``None``, runs ``scan_prefixes_from_sample``
         automatically.
@@ -426,9 +369,6 @@ def merge_ttl(
         and memory is high, submissions are throttled or paused.
     skip_zips : frozenset[str]
         ZIP filenames to skip (for resuming a previous merge).
-    manifest : dict or None
-        Validation manifest mapping ``{zip_name: ZipReport}``. When provided,
-        invalid entries within each ZIP are skipped during extraction.
     dashboard : Dashboard or None
         Optional dashboard for live progress updates.
 
@@ -483,6 +423,7 @@ def merge_ttl(
     # Shared state (written only by writer thread)
     processed_zips: list[str] = list(skip_zips)
     failed_zips: list[str] = []
+    skipped_entries_total: list[int] = [0]  # mutable container for writer thread
 
     # Writer queue + thread
     write_q: queue.Queue = queue.Queue(maxsize=max(4, workers * 2))
@@ -529,7 +470,7 @@ def merge_ttl(
             target=_writer_loop,
             args=(
                 write_q, chunk_size_bytes, prefix_block, output_dir,
-                chunk_files, processed_zips, failed_zips,
+                chunk_files, processed_zips, failed_zips, skipped_entries_total,
                 sem, _progress_cb, dashboard, writer_errors, copy_buf_size,
             ),
             name="merge-writer",
@@ -537,15 +478,15 @@ def merge_ttl(
         )
         writer_thread.start()
 
-        def _on_future_done(fut: Future[int], tmp: Path, zp: Path) -> None:
+        def _on_future_done(fut: Future, tmp: Path, zp: Path) -> None:
             """Callback fired when a worker completes — enqueues for writer."""
             try:
-                bw = fut.result()
+                bw, inv = fut.result()
             except Exception:
-                bw = 0
-            write_q.put((tmp, zp, bw))
+                bw, inv = 0, 0
+            write_q.put((tmp, zp, bw, inv))
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
             for i, zp in enumerate(zip_files):
                 # Graduated backpressure based on memory usage
                 if monitor is not None and hasattr(monitor, "memory_pct"):
@@ -567,18 +508,8 @@ def merge_ttl(
                     raise writer_errors[0]
 
                 tmp_path = tmp_dir / f"{i:06d}.tmp"
-                # Build per-ZIP skip set from validation manifest
-                zip_skip_entries: frozenset[str] = frozenset()
-                if manifest is not None:
-                    zip_report = manifest.get(zp.name)
-                    if zip_report is not None:
-                        zip_skip_entries = frozenset(
-                            e.entry_name
-                            for e in zip_report.invalid_entries
-                        )
                 future = pool.submit(
-                    _extract_zip_to_file, zp, tmp_path, bulk_read_size,
-                    zip_skip_entries,
+                    _extract_zip_to_file, zp, tmp_path,
                 )
                 future.add_done_callback(
                     lambda fut, t=tmp_path, z=zp: _on_future_done(fut, t, z)
@@ -617,16 +548,23 @@ def merge_ttl(
             len(failed_zips), len(zip_files),
         )
 
+    total_skipped = skipped_entries_total[0]
+    if total_skipped:
+        display.console.print(
+            f"[yellow]{total_skipped:,} invalid TTL entries skipped[/yellow]"
+        )
+
     result = MergeResult(
         chunk_files=chunk_files,
         total_zips=len(all_zips),
         processed_zips=processed_zips,
         failed_zips=failed_zips,
         total_bytes=total_bytes,
+        skipped_entries=total_skipped,
     )
     logger.info(
-        "Merge complete: %d chunks, %d processed, %d failed, %.1f GB",
+        "Merge complete: %d chunks, %d processed, %d failed, %d skipped entries, %.1f GB",
         len(chunk_files), len(processed_zips), len(failed_zips),
-        total_bytes / 1e9,
+        total_skipped, total_bytes / 1e9,
     )
     return result

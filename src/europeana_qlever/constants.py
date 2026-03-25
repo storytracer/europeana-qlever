@@ -129,7 +129,6 @@ DEFAULT_COPY_BUF_SIZE = 8_388_608  # 8 MB
 # Fallback defaults for pipeline state and logging
 # ---------------------------------------------------------------------------
 STATE_FILENAME = "pipeline_state.json"
-VALIDATE_MANIFEST = "validate_manifest.json"
 LOG_FILENAME = "pipeline.log"
 DEFAULT_LOG_MAX_BYTES = 50_000_000  # 50 MB
 DEFAULT_LOG_BACKUP_COUNT = 3

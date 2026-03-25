@@ -1,9 +1,8 @@
-"""Tests for the validate module: TTL validation, checksums, manifest I/O."""
+"""Tests for the validate module: TTL validation and checksums."""
 
 from __future__ import annotations
 
 import hashlib
-import json
 import zipfile
 from pathlib import Path
 
@@ -12,11 +11,9 @@ import pytest
 from europeana_qlever.validate import (
     EntryIssue,
     ZipReport,
-    _validate_entry,
+    validate_entry,
     _validate_zip,
-    _verify_one_checksum,
-    load_manifest,
-    save_manifest,
+    verify_one_checksum,
     verify_checksums,
 )
 
@@ -85,22 +82,22 @@ def _make_md5sum(zip_path: Path) -> Path:
 
 class TestEntryValidation:
     def test_valid_entry_returns_none(self):
-        assert _validate_entry("good.ttl", VALID_TTL) is None
+        assert validate_entry("good.ttl", VALID_TTL) is None
 
     def test_malformed_at_line_invalid(self):
-        result = _validate_entry("bad_at.ttl", INVALID_TTL_BAD_AT)
+        result = validate_entry("bad_at.ttl", INVALID_TTL_BAD_AT)
         assert result is not None
         assert isinstance(result, EntryIssue)
         assert result.entry_name == "bad_at.ttl"
         assert result.error  # non-empty error message
 
     def test_encoding_error_invalid(self):
-        result = _validate_entry("bad_utf8.ttl", INVALID_TTL_BAD_UTF8)
+        result = validate_entry("bad_utf8.ttl", INVALID_TTL_BAD_UTF8)
         assert result is not None
         assert "UTF-8" in result.error or "codec" in result.error.lower()
 
     def test_unclosed_quote_invalid(self):
-        result = _validate_entry("unclosed.ttl", INVALID_TTL_UNCLOSED_QUOTE)
+        result = validate_entry("unclosed.ttl", INVALID_TTL_UNCLOSED_QUOTE)
         assert result is not None
 
     def test_valid_language_tags(self):
@@ -112,7 +109,7 @@ class TestEntryValidation:
     dc:title "Titulo"@spa, "Title"@en ;
     dc:description "A test"@en .
 """
-        assert _validate_entry("lang.ttl", ttl) is None
+        assert validate_entry("lang.ttl", ttl) is None
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +168,7 @@ class TestChecksum:
     def test_matching_checksum(self, tmp_path):
         zp = _make_zip(tmp_path, "test.zip", {"a.ttl": VALID_TTL})
         _make_md5sum(zp)
-        name, ok, error = _verify_one_checksum(zp)
+        name, ok, error = verify_one_checksum(zp)
         assert name == "test.zip"
         assert ok is True
         assert error is None
@@ -180,13 +177,13 @@ class TestChecksum:
         zp = _make_zip(tmp_path, "test.zip", {"a.ttl": VALID_TTL})
         md5_path = zp.with_suffix(".zip.md5sum")
         md5_path.write_text("0000000000000000000000000000dead  test.zip\n")
-        name, ok, error = _verify_one_checksum(zp)
+        name, ok, error = verify_one_checksum(zp)
         assert ok is False
         assert "expected" in error
 
     def test_missing_checksum_file(self, tmp_path):
         zp = _make_zip(tmp_path, "test.zip", {"a.ttl": VALID_TTL})
-        name, ok, error = _verify_one_checksum(zp)
+        name, ok, error = verify_one_checksum(zp)
         assert ok is None
         assert error is None
 
@@ -200,63 +197,3 @@ class TestChecksum:
         assert len(ok) == 5
         assert len(failed) == 0
         assert len(missing) == 0
-
-
-# ---------------------------------------------------------------------------
-# Manifest I/O
-# ---------------------------------------------------------------------------
-
-
-class TestManifest:
-    def test_roundtrip(self, tmp_path):
-        reports = [
-            ZipReport(
-                zip_name="bad.zip",
-                checksum_ok=True,
-                invalid_entries=[
-                    EntryIssue(entry_name="err.ttl", error="parse error"),
-                ],
-                total_entries=10,
-                valid_count=9,
-                invalid_count=1,
-            ),
-            ZipReport(
-                zip_name="good.zip",
-                checksum_ok=True,
-                total_entries=5,
-                valid_count=5,
-                invalid_count=0,
-            ),
-        ]
-        path = tmp_path / "manifest.json"
-        save_manifest(reports, path)
-        loaded = load_manifest(path)
-
-        # Only non-clean ZIPs stored
-        assert "bad.zip" in loaded
-        assert "good.zip" not in loaded
-
-        bad = loaded["bad.zip"]
-        assert bad.invalid_count == 1
-        assert bad.invalid_entries[0].entry_name == "err.ttl"
-        assert bad.invalid_entries[0].error == "parse error"
-
-    def test_valid_zips_omitted(self, tmp_path):
-        reports = [
-            ZipReport(
-                zip_name="allgood.zip",
-                checksum_ok=True,
-                total_entries=100,
-                valid_count=100,
-                invalid_count=0,
-            ),
-        ]
-        path = tmp_path / "manifest.json"
-        save_manifest(reports, path)
-
-        raw = json.loads(path.read_text())
-        assert len(raw["zips"]) == 0
-
-    def test_missing_manifest_returns_empty(self, tmp_path):
-        loaded = load_manifest(tmp_path / "nonexistent.json")
-        assert loaded == {}

@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Total pipeline stages
-_STAGE_NAMES = ["Validate", "Merge", "Qleverfile", "Index", "Start", "Export"]
+_STAGE_NAMES = ["Merge", "Qleverfile", "Index", "Start", "Export"]
 _DEFAULT_MAX_LOG_LINES = 12
 
 

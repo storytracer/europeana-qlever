@@ -1,29 +1,21 @@
 """Validate Europeana TTL ZIPs: checksum verification and rdflib-based parsing.
 
-The validation stage runs **before** merge in the pipeline. It:
+Core validation functions used by both the standalone ``validate`` command
+(read-only pre-flight check) and the ``merge`` command (inline validation
+during extraction). The merge worker imports :func:`validate_entry` and
+:func:`verify_one_checksum` to validate each TTL entry before writing.
 
-1. Verifies MD5 checksums of all ZIP files against companion ``.md5sum`` files
-   to ensure download integrity.
-2. Parses every TTL entry inside each ZIP with rdflib to catch *any* Turtle
-   syntax error. Invalid entries are logged and excluded from the merge via a
-   persisted manifest file.
-
-CPU-bound rdflib parsing is parallelised with :class:`ProcessPoolExecutor`
-to avoid GIL bottlenecks. Checksum verification uses
-:class:`ThreadPoolExecutor` (I/O-bound).
+The standalone ``validate`` command uses :func:`validate_all` to scan all
+ZIPs and print a summary report without writing any files.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-import os
-import tempfile
 import zipfile
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 
 import rdflib
@@ -38,7 +30,6 @@ from rich.progress import (
 )
 
 from . import display
-from .constants import VALIDATE_MANIFEST
 from .state import ValidateResult
 
 logger = logging.getLogger(__name__)
@@ -62,13 +53,6 @@ class EntryIssue:
     entry_name: str
     error: str
 
-    def to_dict(self) -> dict:
-        return {"entry_name": self.entry_name, "error": self.error}
-
-    @classmethod
-    def from_dict(cls, d: dict) -> EntryIssue:
-        return cls(entry_name=d["entry_name"], error=d["error"])
-
 
 @dataclass
 class ZipReport:
@@ -81,33 +65,6 @@ class ZipReport:
     total_entries: int = 0
     valid_count: int = 0
     invalid_count: int = 0
-
-    def to_dict(self) -> dict:
-        d: dict = {"zip_name": self.zip_name}
-        if self.checksum_ok is not None:
-            d["checksum_ok"] = self.checksum_ok
-        if self.checksum_error:
-            d["checksum_error"] = self.checksum_error
-        if self.invalid_entries:
-            d["invalid_entries"] = [e.to_dict() for e in self.invalid_entries]
-        d["total_entries"] = self.total_entries
-        d["valid_count"] = self.valid_count
-        d["invalid_count"] = self.invalid_count
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict) -> ZipReport:
-        return cls(
-            zip_name=d["zip_name"],
-            checksum_ok=d.get("checksum_ok"),
-            checksum_error=d.get("checksum_error"),
-            invalid_entries=[
-                EntryIssue.from_dict(e) for e in d.get("invalid_entries", [])
-            ],
-            total_entries=d.get("total_entries", 0),
-            valid_count=d.get("valid_count", 0),
-            invalid_count=d.get("invalid_count", 0),
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -132,15 +89,8 @@ def _find_checksum_file(zip_path: Path) -> Path | None:
 
 
 def _parse_md5sum_file(path: Path) -> str:
-    """Extract the hex MD5 hash from a checksum file.
-
-    Supports formats:
-    - ``<hash>  <filename>``
-    - ``<hash> *<filename>``
-    - bare ``<hash>``
-    """
+    """Extract the hex MD5 hash from a checksum file."""
     text = path.read_text().strip()
-    # Take the first whitespace-delimited token
     return text.split()[0].lower()
 
 
@@ -156,8 +106,11 @@ def _compute_md5(path: Path) -> str:
     return h.hexdigest()
 
 
-def _verify_one_checksum(zip_path: Path) -> tuple[str, bool | None, str | None]:
-    """Verify a single ZIP's checksum. Returns (zip_name, ok, error_msg)."""
+def verify_one_checksum(zip_path: Path) -> tuple[str, bool | None, str | None]:
+    """Verify a single ZIP's checksum. Returns (zip_name, ok, error_msg).
+
+    Returns ``(name, None, None)`` if no checksum file exists.
+    """
     cs_file = _find_checksum_file(zip_path)
     if cs_file is None:
         return (zip_path.name, None, None)
@@ -182,16 +135,7 @@ def verify_checksums(
 ) -> tuple[list[str], list[tuple[str, str]], list[str]]:
     """Verify MD5 checksums for all ZIPs against companion .md5sum files.
 
-    Uses ThreadPoolExecutor (I/O-bound).
-
-    Returns
-    -------
-    ok : list[str]
-        ZIP filenames whose checksums matched.
-    failed : list[tuple[str, str]]
-        (zip_name, error_message) for checksum mismatches.
-    missing : list[str]
-        ZIP filenames with no companion checksum file.
+    Returns (ok_names, failed: [(name, error)], missing_names).
     """
     ok: list[str] = []
     failed: list[tuple[str, str]] = []
@@ -199,7 +143,7 @@ def verify_checksums(
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_verify_one_checksum, zp): zp for zp in zip_files
+            pool.submit(verify_one_checksum, zp): zp for zp in zip_files
         }
         for fut in as_completed(futures):
             name, result, error = fut.result()
@@ -216,16 +160,15 @@ def verify_checksums(
 
 
 # ---------------------------------------------------------------------------
-# TTL entry validation (runs in worker process)
+# TTL entry validation
 # ---------------------------------------------------------------------------
 
 
-def _validate_entry(entry_name: str, data: bytes) -> EntryIssue | None:
+def validate_entry(entry_name: str, data: bytes) -> EntryIssue | None:
     """Parse a single TTL entry with rdflib. Returns None if valid.
 
     If rdflib raises any exception during parsing, returns an
-    :class:`EntryIssue` with the error message. The entry will be skipped
-    during merge.
+    :class:`EntryIssue` with the error message.
     """
     try:
         text = data.decode("utf-8")
@@ -234,7 +177,6 @@ def _validate_entry(entry_name: str, data: bytes) -> EntryIssue | None:
 
     try:
         g = rdflib.Graph()
-        # Suppress noisy rdflib warnings (e.g. malformed xsd:hexBinary)
         for logger_name in _RDFLIB_LOGGERS:
             logging.getLogger(logger_name).setLevel(logging.CRITICAL)
         g.parse(data=text, format="turtle")
@@ -245,16 +187,12 @@ def _validate_entry(entry_name: str, data: bytes) -> EntryIssue | None:
 
 
 # ---------------------------------------------------------------------------
-# Per-ZIP validation (runs in worker process)
+# Per-ZIP validation (for standalone validate command)
 # ---------------------------------------------------------------------------
 
 
 def _validate_zip(zip_path: Path) -> ZipReport:
-    """Open a ZIP and validate each .ttl entry with rdflib.
-
-    Called by ProcessPoolExecutor — must be picklable (top-level function
-    with Path argument).
-    """
+    """Open a ZIP and validate each .ttl entry with rdflib."""
     zip_name = zip_path.name
     issues: list[EntryIssue] = []
     total = 0
@@ -274,7 +212,7 @@ def _validate_zip(zip_path: Path) -> ZipReport:
                     )
                     continue
 
-                issue = _validate_entry(name, data)
+                issue = validate_entry(name, data)
                 if issue is None:
                     valid += 1
                 else:
@@ -300,101 +238,28 @@ def _validate_zip(zip_path: Path) -> ZipReport:
 
 
 # ---------------------------------------------------------------------------
-# Manifest I/O
-# ---------------------------------------------------------------------------
-
-
-def save_manifest(reports: list[ZipReport], path: Path) -> None:
-    """Atomically write the validation manifest.
-
-    Only ZIPs with invalid entries or checksum failures are stored.
-    Valid-only ZIPs are implicitly valid (absent from manifest).
-    """
-    manifest: dict = {
-        "version": 1,
-        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "zips": {},
-    }
-    for r in reports:
-        if r.invalid_entries or r.checksum_ok is False:
-            manifest["zips"][r.zip_name] = r.to_dict()
-
-    data = json.dumps(manifest, indent=2).encode()
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".manifest_", suffix=".tmp")
-    try:
-        os.write(fd, data)
-        os.close(fd)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
-def load_manifest(path: Path) -> dict[str, ZipReport]:
-    """Load a validation manifest, returning {zip_name: ZipReport}.
-
-    Returns an empty dict if the file is missing or corrupt.
-    """
-    try:
-        raw = json.loads(path.read_text())
-        return {
-            name: ZipReport.from_dict(d)
-            for name, d in raw.get("zips", {}).items()
-        }
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        return {}
-
-
-# ---------------------------------------------------------------------------
-# Orchestrator
+# Standalone validate orchestrator (read-only, no manifest)
 # ---------------------------------------------------------------------------
 
 
 def validate_all(
     ttl_dir: Path,
-    output_dir: Path,
     *,
     workers: int = 4,
     verify_checksums_flag: bool = True,
-    dashboard: object | None = None,
 ) -> ValidateResult:
     """Run full validation: checksums first, then rdflib TTL parsing.
 
-    Parameters
-    ----------
-    ttl_dir : Path
-        Directory containing Europeana .zip files.
-    output_dir : Path
-        Where to write the validation manifest.
-    workers : int
-        Parallel workers for both checksum (threads) and TTL (processes).
-    verify_checksums_flag : bool
-        Whether to verify MD5 checksums.
-    dashboard : Dashboard or None
-        Optional dashboard for live progress updates.
-
-    Returns
-    -------
-    ValidateResult
-        Summary of validation outcomes.
+    This is the read-only pre-flight check used by the standalone
+    ``validate`` CLI command. It does not write any files — just reports.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
     zip_files = sorted(ttl_dir.glob("*.zip"))
 
     if not zip_files:
         display.console.print(f"[red]No ZIP files found in {ttl_dir}[/red]")
         return ValidateResult()
 
-    # ------------------------------------------------------------------
-    # Step 1: Checksum verification (all ZIPs, upfront)
-    # ------------------------------------------------------------------
+    # Step 1: Checksum verification
     checksum_ok_names: list[str] = []
     checksum_failed: list[tuple[str, str]] = []
     checksum_missing: list[str] = []
@@ -445,39 +310,17 @@ def validate_all(
         display.console.print("[dim]Checksum verification skipped[/dim]")
         checksum_missing = [zp.name for zp in zip_files]
 
-    # Filter out checksum-failed ZIPs before TTL validation
     zips_to_validate = [
         zp for zp in zip_files if zp.name not in checksum_failed_set
     ]
 
-    # ------------------------------------------------------------------
-    # Step 2: TTL validation (ProcessPoolExecutor, CPU-bound)
-    # ------------------------------------------------------------------
+    # Step 2: TTL validation
     display.console.print(
         f"[bold]Step 2/2 · Validating TTL in "
         f"{len(zips_to_validate):,} ZIPs ({workers} workers)…[/bold]"
     )
 
     reports: list[ZipReport] = []
-
-    # Pre-populate reports for checksum-failed ZIPs
-    for name, err in checksum_failed:
-        reports.append(
-            ZipReport(
-                zip_name=name,
-                checksum_ok=False,
-                checksum_error=err,
-                invalid_entries=[
-                    EntryIssue(
-                        entry_name="<archive>",
-                        error=f"Skipped: checksum failure ({err})",
-                    )
-                ],
-                total_entries=0,
-                valid_count=0,
-                invalid_count=0,
-            )
-        )
 
     if display.is_narrow():
         _columns = [
@@ -507,25 +350,12 @@ def validate_all(
             }
             for fut in as_completed(futures):
                 report = fut.result()
-                # Attach checksum info
-                if report.zip_name in {n for n in checksum_ok_names}:
+                if report.zip_name in set(checksum_ok_names):
                     report.checksum_ok = True
-                elif report.zip_name in {n for n in checksum_missing}:
+                elif report.zip_name in set(checksum_missing):
                     report.checksum_ok = None
                 reports.append(report)
                 progress.advance(task)
-
-                if dashboard is not None:
-                    try:
-                        dashboard.advance()
-                    except Exception:
-                        pass
-
-    # ------------------------------------------------------------------
-    # Save manifest and build result
-    # ------------------------------------------------------------------
-    manifest_path = output_dir / VALIDATE_MANIFEST
-    save_manifest(reports, manifest_path)
 
     total_entries = sum(r.total_entries for r in reports)
     valid_entries = sum(r.valid_count for r in reports)
@@ -539,11 +369,9 @@ def validate_all(
     )
     if checksum_failed:
         display.console.print(
-            f"  {len(checksum_failed)} checksum failure(s) "
-            f"(ZIPs excluded from merge)"
+            f"  {len(checksum_failed)} checksum failure(s)"
         )
 
-    # Log individual invalid entries
     for r in reports:
         for issue in r.invalid_entries:
             logger.warning(
@@ -551,7 +379,7 @@ def validate_all(
                 r.zip_name, issue.entry_name, issue.error,
             )
 
-    result = ValidateResult(
+    return ValidateResult(
         total_zips=len(zip_files),
         total_entries=total_entries,
         valid_entries=valid_entries,
@@ -559,14 +387,4 @@ def validate_all(
         checksum_ok=len(checksum_ok_names),
         checksum_failed=[name for name, _ in checksum_failed],
         checksum_missing=len(checksum_missing),
-        manifest_path=manifest_path,
     )
-    logger.info(
-        "Validation complete: %d ZIPs, %d entries (%d valid, %d invalid), "
-        "%d checksum OK, %d failed, %d missing",
-        result.total_zips, result.total_entries,
-        result.valid_entries, result.invalid_entries,
-        result.checksum_ok, len(result.checksum_failed),
-        result.checksum_missing,
-    )
-    return result

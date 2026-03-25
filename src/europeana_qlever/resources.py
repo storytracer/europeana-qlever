@@ -83,14 +83,13 @@ class ResourceBudget:
     # ==================================================================
 
     def merge_workers(self) -> int:
-        """Worker count for the I/O-bound merge stage.
+        """Worker count for the merge stage (ProcessPoolExecutor).
 
-        Heuristic: ``cpu * 2`` (I/O-bound benefits from over-subscription),
-        capped by available memory (~150 MB per worker) and a ceiling of 32.
-        Floor of 4.
+        Heuristic: ``cpu_count`` (CPU-bound rdflib validation in processes),
+        bounded by available memory (~250 MB per process). Floor of 4.
         """
-        by_cpu = min(self.cpu_count * 2, 32)
-        by_mem = int(self.available_memory_gb / 0.15)
+        by_cpu = self.cpu_count
+        by_mem = int(self.available_memory_gb / 0.25)
         return max(4, min(by_cpu, by_mem))
 
     def merge_semaphore(self, workers: int) -> int:
