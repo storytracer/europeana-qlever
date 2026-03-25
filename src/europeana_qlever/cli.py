@@ -122,8 +122,8 @@ def scan_prefixes_cmd(ttl_dir: Path, sample_size: int, files_per_zip: int):
 @click.argument("ttl_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--chunk-size", default=5.0, show_default=True,
               help="Target chunk file size in GB.")
-@click.option("--workers", default=4, show_default=True,
-              help="Parallel extraction threads.")
+@click.option("--workers", default=0, show_default=True,
+              help="Parallel extraction threads (0 = auto-detect).")
 @click.option("--sample-size", default=50, show_default=True,
               help="ZIPs to sample for prefix discovery.")
 @click.pass_context
@@ -139,13 +139,21 @@ def merge(
     Reads ZIPs from TTL_DIR and writes merged chunks to
     <work-dir>/ttl-merged/. Strips per-record @prefix/@base declarations,
     prepends a unified prefix block, and splits output into ~CHUNK_SIZE GB
-    files. Uses WORKERS parallel threads for ZIP extraction.
+    files. Uses WORKERS parallel threads for ZIP extraction (0 = auto-detect
+    based on available CPUs and memory).
     """
     from .merge import merge_ttl, scan_prefixes_from_sample
     from .monitor import ResourceMonitor
+    from .resources import ResourceBudget
 
     merged_dir: Path = ctx.obj["merged_dir"]
     work_dir: Path = ctx.obj["work_dir"]
+
+    # Auto-detect workers if not specified
+    if workers == 0:
+        budget = ResourceBudget.detect(work_dir)
+        workers = budget.merge_workers()
+        display.console.print(f"[dim]Auto-detected {workers} workers[/dim]")
 
     prefixes = scan_prefixes_from_sample(ttl_dir, sample_size=sample_size)
     with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=display.console) as monitor:
@@ -440,6 +448,8 @@ def list_queries_cmd(ctx: click.Context):
               help="Per-query timeout in seconds.")
 @click.option("--skip-existing", is_flag=True, default=False,
               help="Skip queries whose .parquet already exists.")
+@click.option("--duckdb-memory", default="auto", show_default=True,
+              help="DuckDB memory budget (e.g. '4GB' or 'auto').")
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -460,6 +470,7 @@ def export(
     qlever_url: str,
     timeout: int,
     skip_existing: bool,
+    duckdb_memory: str,
 ):
     """Export SPARQL query results from QLever as Parquet files.
 
@@ -469,6 +480,7 @@ def export(
     """
     from .export import export_all
     from .query import QueryBuilder, QueryFilters
+    from .resources import ResourceBudget
 
     # Validate mutually-exclusive modes
     modes = sum([
@@ -535,13 +547,18 @@ def export(
 
     exports_dir: Path = ctx.obj["exports_dir"]
 
+    # Resolve DuckDB memory
+    if duckdb_memory == "auto":
+        budget = ResourceBudget.detect(ctx.obj["work_dir"])
+        duckdb_memory = budget.duckdb_memory()
+
     result = export_all(
         output_dir=exports_dir,
         queries=queries,
         qlever_url=qlever_url,
         timeout=timeout,
         skip_existing=skip_existing,
-        memory_limit="4GB",
+        memory_limit=duckdb_memory,
         temp_directory=exports_dir / ".duckdb_tmp",
     )
     if result.failed:
@@ -558,17 +575,19 @@ def export(
               default=None, help="Path to qlever-code/build/ with native binaries.")
 @click.option("--docker", is_flag=True, default=False,
               help="Use Docker runtime instead of native binaries.")
-@click.option("--workers", default=4, show_default=True,
-              help="Parallel extraction threads for merge.")
+@click.option("--workers", default=0, show_default=True,
+              help="Parallel extraction threads for merge (0 = auto-detect).")
 @click.option("--chunk-size", default=5.0, show_default=True,
               help="Target chunk file size in GB.")
 @click.option("--port", default=QLEVER_PORT, show_default=True)
-@click.option("--stxxl-memory", default="8G", show_default=True,
-              help="RAM for external sorting during index build.")
-@click.option("--query-memory", default="10G", show_default=True,
-              help="RAM budget for query execution.")
-@click.option("--cache-size", default="5G", show_default=True,
-              help="Query result cache size.")
+@click.option("--stxxl-memory", default="auto", show_default=True,
+              help="RAM for external sorting during index build (or 'auto').")
+@click.option("--query-memory", default="auto", show_default=True,
+              help="RAM budget for query execution (or 'auto').")
+@click.option("--cache-size", default="auto", show_default=True,
+              help="Query result cache size (or 'auto').")
+@click.option("--duckdb-memory", default="auto", show_default=True,
+              help="DuckDB memory budget for export (e.g. '4GB' or 'auto').")
 @click.option("--timeout", default=3600, show_default=True,
               help="Per-query timeout in seconds for export.")
 @click.option("--skip-merge", is_flag=True, help="Skip merge if chunks already exist.")
@@ -587,6 +606,7 @@ def pipeline(
     stxxl_memory: str,
     query_memory: str,
     cache_size: str,
+    duckdb_memory: str,
     timeout: int,
     skip_merge: bool,
     skip_index: bool,
@@ -599,14 +619,18 @@ def pipeline(
     --skip-index). Progress is checkpointed to pipeline_state.json so that
     a failed run can be resumed by re-running the same command.
 
-    Use --force to ignore the checkpoint and start fresh.
+    Resource allocation (workers, memory) is auto-detected from your system
+    unless overridden with explicit values. Use --force to ignore the
+    checkpoint and start fresh.
     """
     import logging
 
+    from .dashboard import Dashboard
     from .export import export_all
     from .merge import merge_ttl, scan_prefixes_from_sample
     from .monitor import ResourceMonitor
     from .query import QueryBuilder
+    from .resources import ResourceBudget
     from .state import PipelineState
 
     log = logging.getLogger(__name__)
@@ -615,6 +639,20 @@ def pipeline(
     merged_dir: Path = ctx.obj["merged_dir"]
     index_dir: Path = ctx.obj["index_dir"]
     exports_dir: Path = ctx.obj["exports_dir"]
+
+    # -- Auto-detect resource budget --
+    budget = ResourceBudget.detect(work_dir)
+
+    if workers == 0:
+        workers = budget.merge_workers()
+    if stxxl_memory == "auto":
+        stxxl_memory = budget.qlever_stxxl()
+    if query_memory == "auto":
+        query_memory = budget.qlever_query_memory()
+    if cache_size == "auto":
+        cache_size = budget.qlever_cache()
+    if duckdb_memory == "auto":
+        duckdb_memory = budget.duckdb_memory()
 
     # -- Checkpoint state --
     state_path = work_dir / STATE_FILENAME
@@ -626,105 +664,121 @@ def pipeline(
     log.info("Pipeline started (force=%s)", force)
 
     display.console.rule("[bold]Europeana → QLever → Parquet Pipeline[/bold]")
+    display.console.print(budget.summary_table())
 
     server_started = False
     failures: list[str] = []
 
     try:
         with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=display.console) as monitor:
+            with Dashboard(monitor) as dash:
 
-            # --- Stage 1: Merge ---
-            chunks = sorted(merged_dir.glob("europeana_*.ttl"))
-            if state.is_complete("merge"):
-                display.console.print("[dim]Merge already complete (from checkpoint)[/dim]\n")
-            elif skip_merge and chunks:
-                display.console.print(
-                    f"[dim]Skipping merge ({len(chunks)} chunks already in "
-                    f"{merged_dir})[/dim]\n"
-                )
-                state.mark_complete("merge")
-            else:
-                display.console.rule("[bold cyan]Stage 1 · Merge TTL[/bold cyan]")
-                prefixes = scan_prefixes_from_sample(ttl_dir)
+                # --- Stage 1: Merge ---
+                chunks = sorted(merged_dir.glob("europeana_*.ttl"))
+                if state.is_complete("merge"):
+                    dash.log("Merge already complete (from checkpoint)")
+                    dash.complete_stage()
+                elif skip_merge and chunks:
+                    dash.log(f"Skipping merge ({len(chunks)} chunks already exist)")
+                    state.mark_complete("merge")
+                    dash.complete_stage()
+                else:
+                    dash.set_stage("Merge", total=None)
+                    dash.log("Scanning prefixes from sample…")
+                    prefixes = scan_prefixes_from_sample(ttl_dir)
 
-                # Resume: skip ZIPs already processed in a prior run
-                merge_stage = state.get_stage("merge")
-                skip_zips = frozenset(merge_stage.processed_zips)
+                    # Resume: skip ZIPs already processed in a prior run
+                    merge_stage = state.get_stage("merge")
+                    skip_zips = frozenset(merge_stage.processed_zips)
 
-                merge_result = merge_ttl(
-                    ttl_dir, merged_dir,
-                    chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
-                    monitor=monitor, skip_zips=skip_zips,
-                )
-                state.update_merge(merge_result)
-                state.save(state_path)
+                    # Update stage with actual total after prefix scan
+                    all_zips = sorted(ttl_dir.glob("*.zip"))
+                    remaining = len(all_zips) - len(skip_zips)
+                    dash.set_stage("Merge", total=remaining)
+                    dash.set_info("workers", str(workers))
 
-                if merge_result.failed_zips:
-                    msg = (
-                        f"Merge: {len(merge_result.failed_zips)} ZIP(s) failed "
-                        f"({merge_result.error_rate:.1%} error rate)"
+                    merge_result = merge_ttl(
+                        ttl_dir, merged_dir,
+                        chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
+                        monitor=monitor, skip_zips=skip_zips, dashboard=dash,
                     )
-                    display.console.print(f"[yellow]{msg}[/yellow]")
-                    log.warning(msg)
-                    failures.append(msg)
+                    state.update_merge(merge_result)
+                    state.save(state_path)
+                    dash.complete_stage()
 
-            # --- Stage 2: Write Qleverfile ---
-            if not state.is_complete("write_qleverfile"):
-                display.console.rule("[bold cyan]Stage 2 · Write Qleverfile[/bold cyan]")
-                ctx.invoke(
-                    write_qleverfile_cmd,
-                    qlever_bin=qlever_bin,
-                    docker=docker,
-                    port=port,
-                    stxxl_memory=stxxl_memory,
-                    query_memory=query_memory,
-                    cache_size=cache_size,
+                    if merge_result.failed_zips:
+                        msg = (
+                            f"Merge: {len(merge_result.failed_zips)} ZIP(s) failed "
+                            f"({merge_result.error_rate:.1%} error rate)"
+                        )
+                        dash.log(msg)
+                        log.warning(msg)
+                        failures.append(msg)
+
+                # --- Stage 2: Write Qleverfile ---
+                if not state.is_complete("write_qleverfile"):
+                    dash.set_stage("Qleverfile")
+                    ctx.invoke(
+                        write_qleverfile_cmd,
+                        qlever_bin=qlever_bin,
+                        docker=docker,
+                        port=port,
+                        stxxl_memory=stxxl_memory,
+                        query_memory=query_memory,
+                        cache_size=cache_size,
+                    )
+                    state.mark_complete("write_qleverfile")
+                    state.save(state_path)
+                    dash.complete_stage()
+                else:
+                    dash.log("Qleverfile already written (from checkpoint)")
+                    dash.complete_stage()
+
+                # --- Stage 3: Index ---
+                index_exists = any(index_dir.glob("europeana.index.*"))
+                if state.is_complete("index"):
+                    dash.log("Index already built (from checkpoint)")
+                    dash.complete_stage()
+                elif skip_index and index_exists:
+                    dash.log(f"Skipping index (files exist in {index_dir})")
+                    state.mark_complete("index")
+                    state.save(state_path)
+                    dash.complete_stage()
+                else:
+                    dash.set_stage("Index")
+                    ctx.invoke(index, qlever_args=())
+                    state.mark_complete("index")
+                    state.save(state_path)
+                    dash.complete_stage()
+
+                # --- Stage 4: Start server ---
+                dash.set_stage("Start")
+                ctx.invoke(start)
+                server_started = True
+                dash.complete_stage()
+
+                # --- Stage 5: Export ---
+                qb = QueryBuilder()
+                queries = qb.all_base_queries()
+                dash.set_stage("Export", total=len(queries))
+
+                export_result = export_all(
+                    output_dir=exports_dir,
+                    queries=queries,
+                    qlever_url=f"http://localhost:{port}",
+                    timeout=timeout,
+                    skip_existing=True,
+                    memory_limit=duckdb_memory,
+                    temp_directory=exports_dir / ".duckdb_tmp",
+                    dashboard=dash,
                 )
-                state.mark_complete("write_qleverfile")
+                state.update_export(export_result)
                 state.save(state_path)
-            else:
-                display.console.print("[dim]Qleverfile already written (from checkpoint)[/dim]\n")
+                dash.complete_stage()
 
-            # --- Stage 3: Index ---
-            index_exists = any(index_dir.glob("europeana.index.*"))
-            if state.is_complete("index"):
-                display.console.print("[dim]Index already built (from checkpoint)[/dim]\n")
-            elif skip_index and index_exists:
-                display.console.print(f"[dim]Skipping index (files exist in {index_dir})[/dim]\n")
-                state.mark_complete("index")
-                state.save(state_path)
-            else:
-                display.console.rule("[bold cyan]Stage 3 · Build Index[/bold cyan]")
-                ctx.invoke(index, qlever_args=())
-                state.mark_complete("index")
-                state.save(state_path)
-
-            # --- Stage 4: Start server ---
-            display.console.rule("[bold cyan]Stage 4 · Start Server[/bold cyan]")
-            ctx.invoke(start)
-            server_started = True
-
-            # --- Stage 5: Export ---
-            display.console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
-
-            qb = QueryBuilder()
-            queries = qb.all_base_queries()
-
-            export_result = export_all(
-                output_dir=exports_dir,
-                queries=queries,
-                qlever_url=f"http://localhost:{port}",
-                timeout=timeout,
-                skip_existing=True,  # enables natural resume
-                memory_limit="4GB",
-                temp_directory=exports_dir / ".duckdb_tmp",
-            )
-            state.update_export(export_result)
-            state.save(state_path)
-
-            if export_result.failed:
-                for name, err in export_result.failed.items():
-                    failures.append(f"Export {name}: {err}")
+                if export_result.failed:
+                    for name, err in export_result.failed.items():
+                        failures.append(f"Export {name}: {err}")
 
     except Exception as exc:
         log.exception("Pipeline failed")
@@ -735,7 +789,7 @@ def pipeline(
         # Always stop server if we started it
         if server_started:
             try:
-                display.console.rule("[bold cyan]Stage 6 · Stop Server[/bold cyan]")
+                display.console.rule("[bold cyan]Stop Server[/bold cyan]")
                 ctx.invoke(stop)
             except Exception:
                 log.warning("Failed to stop server during cleanup")

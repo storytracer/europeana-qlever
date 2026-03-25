@@ -1,4 +1,4 @@
-"""Background resource monitor for memory, disk, and process tracking.
+"""Background resource monitor for memory, disk, CPU, and process tracking.
 
 Runs as a daemon thread, sampling system resources at a configurable
 interval.  Logs every sample to a CSV file and prints Rich console
@@ -31,8 +31,15 @@ logger = logging.getLogger(__name__)
 from .constants import (
     MONITOR_CRITICAL_MEMORY_PCT,
     MONITOR_INTERVAL_SECONDS,
+    MONITOR_INTERVAL_ACTIVE_SECONDS,
     MONITOR_WARN_MEMORY_PCT,
 )
+
+_CSV_HEADER = [
+    "timestamp", "rss_mb", "available_mb", "total_mb",
+    "memory_pct", "disk_free_gb", "disk_total_gb",
+    "cpu_pct", "swap_used_gb", "swap_total_gb",
+]
 
 
 @dataclass(frozen=True)
@@ -46,10 +53,13 @@ class ResourceSnapshot:
     memory_pct: float  # system-wide used %
     disk_free_gb: float
     disk_total_gb: float
+    cpu_pct: float  # system-wide CPU %
+    swap_used_gb: float
+    swap_total_gb: float
 
 
 class ResourceMonitor:
-    """Background daemon that samples memory and disk usage.
+    """Background daemon that samples memory, CPU, and disk usage.
 
     Usage::
 
@@ -64,12 +74,15 @@ class ResourceMonitor:
         work_dir: Path,
         *,
         interval: float = MONITOR_INTERVAL_SECONDS,
+        active_interval: float = MONITOR_INTERVAL_ACTIVE_SECONDS,
         warn_pct: float = MONITOR_WARN_MEMORY_PCT,
         critical_pct: float = MONITOR_CRITICAL_MEMORY_PCT,
         log_file: Path | None = None,
         console: Console | None = None,
     ) -> None:
         self._work_dir = work_dir
+        self._idle_interval = interval
+        self._active_interval = active_interval
         self._interval = interval
         self._warn_pct = warn_pct
         self._critical_pct = critical_pct
@@ -91,6 +104,9 @@ class ResourceMonitor:
         self._memory_ok = threading.Event()
         self._memory_ok.set()
 
+        # Dashboard callback (set by Dashboard to receive updates)
+        self._on_sample: callable | None = None
+
     # -- Context manager --------------------------------------------------
 
     def __enter__(self) -> ResourceMonitor:
@@ -103,14 +119,14 @@ class ResourceMonitor:
     # -- Lifecycle ---------------------------------------------------------
 
     def start(self) -> None:
+        # Prime cpu_percent (first call always returns 0)
+        psutil.cpu_percent(interval=None)
+
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         # Write CSV header
         with open(self._log_path, "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow([
-                "timestamp", "rss_mb", "available_mb", "total_mb",
-                "memory_pct", "disk_free_gb", "disk_total_gb",
-            ])
+            w.writerow(_CSV_HEADER)
         self._thread = threading.Thread(
             target=self._run, name="resource-monitor", daemon=True,
         )
@@ -136,10 +152,22 @@ class ResourceMonitor:
 
     # -- Public API --------------------------------------------------------
 
+    @property
+    def latest(self) -> ResourceSnapshot | None:
+        """Most recent cached snapshot (read without extra syscalls)."""
+        with self._lock:
+            return self._latest
+
+    def set_active(self, active: bool) -> None:
+        """Switch to faster sampling during active work."""
+        self._interval = self._active_interval if active else self._idle_interval
+
     def snapshot(self) -> ResourceSnapshot:
         """Take a resource reading right now."""
         mem = psutil.virtual_memory()
         rss = self._process.memory_info().rss / (1024 * 1024)
+        cpu = psutil.cpu_percent(interval=None)
+        swap = psutil.swap_memory()
         try:
             disk = shutil.disk_usage(self._work_dir)
             disk_free_gb = disk.free / (1024 ** 3)
@@ -156,15 +184,23 @@ class ResourceMonitor:
             memory_pct=mem.percent,
             disk_free_gb=disk_free_gb,
             disk_total_gb=disk_total_gb,
+            cpu_pct=cpu,
+            swap_used_gb=swap.used / (1024 ** 3),
+            swap_total_gb=swap.total / (1024 ** 3),
         )
 
     def is_memory_critical(self) -> bool:
-        """True if system memory usage is above the critical threshold."""
-        with self._lock:
-            snap = self._latest
-        if snap is None:
-            snap = self.snapshot()
+        """True if system memory usage is above the critical threshold.
+
+        Always takes a fresh reading to avoid acting on stale data.
+        """
+        snap = self.snapshot()
         return snap.memory_pct >= self._critical_pct
+
+    def memory_pct(self) -> float:
+        """Return current system memory usage percentage (fresh read)."""
+        snap = self.snapshot()
+        return snap.memory_pct
 
     def wait_for_memory(self, timeout: float = 120.0) -> bool:
         """Block until memory drops below the warning threshold.
@@ -208,6 +244,13 @@ class ResourceMonitor:
             else:
                 self._memory_ok.set()
 
+            # Notify dashboard if attached
+            if self._on_sample is not None:
+                try:
+                    self._on_sample(snap)
+                except Exception:
+                    pass  # never let dashboard errors kill the monitor
+
             self._stop_event.wait(self._interval)
 
     def _classify(self, pct: float) -> str:
@@ -248,6 +291,9 @@ class ResourceMonitor:
             f"{snap.memory_pct:.1f}",
             f"{snap.disk_free_gb:.2f}",
             f"{snap.disk_total_gb:.2f}",
+            f"{snap.cpu_pct:.1f}",
+            f"{snap.swap_used_gb:.2f}",
+            f"{snap.swap_total_gb:.2f}",
         ])
         with open(self._log_path, "a") as f:
             f.write(buf.getvalue())

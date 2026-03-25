@@ -6,15 +6,15 @@ Strategy
    individual TTL files, collecting every @prefix declaration. This catches
    provider-specific prefixes not in the canonical EDM set.
 2. **merge** — Process all ZIPs in parallel (ThreadPoolExecutor, I/O-bound).
-   Each worker extracts TTL content from a ZIP, strips per-file @prefix and
-   @base lines, and streams filtered lines to a temp file on disk. A single
-   writer thread assembles temp files into chunked output files, each
-   prepended with the master prefix block.
+   Each worker extracts TTL content from a ZIP using a fast two-phase
+   approach: line-by-line header stripping then bulk binary copying.
+   A dedicated writer thread assembles temp files into chunked output
+   files, each prepended with the master prefix block.
 
-Memory efficiency: workers write to temp files (one line in memory at a time),
-the writer reads temp files in 1 MB chunks. A semaphore bounds concurrent
-in-flight work, and an optional ResourceMonitor provides backpressure when
-system memory is under pressure.
+Memory efficiency: workers write to temp files (bulk byte copies), the
+writer reads temp files in 8 MB chunks. A semaphore bounds concurrent
+in-flight work, and an optional ResourceMonitor provides graduated
+backpressure when system memory is under pressure.
 """
 
 from __future__ import annotations
@@ -22,9 +22,11 @@ from __future__ import annotations
 import io
 import logging
 import os
+import queue
 import re
 import shutil
 import threading
+import time
 import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -41,8 +43,9 @@ from rich.progress import (
 )
 
 from . import display
-from .constants import EDM_PREFIXES
+from .constants import BULK_READ_SIZE, COPY_BUF_SIZE, EDM_PREFIXES
 from .state import MergeResult
+
 logger = logging.getLogger(__name__)
 
 # Matches @prefix and @base declarations at the start of a line
@@ -51,8 +54,9 @@ _PREFIX_RE = re.compile(r"^@(?:prefix|base)\s", re.IGNORECASE)
 # Fallback regex to extract prefix declarations without full rdflib parse
 _PREFIX_DECL_RE = re.compile(r"@prefix\s+(\S+):\s+<([^>]+)>")
 
-# Size of read buffer when copying temp files to chunk files
-_COPY_BUF = 1_048_576  # 1 MB
+# Byte markers for safety check during bulk copy
+_PREFIX_MARKER = b"@prefix"
+_BASE_MARKER = b"@base"
 
 
 # ---------------------------------------------------------------------------
@@ -166,14 +170,59 @@ def scan_prefixes_from_sample(
 
 
 # ---------------------------------------------------------------------------
-# Single-ZIP extraction (worker function — streams to temp file)
+# Fallback: line-by-line filtering for entries with stray prefix lines
+# ---------------------------------------------------------------------------
+
+def _fallback_line_filter(
+    initial_chunk: bytes,
+    entry: io.BufferedIOBase,
+    out: io.BufferedWriter,
+) -> int:
+    """Filter prefix/base lines from *initial_chunk* + rest of *entry*.
+
+    Called when the bulk copy phase detects a stray ``@prefix`` or ``@base``
+    marker in a read chunk. Switches to line-by-line filtering for the
+    remainder of that ZIP entry.
+
+    Returns bytes written.
+    """
+    bytes_written = 0
+    # Process the chunk that triggered the fallback
+    for raw_line in initial_chunk.split(b"\n"):
+        if not raw_line.strip():
+            continue
+        line = raw_line.decode("utf-8", errors="replace")
+        if _PREFIX_RE.match(line):
+            continue
+        # Re-add newline stripped by split
+        data = raw_line + b"\n"
+        out.write(data)
+        bytes_written += len(data)
+    # Continue line-by-line for the rest of the entry
+    for raw_line in entry:
+        line = raw_line.decode("utf-8", errors="replace")
+        if line.strip() and not _PREFIX_RE.match(line):
+            out.write(raw_line)
+            bytes_written += len(raw_line)
+    return bytes_written
+
+
+# ---------------------------------------------------------------------------
+# Single-ZIP extraction (worker function — two-phase: header then bulk)
 # ---------------------------------------------------------------------------
 
 def _extract_zip_to_file(zip_path: Path, output_file: Path) -> int:
     """Extract all TTL from *zip_path*, stripping prefix/base declarations.
 
-    Streams line-by-line to *output_file* so that memory usage is bounded
-    to a single line at a time. Returns bytes written, or 0 on error.
+    Uses a two-phase approach per TTL entry:
+      1. **Header phase**: read lines one at a time, skipping @prefix/@base.
+      2. **Bulk phase**: once past the header, copy raw bytes in 256 KB chunks
+         (no decode, no regex) for maximum throughput.
+
+    If a stray @prefix/@base is detected during bulk copy, falls back to
+    line-by-line filtering for the remainder of that entry.
+
+    Returns bytes written, or 0 on error.
     """
     bytes_written = 0
     try:
@@ -183,19 +232,124 @@ def _extract_zip_to_file(zip_path: Path, output_file: Path) -> int:
                     if not name.endswith(".ttl"):
                         continue
                     with zf.open(name) as entry:
+                        # Phase 1: skip prefix/base header lines
                         for raw_line in entry:
                             line = raw_line.decode("utf-8", errors="replace")
-                            if line.strip() and not _PREFIX_RE.match(line):
-                                out.write(raw_line)
-                                bytes_written += len(raw_line)
+                            if not line.strip():
+                                continue
+                            if _PREFIX_RE.match(line):
+                                continue
+                            # First data line — write it and switch to bulk
+                            out.write(raw_line)
+                            bytes_written += len(raw_line)
+                            break
+                        # Phase 2: bulk copy remainder (no decode, no regex)
+                        while True:
+                            chunk = entry.read(BULK_READ_SIZE)
+                            if not chunk:
+                                break
+                            if _PREFIX_MARKER in chunk or _BASE_MARKER in chunk:
+                                # Rare: stray prefix/base in data — fall back
+                                logger.debug(
+                                    "Stray @prefix/@base in %s:%s, "
+                                    "falling back to line-by-line",
+                                    zip_path.name, name,
+                                )
+                                bytes_written += _fallback_line_filter(
+                                    chunk, entry, out,
+                                )
+                                break
+                            out.write(chunk)
+                            bytes_written += len(chunk)
     except (zipfile.BadZipFile, OSError) as exc:
-        display.console.print(f"[yellow]Warning: skipping {zip_path.name}: {exc}[/yellow]")
+        display.console.print(
+            f"[yellow]Warning: skipping {zip_path.name}: {exc}[/yellow]"
+        )
         # Clean up partial temp file
         try:
             output_file.unlink(missing_ok=True)
         except OSError:
             pass
     return bytes_written
+
+
+# ---------------------------------------------------------------------------
+# Writer thread — drains completed futures into chunk files
+# ---------------------------------------------------------------------------
+
+def _writer_loop(
+    write_q: queue.Queue,
+    chunk_size_bytes: int,
+    prefix_block: bytes,
+    output_dir: Path,
+    chunk_files: list[Path],
+    processed_zips: list[str],
+    failed_zips: list[str],
+    sem: threading.Semaphore,
+    progress_cb: callable | None,
+    dashboard: object | None,
+    error_holder: list,
+) -> None:
+    """Background writer that assembles temp files into chunk output files.
+
+    Reads ``(tmp_path, zip_path, bytes_written)`` tuples from *write_q*.
+    A ``None`` sentinel signals shutdown.
+    """
+    chunk_num = 0
+    current_size = 0
+
+    def _open_chunk() -> io.BufferedWriter:
+        nonlocal chunk_num, current_size
+        path = output_dir / f"europeana_{chunk_num:04d}.ttl"
+        chunk_files.append(path)
+        fh = open(path, "wb")
+        fh.write(prefix_block)
+        current_size = len(prefix_block)
+        return fh
+
+    fh = _open_chunk()
+
+    try:
+        while True:
+            item = write_q.get()
+            if item is None:
+                break
+            tmp_path, zip_path, bytes_written = item
+
+            if bytes_written > 0 and tmp_path.exists():
+                with open(tmp_path, "rb") as src:
+                    shutil.copyfileobj(src, fh, length=COPY_BUF_SIZE)
+                    # Track size from file stat (faster than counting bytes)
+                    current_size += tmp_path.stat().st_size
+                tmp_path.unlink()
+                processed_zips.append(zip_path.name)
+
+                if current_size >= chunk_size_bytes:
+                    fh.close()
+                    chunk_num += 1
+                    fh = _open_chunk()
+                    if dashboard is not None:
+                        try:
+                            dashboard.set_info("chunks", len(chunk_files))
+                        except Exception:
+                            pass
+            else:
+                if tmp_path.exists():
+                    tmp_path.unlink(missing_ok=True)
+                if bytes_written == 0:
+                    failed_zips.append(zip_path.name)
+                    logger.warning("ZIP extraction failed: %s", zip_path.name)
+
+            sem.release()
+            if progress_cb is not None:
+                progress_cb()
+
+            write_q.task_done()
+    except Exception as exc:
+        error_holder.append(exc)
+        logger.exception("Writer thread crashed")
+    finally:
+        fh.close()
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +365,7 @@ def merge_ttl(
     prefixes: dict[str, str] | None = None,
     monitor: object | None = None,
     skip_zips: frozenset[str] = frozenset(),
+    dashboard: object | None = None,
 ) -> MergeResult:
     """Merge all TTL ZIPs into chunked output files with parallel extraction.
 
@@ -229,10 +384,11 @@ def merge_ttl(
         automatically.
     monitor : ResourceMonitor or None
         Optional resource monitor for memory backpressure. When provided
-        and memory is critical, new submissions are paused until memory
-        recovers.
+        and memory is high, submissions are throttled or paused.
     skip_zips : frozenset[str]
         ZIP filenames to skip (for resuming a previous merge).
+    dashboard : Dashboard or None
+        Optional dashboard for live progress updates.
 
     Returns
     -------
@@ -272,8 +428,6 @@ def merge_ttl(
 
     chunk_size_bytes = int(chunk_size_gb * 1_000_000_000)
     chunk_files: list[Path] = []
-    chunk_num = 0
-    current_size = 0
 
     # Temp directory for worker output — clean start
     tmp_dir = output_dir / ".merge_tmp"
@@ -281,50 +435,20 @@ def merge_ttl(
         shutil.rmtree(tmp_dir)
     tmp_dir.mkdir()
 
-    def _open_chunk() -> io.BufferedWriter:
-        nonlocal chunk_num, current_size
-        path = output_dir / f"europeana_{chunk_num:04d}.ttl"
-        chunk_files.append(path)
-        fh = open(path, "wb")
-        fh.write(prefix_block)
-        current_size = len(prefix_block)
-        return fh
+    # Semaphore limits in-flight work
+    sem = threading.Semaphore(workers * 3)
 
-    fh = _open_chunk()
-
-    # Semaphore limits in-flight work (workers extracting + completed awaiting write)
-    sem = threading.Semaphore(workers * 2)
-
-    # Track processed/failed ZIPs for result reporting
+    # Shared state (written only by writer thread)
     processed_zips: list[str] = list(skip_zips)
     failed_zips: list[str] = []
-    # Map futures to (tmp_path, zip_path) for failure tracking
-    future_meta: dict[Future[int], tuple[Path, Path]] = {}
 
-    def _drain_future(fut: Future[int]) -> None:
-        nonlocal current_size, chunk_num, fh
-        temp, zp = future_meta.pop(fut)
-        bytes_written = fut.result()
-        if bytes_written > 0 and temp.exists():
-            with open(temp, "rb") as src:
-                while buf := src.read(_COPY_BUF):
-                    fh.write(buf)
-                    current_size += len(buf)
-            temp.unlink()
-            processed_zips.append(zp.name)
+    # Writer queue + thread
+    write_q: queue.Queue = queue.Queue(maxsize=workers * 2)
+    writer_errors: list[Exception] = []
 
-            if current_size >= chunk_size_bytes:
-                fh.close()
-                chunk_num += 1
-                fh = _open_chunk()
-        else:
-            if temp.exists():
-                temp.unlink(missing_ok=True)
-            if bytes_written == 0:
-                failed_zips.append(zp.name)
-                logger.warning("ZIP extraction failed: %s", zp.name)
-
-        sem.release()
+    # Activate faster monitoring during merge
+    if monitor is not None and hasattr(monitor, "set_active"):
+        monitor.set_active(True)
 
     logger.info("Starting merge of %d ZIPs with %d workers", len(zip_files), workers)
 
@@ -350,33 +474,70 @@ def merge_ttl(
     with Progress(*_columns, console=display.console) as progress:
         task = progress.add_task("Merging", total=len(zip_files))
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        def _progress_cb() -> None:
+            progress.advance(task)
+            if dashboard is not None:
+                try:
+                    dashboard.advance()
+                except Exception:
+                    pass
 
+        # Start writer thread
+        writer_thread = threading.Thread(
+            target=_writer_loop,
+            args=(
+                write_q, chunk_size_bytes, prefix_block, output_dir,
+                chunk_files, processed_zips, failed_zips,
+                sem, _progress_cb, dashboard, writer_errors,
+            ),
+            name="merge-writer",
+            daemon=True,
+        )
+        writer_thread.start()
+
+        def _on_future_done(fut: Future[int], tmp: Path, zp: Path) -> None:
+            """Callback fired when a worker completes — enqueues for writer."""
+            try:
+                bw = fut.result()
+            except Exception:
+                bw = 0
+            write_q.put((tmp, zp, bw))
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             for i, zp in enumerate(zip_files):
-                # Backpressure: wait if system memory is critical
-                if monitor is not None and hasattr(monitor, "is_memory_critical"):
-                    if monitor.is_memory_critical():
+                # Graduated backpressure based on memory usage
+                if monitor is not None and hasattr(monitor, "memory_pct"):
+                    pct = monitor.memory_pct()
+                    if pct >= 90:
                         monitor.wait_for_memory(timeout=120)
+                    elif pct >= 80:
+                        time.sleep(0.5)
+                    elif pct >= 70:
+                        time.sleep(0.1)
 
                 # Bound concurrency via semaphore
                 sem.acquire()
 
+                # Check for writer thread errors
+                if writer_errors:
+                    raise writer_errors[0]
+
                 tmp_path = tmp_dir / f"{i:06d}.tmp"
                 future = pool.submit(_extract_zip_to_file, zp, tmp_path)
-                future_meta[future] = (tmp_path, zp)
+                future.add_done_callback(
+                    lambda fut, t=tmp_path, z=zp: _on_future_done(fut, t, z)
+                )
 
-                # Drain any completed futures to free memory and disk
-                done = [f for f in future_meta if f.done()]
-                for fut in done:
-                    _drain_future(fut)
-                    progress.advance(task)
+        # Signal writer to finish and wait
+        write_q.put(None)
+        writer_thread.join(timeout=300)
 
-            # Drain remaining futures
-            for future in as_completed(future_meta.copy()):
-                _drain_future(future)
-                progress.advance(task)
+    if writer_errors:
+        raise writer_errors[0]
 
-    fh.close()
+    # Deactivate fast monitoring
+    if monitor is not None and hasattr(monitor, "set_active"):
+        monitor.set_active(False)
 
     # Clean up temp directory
     shutil.rmtree(tmp_dir, ignore_errors=True)

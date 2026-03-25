@@ -212,6 +212,7 @@ def export_all(
     skip_existing: bool = False,
     memory_limit: str = "4GB",
     temp_directory: Path | None = None,
+    dashboard: object | None = None,
 ) -> ExportResult:
     """Run every registered SPARQL export and convert results to Parquet.
 
@@ -251,9 +252,19 @@ def export_all(
             display.console.print(f"[dim]Skipping {name} (parquet exists)[/dim]")
             result.succeeded.append(name)
             result.parquet_files.append(parquet_path)
+            if dashboard is not None:
+                try:
+                    dashboard.advance()
+                except Exception:
+                    pass
             continue
 
         display.console.print(f"\n[bold]━━━ {name} ━━━[/bold]")
+        if dashboard is not None:
+            try:
+                dashboard.set_info("query", name)
+            except Exception:
+                pass
 
         try:
             # 1. Query → TSV
@@ -283,6 +294,12 @@ def export_all(
             display.console.print(f"  [red]FAILED: {exc}[/red]")
             result.failed[name] = str(exc)
             _cleanup_partial(tsv_path, parquet_path)
+
+        if dashboard is not None:
+            try:
+                dashboard.advance()
+            except Exception:
+                pass
 
     # Summary
     if result.failed:

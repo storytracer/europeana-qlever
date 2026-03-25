@@ -111,9 +111,16 @@ SEPARATOR = " ||| "
 # ---------------------------------------------------------------------------
 # Resource monitoring defaults
 # ---------------------------------------------------------------------------
-MONITOR_INTERVAL_SECONDS = 5.0
+MONITOR_INTERVAL_SECONDS = 2.0  # idle sample rate
+MONITOR_INTERVAL_ACTIVE_SECONDS = 1.0  # sample rate during active work
 MONITOR_WARN_MEMORY_PCT = 80.0
 MONITOR_CRITICAL_MEMORY_PCT = 90.0
+
+# ---------------------------------------------------------------------------
+# Merge I/O constants
+# ---------------------------------------------------------------------------
+BULK_READ_SIZE = 262_144  # 256 KB — bulk read size within ZIP entries
+COPY_BUF_SIZE = 8_388_608  # 8 MB — buffer for temp→chunk file copies
 
 # ---------------------------------------------------------------------------
 # Pipeline state and logging
