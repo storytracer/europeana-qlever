@@ -358,7 +358,7 @@ def index(ctx: click.Context, qlever_args: tuple[str, ...]):
         )
         assert proc.stdout is not None
         for line in proc.stdout:
-            sys.stdout.write(line)
+            display.console.print(line, end="", highlight=False, markup=False)
             log_fh.write(line)
         proc.wait()
 
@@ -393,7 +393,13 @@ def start(ctx: click.Context):
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     display.console.print(f"[bold]Starting QLever server from {display.short_path(index_dir)}[/bold]")
-    subprocess.run(["qlever", "start"], cwd=index_dir, check=True)
+    proc = subprocess.run(
+        ["qlever", "start"], cwd=index_dir,
+        capture_output=True, text=True, check=True,
+    )
+    if proc.stdout:
+        for line in proc.stdout.splitlines():
+            display.console.print(line, highlight=False, markup=False)
     display.console.print("[green]Server started.[/green]")
 
 

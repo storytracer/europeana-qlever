@@ -18,6 +18,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
@@ -80,6 +81,33 @@ def _format_gb(gb: float) -> str:
     return f"{gb:.1f}G"
 
 
+class _LogCapture:
+    """File-like object that routes written lines to :meth:`Dashboard.log`.
+
+    Used as the ``file`` argument of a :class:`~rich.console.Console` so that
+    all ``display.console.print()`` calls are redirected into the dashboard
+    log tail when the dashboard is active.
+    """
+
+    def __init__(self, dashboard: Dashboard) -> None:
+        self._dashboard = dashboard
+        self._buffer = ""
+
+    def write(self, text: str) -> int:
+        self._buffer += text
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            line = line.strip()
+            if line:
+                self._dashboard.log(line)
+        return len(text)
+
+    def flush(self) -> None:
+        if self._buffer.strip():
+            self._dashboard.log(self._buffer.strip())
+            self._buffer = ""
+
+
 class DashboardLogHandler(logging.Handler):
     """Logging handler that captures formatted log lines for the dashboard."""
 
@@ -126,6 +154,7 @@ class Dashboard:
     _log_lock: threading.Lock = field(default_factory=threading.Lock, init=False)
     _log_handler: DashboardLogHandler | None = field(default=None, init=False, repr=False)
     _last_snap: ResourceSnapshot | None = field(default=None, init=False, repr=False)
+    _original_console: Console | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._log_lines = deque(maxlen=self.max_log_lines)
@@ -161,10 +190,21 @@ class Dashboard:
         # Hook into monitor's sample callback for auto-refresh
         self.monitor._on_sample = self._on_monitor_sample
 
+        # Redirect display.console output into the dashboard log tail so that
+        # all display.console.print() calls (from merge, export, cli) and any
+        # subprocess output routed through it appear in the log panel instead
+        # of writing directly to the terminal (which causes flickering).
+        self._original_console = display.console
+        capture = _LogCapture(self)
+        display.console = Console(
+            file=capture, width=self._original_console.width,
+            highlight=False, no_color=True,
+        )
+
         layout = self._build_layout()
         self._live = Live(
             layout,
-            console=display.console,
+            console=self._original_console,
             refresh_per_second=self.refresh_rate,
             screen=False,
         )
@@ -181,6 +221,11 @@ class Dashboard:
             root_logger = logging.getLogger("europeana_qlever")
             root_logger.removeHandler(self._log_handler)
             self._log_handler = None
+
+        # Restore original console
+        if self._original_console is not None:
+            display.console = self._original_console
+            self._original_console = None
 
         # Unhook monitor callback
         self.monitor._on_sample = None
