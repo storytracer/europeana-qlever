@@ -79,6 +79,8 @@ def tsv_to_parquet(
     *,
     sample_size: int = 100_000,
     row_group_size: int = 100_000,
+    memory_limit: str = "4GB",
+    temp_directory: Path | None = None,
 ) -> int:
     """Convert a TSV file to Parquet using DuckDB.
 
@@ -92,6 +94,11 @@ def tsv_to_parquet(
         Rows sampled for type inference.
     row_group_size : int
         Parquet row group size.
+    memory_limit : str
+        DuckDB memory budget (e.g. ``"4GB"``). When exceeded, DuckDB
+        spills intermediate results to *temp_directory* on disk.
+    temp_directory : Path or None
+        Directory for DuckDB spill files. Created automatically if set.
 
     Returns
     -------
@@ -99,6 +106,10 @@ def tsv_to_parquet(
         Number of rows written.
     """
     con = duckdb.connect()
+    con.execute(f"SET memory_limit = '{memory_limit}'")
+    if temp_directory is not None:
+        temp_directory.mkdir(parents=True, exist_ok=True)
+        con.execute(f"SET temp_directory = '{temp_directory}'")
     con.execute(f"""
         COPY (
             SELECT * FROM read_csv_auto(
@@ -125,6 +136,8 @@ def export_all(
     qlever_url: str = f"http://localhost:{QLEVER_PORT}",
     timeout: int = 3600,
     skip_existing: bool = False,
+    memory_limit: str = "4GB",
+    temp_directory: Path | None = None,
 ) -> list[Path]:
     """Run every registered SPARQL export and convert results to Parquet.
 
@@ -140,6 +153,10 @@ def export_all(
         Per-query timeout in seconds.
     skip_existing : bool
         Skip queries whose .parquet file already exists.
+    memory_limit : str
+        DuckDB memory budget for Parquet conversion.
+    temp_directory : Path or None
+        DuckDB spill directory. Defaults to ``output_dir / ".duckdb_tmp"``.
 
     Returns
     -------
@@ -167,7 +184,12 @@ def export_all(
 
         # 2. TSV → Parquet
         console.print("  Converting to Parquet…")
-        count = tsv_to_parquet(tsv_path, parquet_path)
+        duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
+        count = tsv_to_parquet(
+            tsv_path, parquet_path,
+            memory_limit=memory_limit,
+            temp_directory=duckdb_tmp,
+        )
         pq_mb = parquet_path.stat().st_size / 1e6
         console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
 

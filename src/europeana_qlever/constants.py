@@ -108,6 +108,13 @@ SEPARATOR = " ||| "
 # ---------------------------------------------------------------------------
 # QLever index settings (JSON blob for the Qleverfile)
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Resource monitoring defaults
+# ---------------------------------------------------------------------------
+MONITOR_INTERVAL_SECONDS = 5.0
+MONITOR_WARN_MEMORY_PCT = 80.0
+MONITOR_CRITICAL_MEMORY_PCT = 90.0
+
 QLEVER_INDEX_SETTINGS = {
     "languages-internal": [],
     "prefixes-external": [

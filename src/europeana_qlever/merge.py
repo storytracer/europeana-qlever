@@ -7,12 +7,14 @@ Strategy
    provider-specific prefixes not in the canonical EDM set.
 2. **merge** — Process all ZIPs in parallel (ThreadPoolExecutor, I/O-bound).
    Each worker extracts TTL content from a ZIP, strips per-file @prefix and
-   @base lines, and returns raw triple bytes. A single writer thread assembles
-   the results into chunked output files, each prepended with the master
-   prefix block.
+   @base lines, and streams filtered lines to a temp file on disk. A single
+   writer thread assembles temp files into chunked output files, each
+   prepended with the master prefix block.
 
-The merge is intentionally streaming: workers yield bytes through a queue so
-that memory stays bounded even with 15,000+ ZIPs.
+Memory efficiency: workers write to temp files (one line in memory at a time),
+the writer reads temp files in 1 MB chunks. A semaphore bounds concurrent
+in-flight work, and an optional ResourceMonitor provides backpressure when
+system memory is under pressure.
 """
 
 from __future__ import annotations
@@ -21,11 +23,11 @@ import io
 import logging
 import os
 import re
+import shutil
 import threading
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
-from queue import Queue
 
 import rdflib
 from rich.console import Console
@@ -48,6 +50,9 @@ _PREFIX_RE = re.compile(r"^@(?:prefix|base)\s", re.IGNORECASE)
 
 # Fallback regex to extract prefix declarations without full rdflib parse
 _PREFIX_DECL_RE = re.compile(r"@prefix\s+(\S+):\s+<([^>]+)>")
+
+# Size of read buffer when copying temp files to chunk files
+_COPY_BUF = 1_048_576  # 1 MB
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +139,7 @@ def scan_prefixes_from_sample(
                                 if prefix and uri not in known_uris:
                                     discovered[str(prefix)] = uri
                                     known_uris.add(uri)
+                            del g  # prompt GC of parsed graph
                         except Exception:
                             # Fallback: regex extraction of @prefix lines
                             parse_errors += 1
@@ -160,33 +166,36 @@ def scan_prefixes_from_sample(
 
 
 # ---------------------------------------------------------------------------
-# Single-ZIP extraction (worker function)
+# Single-ZIP extraction (worker function — streams to temp file)
 # ---------------------------------------------------------------------------
 
-def _extract_zip(zip_path: Path) -> bytes:
+def _extract_zip_to_file(zip_path: Path, output_file: Path) -> int:
     """Extract all TTL from *zip_path*, stripping prefix/base declarations.
 
-    Returns the concatenated triple content as UTF-8 bytes. Empty bytes on
-    error (logged, never raised).
+    Streams line-by-line to *output_file* so that memory usage is bounded
+    to a single line at a time. Returns bytes written, or 0 on error.
     """
-    parts: list[str] = []
+    bytes_written = 0
     try:
-        with zipfile.ZipFile(zip_path) as zf:
-            for name in zf.namelist():
-                if not name.endswith(".ttl"):
-                    continue
-                text = zf.read(name).decode("utf-8", errors="replace")
-                lines = [
-                    line
-                    for line in text.splitlines()
-                    if line.strip() and not _PREFIX_RE.match(line)
-                ]
-                if lines:
-                    parts.append("\n".join(lines))
-                    parts.append("\n")
+        with open(output_file, "wb") as out:
+            with zipfile.ZipFile(zip_path) as zf:
+                for name in zf.namelist():
+                    if not name.endswith(".ttl"):
+                        continue
+                    with zf.open(name) as entry:
+                        for raw_line in entry:
+                            line = raw_line.decode("utf-8", errors="replace")
+                            if line.strip() and not _PREFIX_RE.match(line):
+                                out.write(raw_line)
+                                bytes_written += len(raw_line)
     except (zipfile.BadZipFile, OSError) as exc:
         console.print(f"[yellow]Warning: skipping {zip_path.name}: {exc}[/yellow]")
-    return "".join(parts).encode("utf-8") if parts else b""
+        # Clean up partial temp file
+        try:
+            output_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return bytes_written
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +207,9 @@ def merge_ttl(
     output_dir: Path,
     *,
     chunk_size_gb: float = 5.0,
-    workers: int = 8,
+    workers: int = 4,
     prefixes: dict[str, str] | None = None,
+    monitor: object | None = None,
 ) -> list[Path]:
     """Merge all TTL ZIPs into chunked output files with parallel extraction.
 
@@ -216,6 +226,10 @@ def merge_ttl(
     prefixes : dict or None
         Prefix map to use. If ``None``, runs ``scan_prefixes_from_sample``
         automatically.
+    monitor : ResourceMonitor or None
+        Optional resource monitor for memory backpressure. When provided
+        and memory is critical, new submissions are paused until memory
+        recovers.
 
     Returns
     -------
@@ -246,6 +260,12 @@ def merge_ttl(
     chunk_num = 0
     current_size = 0
 
+    # Temp directory for worker output — clean start
+    tmp_dir = output_dir / ".merge_tmp"
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir()
+
     def _open_chunk() -> io.BufferedWriter:
         nonlocal chunk_num, current_size
         path = output_dir / f"europeana_{chunk_num:04d}.ttl"
@@ -257,8 +277,8 @@ def merge_ttl(
 
     fh = _open_chunk()
 
-    # Process in batches to bound memory: submit `batch_size` ZIPs at a time
-    batch_size = workers * 4
+    # Semaphore limits in-flight work (workers extracting + completed awaiting write)
+    sem = threading.Semaphore(workers * 2)
 
     with Progress(
         SpinnerColumn(),
@@ -274,25 +294,70 @@ def merge_ttl(
         task = progress.add_task("Merging", total=len(zip_files))
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            for batch_start in range(0, len(zip_files), batch_size):
-                batch = zip_files[batch_start : batch_start + batch_size]
-                futures = {pool.submit(_extract_zip, zp): zp for zp in batch}
+            futures: dict[Future[int], Path] = {}
 
-                for future in as_completed(futures):
-                    data = future.result()
-                    if data:
-                        fh.write(data)
-                        current_size += len(data)
+            for i, zp in enumerate(zip_files):
+                # Backpressure: wait if system memory is critical
+                if monitor is not None and hasattr(monitor, "is_memory_critical"):
+                    if monitor.is_memory_critical():
+                        monitor.wait_for_memory(timeout=120)
 
-                        # Roll over to the next chunk if we've exceeded the limit
+                # Bound concurrency via semaphore
+                sem.acquire()
+
+                tmp_path = tmp_dir / f"{i:06d}.tmp"
+                future = pool.submit(_extract_zip_to_file, zp, tmp_path)
+                futures[future] = tmp_path
+
+                # Drain any completed futures to free memory and disk
+                done = [f for f in futures if f.done()]
+                for fut in done:
+                    temp = futures.pop(fut)
+                    bytes_written = fut.result()
+                    if bytes_written > 0 and temp.exists():
+                        # Copy temp file to current chunk in 1 MB reads
+                        with open(temp, "rb") as src:
+                            while buf := src.read(_COPY_BUF):
+                                fh.write(buf)
+                                current_size += len(buf)
+                        temp.unlink()
+
+                        # Roll over to the next chunk if needed
                         if current_size >= chunk_size_bytes:
                             fh.close()
                             chunk_num += 1
                             fh = _open_chunk()
+                    elif temp.exists():
+                        temp.unlink(missing_ok=True)
 
+                    sem.release()
                     progress.advance(task)
 
+            # Drain remaining futures
+            for future in as_completed(futures):
+                temp = futures[future]
+                bytes_written = future.result()
+                if bytes_written > 0 and temp.exists():
+                    with open(temp, "rb") as src:
+                        while buf := src.read(_COPY_BUF):
+                            fh.write(buf)
+                            current_size += len(buf)
+                    temp.unlink()
+
+                    if current_size >= chunk_size_bytes:
+                        fh.close()
+                        chunk_num += 1
+                        fh = _open_chunk()
+                elif temp.exists():
+                    temp.unlink(missing_ok=True)
+
+                sem.release()
+                progress.advance(task)
+
     fh.close()
+
+    # Clean up temp directory
+    shutil.rmtree(tmp_dir, ignore_errors=True)
 
     # Summary
     total_bytes = sum(p.stat().st_size for p in chunk_files)

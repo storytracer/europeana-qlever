@@ -111,7 +111,7 @@ def scan_prefixes_cmd(ttl_dir: Path, sample_size: int, files_per_zip: int):
 @click.argument("ttl_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--chunk-size", default=5.0, show_default=True,
               help="Target chunk file size in GB.")
-@click.option("--workers", default=8, show_default=True,
+@click.option("--workers", default=4, show_default=True,
               help="Parallel extraction threads.")
 @click.option("--sample-size", default=50, show_default=True,
               help="ZIPs to sample for prefix discovery.")
@@ -131,17 +131,21 @@ def merge(
     files. Uses WORKERS parallel threads for ZIP extraction.
     """
     from .merge import merge_ttl, scan_prefixes_from_sample
+    from .monitor import ResourceMonitor
 
     merged_dir: Path = ctx.obj["merged_dir"]
+    work_dir: Path = ctx.obj["work_dir"]
 
     prefixes = scan_prefixes_from_sample(ttl_dir, sample_size=sample_size)
-    merge_ttl(
-        ttl_dir,
-        merged_dir,
-        chunk_size_gb=chunk_size,
-        workers=workers,
-        prefixes=prefixes,
-    )
+    with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=console) as monitor:
+        merge_ttl(
+            ttl_dir,
+            merged_dir,
+            chunk_size_gb=chunk_size,
+            workers=workers,
+            prefixes=prefixes,
+            monitor=monitor,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -154,11 +158,11 @@ def merge(
 @click.option("--docker", is_flag=True, default=False,
               help="Use Docker runtime instead of native binaries.")
 @click.option("--port", default=QLEVER_PORT, show_default=True)
-@click.option("--stxxl-memory", default="15G", show_default=True,
+@click.option("--stxxl-memory", default="8G", show_default=True,
               help="RAM for external sorting during index build.")
-@click.option("--query-memory", default="20G", show_default=True,
+@click.option("--query-memory", default="10G", show_default=True,
               help="RAM budget for query execution.")
-@click.option("--cache-size", default="10G", show_default=True,
+@click.option("--cache-size", default="5G", show_default=True,
               help="Query result cache size.")
 @click.pass_context
 def write_qleverfile_cmd(
@@ -521,6 +525,8 @@ def export(
         qlever_url=qlever_url,
         timeout=timeout,
         skip_existing=skip_existing,
+        memory_limit="4GB",
+        temp_directory=exports_dir / ".duckdb_tmp",
     )
 
 
@@ -534,16 +540,16 @@ def export(
               default=None, help="Path to qlever-code/build/ with native binaries.")
 @click.option("--docker", is_flag=True, default=False,
               help="Use Docker runtime instead of native binaries.")
-@click.option("--workers", default=8, show_default=True,
+@click.option("--workers", default=4, show_default=True,
               help="Parallel extraction threads for merge.")
 @click.option("--chunk-size", default=5.0, show_default=True,
               help="Target chunk file size in GB.")
 @click.option("--port", default=QLEVER_PORT, show_default=True)
-@click.option("--stxxl-memory", default="15G", show_default=True,
+@click.option("--stxxl-memory", default="8G", show_default=True,
               help="RAM for external sorting during index build.")
-@click.option("--query-memory", default="20G", show_default=True,
+@click.option("--query-memory", default="10G", show_default=True,
               help="RAM budget for query execution.")
-@click.option("--cache-size", default="10G", show_default=True,
+@click.option("--cache-size", default="5G", show_default=True,
               help="Query result cache size.")
 @click.option("--timeout", default=3600, show_default=True,
               help="Per-query timeout in seconds for export.")
@@ -573,69 +579,76 @@ def pipeline(
     """
     from .export import export_all
     from .merge import merge_ttl, scan_prefixes_from_sample
+    from .monitor import ResourceMonitor
     from .query import QueryBuilder
 
+    work_dir: Path = ctx.obj["work_dir"]
     merged_dir: Path = ctx.obj["merged_dir"]
     index_dir: Path = ctx.obj["index_dir"]
     exports_dir: Path = ctx.obj["exports_dir"]
 
     console.rule("[bold]Europeana → QLever → Parquet Pipeline[/bold]")
 
-    # --- Stage 1: Merge ---
-    chunks = sorted(merged_dir.glob("europeana_*.ttl"))
-    if skip_merge and chunks:
-        console.print(
-            f"[dim]Skipping merge ({len(chunks)} chunks already in "
-            f"{merged_dir})[/dim]\n"
+    with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=console) as monitor:
+
+        # --- Stage 1: Merge ---
+        chunks = sorted(merged_dir.glob("europeana_*.ttl"))
+        if skip_merge and chunks:
+            console.print(
+                f"[dim]Skipping merge ({len(chunks)} chunks already in "
+                f"{merged_dir})[/dim]\n"
+            )
+        else:
+            console.rule("[bold cyan]Stage 1 · Merge TTL[/bold cyan]")
+            prefixes = scan_prefixes_from_sample(ttl_dir)
+            merge_ttl(
+                ttl_dir, merged_dir,
+                chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
+                monitor=monitor,
+            )
+
+        # --- Stage 2: Write Qleverfile ---
+        console.rule("[bold cyan]Stage 2 · Write Qleverfile[/bold cyan]")
+        ctx.invoke(
+            write_qleverfile_cmd,
+            qlever_bin=qlever_bin,
+            docker=docker,
+            port=port,
+            stxxl_memory=stxxl_memory,
+            query_memory=query_memory,
+            cache_size=cache_size,
         )
-    else:
-        console.rule("[bold cyan]Stage 1 · Merge TTL[/bold cyan]")
-        prefixes = scan_prefixes_from_sample(ttl_dir)
-        merge_ttl(
-            ttl_dir, merged_dir,
-            chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
+
+        # --- Stage 3: Index ---
+        index_exists = any(index_dir.glob("europeana.index.*"))
+        if skip_index and index_exists:
+            console.print(f"[dim]Skipping index (files exist in {index_dir})[/dim]\n")
+        else:
+            console.rule("[bold cyan]Stage 3 · Build Index[/bold cyan]")
+            ctx.invoke(index, qlever_args=())
+
+        # --- Stage 4: Start server ---
+        console.rule("[bold cyan]Stage 4 · Start Server[/bold cyan]")
+        ctx.invoke(start)
+
+        # --- Stage 5: Export ---
+        console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
+
+        qb = QueryBuilder()
+        queries = qb.all_base_queries()
+
+        export_all(
+            output_dir=exports_dir,
+            queries=queries,
+            qlever_url=f"http://localhost:{port}",
+            timeout=timeout,
+            memory_limit="4GB",
+            temp_directory=exports_dir / ".duckdb_tmp",
         )
 
-    # --- Stage 2: Write Qleverfile ---
-    console.rule("[bold cyan]Stage 2 · Write Qleverfile[/bold cyan]")
-    ctx.invoke(
-        write_qleverfile_cmd,
-        qlever_bin=qlever_bin,
-        docker=docker,
-        port=port,
-        stxxl_memory=stxxl_memory,
-        query_memory=query_memory,
-        cache_size=cache_size,
-    )
-
-    # --- Stage 3: Index ---
-    index_exists = any(index_dir.glob("europeana.index.*"))
-    if skip_index and index_exists:
-        console.print(f"[dim]Skipping index (files exist in {index_dir})[/dim]\n")
-    else:
-        console.rule("[bold cyan]Stage 3 · Build Index[/bold cyan]")
-        ctx.invoke(index, qlever_args=())
-
-    # --- Stage 4: Start server ---
-    console.rule("[bold cyan]Stage 4 · Start Server[/bold cyan]")
-    ctx.invoke(start)
-
-    # --- Stage 5: Export ---
-    console.rule("[bold cyan]Stage 5 · Export to Parquet[/bold cyan]")
-
-    qb = QueryBuilder()
-    queries = qb.all_base_queries()
-
-    export_all(
-        output_dir=exports_dir,
-        queries=queries,
-        qlever_url=f"http://localhost:{port}",
-        timeout=timeout,
-    )
-
-    # --- Stage 6: Stop server ---
-    console.rule("[bold cyan]Stage 6 · Stop Server[/bold cyan]")
-    ctx.invoke(stop)
+        # --- Stage 6: Stop server ---
+        console.rule("[bold cyan]Stage 6 · Stop Server[/bold cyan]")
+        ctx.invoke(stop)
 
     console.rule("[bold green]Pipeline complete[/bold green]")
     console.print(f"Parquet files in: {exports_dir}")

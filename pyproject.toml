@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.1",
     "duckdb>=1.5.1",
     "pyarrow>=23.0.1",
+    "psutil>=7.0.0",
 ]
 
 [project.scripts]
