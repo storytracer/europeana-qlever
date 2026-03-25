@@ -46,6 +46,7 @@ from rich.progress import (
 from . import display
 from .constants import DEFAULT_COPY_BUF_SIZE, EDM_PREFIXES
 from .state import MergeResult
+from .validate import validate_entry, verify_one_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -183,18 +184,16 @@ def _extract_zip_to_file(
 
     Returns ``(bytes_written, invalid_count)``.
     """
-    from .validate import validate_entry, verify_one_checksum
-
-    # Verify checksum first
-    _name, cs_ok, cs_err = verify_one_checksum(zip_path)
-    if cs_ok is False:
-        logger.warning("Checksum failed for %s: %s — skipping ZIP", zip_path.name, cs_err)
-        return (0, 0)
-
-    bytes_written = 0
-    invalid_count = 0
-
     try:
+        # Verify checksum first
+        _name, cs_ok, cs_err = verify_one_checksum(zip_path)
+        if cs_ok is False:
+            logger.warning("Checksum failed for %s: %s — skipping ZIP", zip_path.name, cs_err)
+            return (0, 0)
+
+        bytes_written = 0
+        invalid_count = 0
+
         with open(output_file, "wb") as out:
             with zipfile.ZipFile(zip_path) as zf:
                 for name in zf.namelist():
@@ -230,15 +229,15 @@ def _extract_zip_to_file(
                         out.write(raw_line + b"\n")
                         bytes_written += len(raw_line) + 1
 
-    except (zipfile.BadZipFile, OSError) as exc:
-        logger.warning("Skipping %s: %s", zip_path.name, exc)
+        return (bytes_written, invalid_count)
+
+    except Exception as exc:
+        logger.error("Extraction failed for %s: %s", zip_path.name, exc)
         try:
             output_file.unlink(missing_ok=True)
         except OSError:
             pass
-        return (0, invalid_count)
-
-    return (bytes_written, invalid_count)
+        return (0, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +481,8 @@ def merge_ttl(
             """Callback fired when a worker completes — enqueues for writer."""
             try:
                 bw, inv = fut.result()
-            except Exception:
+            except Exception as exc:
+                logger.error("Worker process failed for %s: %s", zp.name, exc)
                 bw, inv = 0, 0
             write_q.put((tmp, zp, bw, inv))
 
