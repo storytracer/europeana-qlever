@@ -64,6 +64,7 @@ def cli(ctx: click.Context, work_dir: Path, width: int | None):
     All output is written to subdirectories of WORK_DIR: ttl-merged/,
     index/, and exports/.
     """
+    from .resources import ResourceBudget
     from .state import setup_logging
 
     if width is not None:
@@ -75,7 +76,14 @@ def cli(ctx: click.Context, work_dir: Path, width: int | None):
     ctx.obj["index_dir"] = work_dir / INDEX_SUBDIR
     ctx.obj["exports_dir"] = work_dir / EXPORTS_SUBDIR
 
-    setup_logging(work_dir)
+    budget = ResourceBudget.detect(work_dir)
+    ctx.obj["budget"] = budget
+
+    setup_logging(
+        work_dir,
+        max_bytes=budget.log_max_bytes(),
+        backup_count=budget.log_backup_count(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -144,19 +152,26 @@ def merge(
     """
     from .merge import merge_ttl, scan_prefixes_from_sample
     from .monitor import ResourceMonitor
-    from .resources import ResourceBudget
 
     merged_dir: Path = ctx.obj["merged_dir"]
     work_dir: Path = ctx.obj["work_dir"]
+    budget = ctx.obj["budget"]
 
     # Auto-detect workers if not specified
     if workers == 0:
-        budget = ResourceBudget.detect(work_dir)
         workers = budget.merge_workers()
         display.console.print(f"[dim]Auto-detected {workers} workers[/dim]")
 
     prefixes = scan_prefixes_from_sample(ttl_dir, sample_size=sample_size)
-    with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=display.console) as monitor:
+    with ResourceMonitor(
+        work_dir,
+        log_file=work_dir / "monitor.log",
+        console=display.console,
+        interval=budget.monitor_idle_interval(),
+        active_interval=budget.monitor_active_interval(),
+        warn_pct=budget.monitor_warn_pct(),
+        critical_pct=budget.monitor_critical_pct(),
+    ) as monitor:
         result = merge_ttl(
             ttl_dir,
             merged_dir,
@@ -164,6 +179,11 @@ def merge(
             workers=workers,
             prefixes=prefixes,
             monitor=monitor,
+            bulk_read_size=budget.bulk_read_size(),
+            copy_buf_size=budget.copy_buf_size(),
+            backpressure_thresholds=budget.backpressure_thresholds(),
+            backpressure_sleeps=budget.backpressure_sleeps(),
+            writer_join_timeout=budget.writer_join_timeout(),
         )
     if result.failed_zips:
         display.console.print(
@@ -182,12 +202,12 @@ def merge(
 @click.option("--docker", is_flag=True, default=False,
               help="Use Docker runtime instead of native binaries.")
 @click.option("--port", default=QLEVER_PORT, show_default=True)
-@click.option("--stxxl-memory", default="8G", show_default=True,
-              help="RAM for external sorting during index build.")
-@click.option("--query-memory", default="10G", show_default=True,
-              help="RAM budget for query execution.")
-@click.option("--cache-size", default="5G", show_default=True,
-              help="Query result cache size.")
+@click.option("--stxxl-memory", default="auto", show_default=True,
+              help="RAM for external sorting during index build (or 'auto').")
+@click.option("--query-memory", default="auto", show_default=True,
+              help="RAM budget for query execution (or 'auto').")
+@click.option("--cache-size", default="auto", show_default=True,
+              help="Query result cache size (or 'auto').")
 @click.pass_context
 def write_qleverfile_cmd(
     ctx: click.Context,
@@ -206,6 +226,15 @@ def write_qleverfile_cmd(
     """
     index_dir: Path = ctx.obj["index_dir"]
     merged_dir: Path = ctx.obj["merged_dir"]
+    budget = ctx.obj["budget"]
+
+    # Resolve auto values
+    if stxxl_memory == "auto":
+        stxxl_memory = budget.qlever_stxxl()
+    if query_memory == "auto":
+        query_memory = budget.qlever_query_memory()
+    if cache_size == "auto":
+        cache_size = budget.qlever_cache()
 
     if not merged_dir.is_dir():
         display.console.print(f"[red]Merged TTL directory not found: {merged_dir}[/red]")
@@ -213,7 +242,10 @@ def write_qleverfile_cmd(
 
     index_dir.mkdir(parents=True, exist_ok=True)
 
-    settings_json = json.dumps(QLEVER_INDEX_SETTINGS)
+    # Inject dynamic num-triples-per-batch from budget
+    settings = dict(QLEVER_INDEX_SETTINGS)
+    settings["num-triples-per-batch"] = budget.qlever_triples_per_batch()
+    settings_json = json.dumps(settings)
 
     # Build paths for MULTI_INPUT_JSON and INPUT_FILES.
     # INPUT_FILES must be relative to index_dir (qlever uses pathlib.glob).
@@ -256,8 +288,8 @@ STXXL_MEMORY = {stxxl_memory}
 PORT = {port}
 MEMORY_FOR_QUERIES = {query_memory}
 CACHE_MAX_SIZE = {cache_size}
-CACHE_MAX_SIZE_SINGLE_ENTRY = 3G
-TIMEOUT = 600s
+CACHE_MAX_SIZE_SINGLE_ENTRY = {budget.qlever_cache_single_entry()}
+TIMEOUT = {budget.qlever_timeout()}s
 ACCESS_TOKEN =
 
 {system_block}
@@ -271,7 +303,7 @@ UI_PORT = 7000
 
     # Also write settings.json for manual qlever-index invocations
     settings_path = index_dir / "settings.json"
-    settings_path.write_text(json.dumps(QLEVER_INDEX_SETTINGS, indent=2))
+    settings_path.write_text(json.dumps(settings, indent=2))
 
     display.console.print(f"[green]Qleverfile written to {display.short_path(qleverfile_path)}[/green]")
     display.console.print(f"[green]settings.json written to {display.short_path(settings_path)}[/green]")
@@ -480,7 +512,6 @@ def export(
     """
     from .export import export_all
     from .query import QueryBuilder, QueryFilters
-    from .resources import ResourceBudget
 
     # Validate mutually-exclusive modes
     modes = sum([
@@ -547,9 +578,10 @@ def export(
 
     exports_dir: Path = ctx.obj["exports_dir"]
 
+    budget = ctx.obj["budget"]
+
     # Resolve DuckDB memory
     if duckdb_memory == "auto":
-        budget = ResourceBudget.detect(ctx.obj["work_dir"])
         duckdb_memory = budget.duckdb_memory()
 
     result = export_all(
@@ -560,6 +592,12 @@ def export(
         skip_existing=skip_existing,
         memory_limit=duckdb_memory,
         temp_directory=exports_dir / ".duckdb_tmp",
+        http_chunk_size=budget.http_chunk_size(),
+        http_connect_timeout=budget.http_connect_timeout(),
+        duckdb_sample_size=budget.duckdb_sample_size(),
+        duckdb_row_group_size=budget.duckdb_row_group_size(),
+        max_retries=budget.export_max_retries(),
+        retry_delays=budget.export_retry_delays(),
     )
     if result.failed:
         raise SystemExit(1)
@@ -630,7 +668,6 @@ def pipeline(
     from .merge import merge_ttl, scan_prefixes_from_sample
     from .monitor import ResourceMonitor
     from .query import QueryBuilder
-    from .resources import ResourceBudget
     from .state import PipelineState
 
     log = logging.getLogger(__name__)
@@ -639,9 +676,7 @@ def pipeline(
     merged_dir: Path = ctx.obj["merged_dir"]
     index_dir: Path = ctx.obj["index_dir"]
     exports_dir: Path = ctx.obj["exports_dir"]
-
-    # -- Auto-detect resource budget --
-    budget = ResourceBudget.detect(work_dir)
+    budget = ctx.obj["budget"]
 
     if workers == 0:
         workers = budget.merge_workers()
@@ -670,8 +705,20 @@ def pipeline(
     failures: list[str] = []
 
     try:
-        with ResourceMonitor(work_dir, log_file=work_dir / "monitor.log", console=display.console) as monitor:
-            with Dashboard(monitor) as dash:
+        with ResourceMonitor(
+            work_dir,
+            log_file=work_dir / "monitor.log",
+            console=display.console,
+            interval=budget.monitor_idle_interval(),
+            active_interval=budget.monitor_active_interval(),
+            warn_pct=budget.monitor_warn_pct(),
+            critical_pct=budget.monitor_critical_pct(),
+        ) as monitor:
+            with Dashboard(
+                monitor,
+                max_log_lines=budget.dashboard_log_lines(),
+                refresh_rate=budget.dashboard_refresh_rate(),
+            ) as dash:
 
                 # --- Stage 1: Merge ---
                 chunks = sorted(merged_dir.glob("europeana_*.ttl"))
@@ -701,6 +748,11 @@ def pipeline(
                         ttl_dir, merged_dir,
                         chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
                         monitor=monitor, skip_zips=skip_zips, dashboard=dash,
+                        bulk_read_size=budget.bulk_read_size(),
+                        copy_buf_size=budget.copy_buf_size(),
+                        backpressure_thresholds=budget.backpressure_thresholds(),
+                        backpressure_sleeps=budget.backpressure_sleeps(),
+                        writer_join_timeout=budget.writer_join_timeout(),
                     )
                     state.update_merge(merge_result)
                     state.save(state_path)
@@ -771,6 +823,12 @@ def pipeline(
                     memory_limit=duckdb_memory,
                     temp_directory=exports_dir / ".duckdb_tmp",
                     dashboard=dash,
+                    http_chunk_size=budget.http_chunk_size(),
+                    http_connect_timeout=budget.http_connect_timeout(),
+                    duckdb_sample_size=budget.duckdb_sample_size(),
+                    duckdb_row_group_size=budget.duckdb_row_group_size(),
+                    max_retries=budget.export_max_retries(),
+                    retry_delays=budget.export_retry_delays(),
                 )
                 state.update_export(export_result)
                 state.save(state_path)

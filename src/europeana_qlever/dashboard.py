@@ -43,19 +43,22 @@ logger = logging.getLogger(__name__)
 
 # Total pipeline stages
 _STAGE_NAMES = ["Merge", "Qleverfile", "Index", "Start", "Export"]
-_MAX_LOG_LINES = 12
+_DEFAULT_MAX_LOG_LINES = 12
 
 
-def _pct_bar(label: str, pct: float, used: str, total: str, style: str) -> Text:
+def _pct_bar(
+    label: str, pct: float, used: str, total: str, style: str,
+    warn_pct: float = 70.0, critical_pct: float = 90.0,
+) -> Text:
     """Render a single-line resource bar like: MEM ████░░ 58% 37/64G."""
     width = 10
     filled = int(pct / 100 * width)
     bar = "█" * filled + "░" * (width - filled)
 
-    # Color the bar based on usage
-    if pct >= 90:
+    # Color the bar based on usage thresholds
+    if pct >= critical_pct:
         bar_style = "red bold"
-    elif pct >= 70:
+    elif pct >= warn_pct:
         bar_style = "yellow"
     else:
         bar_style = style
@@ -110,6 +113,8 @@ class Dashboard:
     """
 
     monitor: ResourceMonitor
+    max_log_lines: int = _DEFAULT_MAX_LOG_LINES
+    refresh_rate: int = 2
     _live: Live | None = field(default=None, init=False, repr=False)
     _progress: Progress = field(init=False, repr=False)
     _overall_task: TaskID | None = field(default=None, init=False, repr=False)
@@ -117,12 +122,13 @@ class Dashboard:
     _current_stage: str = field(default="", init=False)
     _current_stage_idx: int = field(default=0, init=False)
     _info: dict[str, str] = field(default_factory=dict, init=False)
-    _log_lines: deque[str] = field(default_factory=lambda: deque(maxlen=_MAX_LOG_LINES), init=False)
+    _log_lines: deque[str] = field(init=False, repr=False)
     _log_lock: threading.Lock = field(default_factory=threading.Lock, init=False)
     _log_handler: DashboardLogHandler | None = field(default=None, init=False, repr=False)
     _last_snap: ResourceSnapshot | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        self._log_lines = deque(maxlen=self.max_log_lines)
         self._progress = Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -159,7 +165,7 @@ class Dashboard:
         self._live = Live(
             layout,
             console=display.console,
-            refresh_per_second=2,
+            refresh_per_second=self.refresh_rate,
             screen=False,
         )
         self._live.start()
@@ -276,12 +282,16 @@ class Dashboard:
 
         lines: list[Text] = []
 
+        # Read thresholds from monitor (dynamic, not hardcoded)
+        warn = self.monitor._warn_pct
+        crit = self.monitor._critical_pct
+
         # CPU
         cpus = os.cpu_count() or 1
         lines.append(_pct_bar(
             "CPU", snap.cpu_pct,
             f"{snap.cpu_pct:.0f}%", f"{cpus}C",
-            "green",
+            "green", warn_pct=warn, critical_pct=crit,
         ))
 
         # Memory
@@ -290,7 +300,7 @@ class Dashboard:
         lines.append(_pct_bar(
             "MEM", snap.memory_pct,
             _format_gb(used_gb), _format_gb(total_gb),
-            "blue",
+            "blue", warn_pct=warn, critical_pct=crit,
         ))
 
         # Disk
@@ -299,7 +309,7 @@ class Dashboard:
         lines.append(_pct_bar(
             "DISK", disk_pct,
             _format_gb(snap.disk_free_gb), _format_gb(snap.disk_total_gb),
-            "magenta",
+            "magenta", warn_pct=warn, critical_pct=crit,
         ))
 
         # Swap
@@ -307,7 +317,7 @@ class Dashboard:
         lines.append(_pct_bar(
             "SWAP", swap_pct,
             _format_gb(snap.swap_used_gb), _format_gb(snap.swap_total_gb),
-            "cyan",
+            "cyan", warn_pct=warn, critical_pct=crit,
         ))
 
         # Tool metrics

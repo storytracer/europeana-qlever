@@ -29,10 +29,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 from .constants import (
-    MONITOR_CRITICAL_MEMORY_PCT,
-    MONITOR_INTERVAL_SECONDS,
-    MONITOR_INTERVAL_ACTIVE_SECONDS,
-    MONITOR_WARN_MEMORY_PCT,
+    DEFAULT_MONITOR_CRITICAL_MEMORY_PCT,
+    DEFAULT_MONITOR_INTERVAL_ACTIVE_SECONDS,
+    DEFAULT_MONITOR_INTERVAL_SECONDS,
+    DEFAULT_MONITOR_WARN_MEMORY_PCT,
 )
 
 _CSV_HEADER = [
@@ -73,10 +73,10 @@ class ResourceMonitor:
         self,
         work_dir: Path,
         *,
-        interval: float = MONITOR_INTERVAL_SECONDS,
-        active_interval: float = MONITOR_INTERVAL_ACTIVE_SECONDS,
-        warn_pct: float = MONITOR_WARN_MEMORY_PCT,
-        critical_pct: float = MONITOR_CRITICAL_MEMORY_PCT,
+        interval: float = DEFAULT_MONITOR_INTERVAL_SECONDS,
+        active_interval: float = DEFAULT_MONITOR_INTERVAL_ACTIVE_SECONDS,
+        warn_pct: float = DEFAULT_MONITOR_WARN_MEMORY_PCT,
+        critical_pct: float = DEFAULT_MONITOR_CRITICAL_MEMORY_PCT,
         log_file: Path | None = None,
         console: Console | None = None,
     ) -> None:

@@ -43,7 +43,7 @@ from rich.progress import (
 )
 
 from . import display
-from .constants import BULK_READ_SIZE, COPY_BUF_SIZE, EDM_PREFIXES
+from .constants import DEFAULT_BULK_READ_SIZE, DEFAULT_COPY_BUF_SIZE, EDM_PREFIXES
 from .state import MergeResult
 
 logger = logging.getLogger(__name__)
@@ -211,12 +211,16 @@ def _fallback_line_filter(
 # Single-ZIP extraction (worker function — two-phase: header then bulk)
 # ---------------------------------------------------------------------------
 
-def _extract_zip_to_file(zip_path: Path, output_file: Path) -> int:
+def _extract_zip_to_file(
+    zip_path: Path,
+    output_file: Path,
+    bulk_read_size: int = DEFAULT_BULK_READ_SIZE,
+) -> int:
     """Extract all TTL from *zip_path*, stripping prefix/base declarations.
 
     Uses a two-phase approach per TTL entry:
       1. **Header phase**: read lines one at a time, skipping @prefix/@base.
-      2. **Bulk phase**: once past the header, copy raw bytes in 256 KB chunks
+      2. **Bulk phase**: once past the header, copy raw bytes in chunks
          (no decode, no regex) for maximum throughput.
 
     If a stray @prefix/@base is detected during bulk copy, falls back to
@@ -245,7 +249,7 @@ def _extract_zip_to_file(zip_path: Path, output_file: Path) -> int:
                             break
                         # Phase 2: bulk copy remainder (no decode, no regex)
                         while True:
-                            chunk = entry.read(BULK_READ_SIZE)
+                            chunk = entry.read(bulk_read_size)
                             if not chunk:
                                 break
                             if _PREFIX_MARKER in chunk or _BASE_MARKER in chunk:
@@ -289,6 +293,7 @@ def _writer_loop(
     progress_cb: callable | None,
     dashboard: object | None,
     error_holder: list,
+    copy_buf_size: int = DEFAULT_COPY_BUF_SIZE,
 ) -> None:
     """Background writer that assembles temp files into chunk output files.
 
@@ -318,7 +323,7 @@ def _writer_loop(
 
             if bytes_written > 0 and tmp_path.exists():
                 with open(tmp_path, "rb") as src:
-                    shutil.copyfileobj(src, fh, length=COPY_BUF_SIZE)
+                    shutil.copyfileobj(src, fh, length=copy_buf_size)
                     # Track size from file stat (faster than counting bytes)
                     current_size += tmp_path.stat().st_size
                 tmp_path.unlink()
@@ -366,6 +371,11 @@ def merge_ttl(
     monitor: object | None = None,
     skip_zips: frozenset[str] = frozenset(),
     dashboard: object | None = None,
+    bulk_read_size: int = DEFAULT_BULK_READ_SIZE,
+    copy_buf_size: int = DEFAULT_COPY_BUF_SIZE,
+    backpressure_thresholds: tuple[float, float, float] = (70.0, 80.0, 90.0),
+    backpressure_sleeps: tuple[float, float] = (0.1, 0.5),
+    writer_join_timeout: int = 300,
 ) -> MergeResult:
     """Merge all TTL ZIPs into chunked output files with parallel extraction.
 
@@ -435,7 +445,7 @@ def merge_ttl(
         shutil.rmtree(tmp_dir)
     tmp_dir.mkdir()
 
-    # Semaphore limits in-flight work
+    # Semaphore limits in-flight work; queue bounds temp disk usage
     sem = threading.Semaphore(workers * 3)
 
     # Shared state (written only by writer thread)
@@ -443,7 +453,7 @@ def merge_ttl(
     failed_zips: list[str] = []
 
     # Writer queue + thread
-    write_q: queue.Queue = queue.Queue(maxsize=workers * 2)
+    write_q: queue.Queue = queue.Queue(maxsize=max(4, workers * 2))
     writer_errors: list[Exception] = []
 
     # Activate faster monitoring during merge
@@ -488,7 +498,7 @@ def merge_ttl(
             args=(
                 write_q, chunk_size_bytes, prefix_block, output_dir,
                 chunk_files, processed_zips, failed_zips,
-                sem, _progress_cb, dashboard, writer_errors,
+                sem, _progress_cb, dashboard, writer_errors, copy_buf_size,
             ),
             name="merge-writer",
             daemon=True,
@@ -507,13 +517,15 @@ def merge_ttl(
             for i, zp in enumerate(zip_files):
                 # Graduated backpressure based on memory usage
                 if monitor is not None and hasattr(monitor, "memory_pct"):
+                    bp_soft, bp_warn, bp_crit = backpressure_thresholds
+                    bp_soft_sleep, bp_warn_sleep = backpressure_sleeps
                     pct = monitor.memory_pct()
-                    if pct >= 90:
+                    if pct >= bp_crit:
                         monitor.wait_for_memory(timeout=120)
-                    elif pct >= 80:
-                        time.sleep(0.5)
-                    elif pct >= 70:
-                        time.sleep(0.1)
+                    elif pct >= bp_warn:
+                        time.sleep(bp_warn_sleep)
+                    elif pct >= bp_soft:
+                        time.sleep(bp_soft_sleep)
 
                 # Bound concurrency via semaphore
                 sem.acquire()
@@ -523,14 +535,16 @@ def merge_ttl(
                     raise writer_errors[0]
 
                 tmp_path = tmp_dir / f"{i:06d}.tmp"
-                future = pool.submit(_extract_zip_to_file, zp, tmp_path)
+                future = pool.submit(
+                    _extract_zip_to_file, zp, tmp_path, bulk_read_size,
+                )
                 future.add_done_callback(
                     lambda fut, t=tmp_path, z=zp: _on_future_done(fut, t, z)
                 )
 
         # Signal writer to finish and wait
         write_q.put(None)
-        writer_thread.join(timeout=300)
+        writer_thread.join(timeout=writer_join_timeout)
 
     if writer_errors:
         raise writer_errors[0]

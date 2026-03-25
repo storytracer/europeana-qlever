@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from .constants import LOG_BACKUP_COUNT, LOG_FILENAME, LOG_MAX_BYTES
+from .constants import DEFAULT_LOG_BACKUP_COUNT, DEFAULT_LOG_MAX_BYTES, LOG_FILENAME
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
@@ -211,7 +211,12 @@ class PipelineState:
 # ---------------------------------------------------------------------------
 
 
-def setup_logging(work_dir: Path, level: int = logging.INFO) -> logging.Logger:
+def setup_logging(
+    work_dir: Path,
+    level: int = logging.INFO,
+    max_bytes: int = DEFAULT_LOG_MAX_BYTES,
+    backup_count: int = DEFAULT_LOG_BACKUP_COUNT,
+) -> logging.Logger:
     """Configure rotating file logging for the pipeline.
 
     Returns the root ``europeana_qlever`` logger.  All modules should use
@@ -232,8 +237,8 @@ def setup_logging(work_dir: Path, level: int = logging.INFO) -> logging.Logger:
     work_dir.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(
         work_dir / LOG_FILENAME,
-        maxBytes=LOG_MAX_BYTES,
-        backupCount=LOG_BACKUP_COUNT,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
         encoding="utf-8",
     )
     handler.setLevel(level)

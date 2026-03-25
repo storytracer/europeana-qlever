@@ -23,8 +23,13 @@ from rich.progress import (
 )
 
 from . import display
-from .constants import EXPORT_MAX_RETRIES, EXPORT_RETRY_DELAYS, QLEVER_PORT
+from .constants import (
+    DEFAULT_EXPORT_MAX_RETRIES,
+    DEFAULT_EXPORT_RETRY_DELAYS,
+    QLEVER_PORT,
+)
 from .state import ExportResult
+
 logger = logging.getLogger(__name__)
 
 _TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
@@ -51,6 +56,9 @@ def _stream_query(
     output_path: Path,
     qlever_url: str,
     timeout: int,
+    *,
+    http_chunk_size: int = 1_048_576,
+    http_connect_timeout: int = 30,
 ) -> int:
     """Stream a single SPARQL query to a TSV file. Returns approx row count."""
     total_bytes = 0
@@ -76,7 +84,7 @@ def _stream_query(
             "POST",
             qlever_url,
             data={"query": query, "action": "tsv_export"},
-            timeout=httpx.Timeout(timeout + 120, connect=30),
+            timeout=httpx.Timeout(timeout + 120, connect=http_connect_timeout),
         ) as response:
             if response.status_code != 200:
                 error_body = response.read().decode("utf-8", errors="replace")[:2000]
@@ -87,7 +95,7 @@ def _stream_query(
                 response.raise_for_status()
 
             with open(output_path, "wb") as fh:
-                for chunk in response.iter_bytes(chunk_size=1_048_576):
+                for chunk in response.iter_bytes(chunk_size=http_chunk_size):
                     fh.write(chunk)
                     total_bytes += len(chunk)
                     newlines += chunk.count(b"\n")
@@ -115,26 +123,35 @@ def run_query_to_tsv(
     output_path: Path,
     qlever_url: str = f"http://localhost:{QLEVER_PORT}",
     timeout: int = 3600,
+    *,
+    max_retries: int = DEFAULT_EXPORT_MAX_RETRIES,
+    retry_delays: tuple[int, ...] = DEFAULT_EXPORT_RETRY_DELAYS,
+    http_chunk_size: int = 1_048_576,
+    http_connect_timeout: int = 30,
 ) -> int:
     """Stream a SPARQL query result from QLever directly to a TSV file.
 
-    Retries up to ``EXPORT_MAX_RETRIES`` times on transient errors.
+    Retries up to *max_retries* times on transient errors.
     Returns approximate row count (newline count minus header).
     """
     last_exc: Exception | None = None
 
-    for attempt in range(EXPORT_MAX_RETRIES + 1):
+    for attempt in range(max_retries + 1):
         try:
-            return _stream_query(query, output_path, qlever_url, timeout)
+            return _stream_query(
+                query, output_path, qlever_url, timeout,
+                http_chunk_size=http_chunk_size,
+                http_connect_timeout=http_connect_timeout,
+            )
         except Exception as exc:
             last_exc = exc
-            if attempt < EXPORT_MAX_RETRIES and _is_transient(exc):
-                delay = EXPORT_RETRY_DELAYS[attempt]
+            if attempt < max_retries and _is_transient(exc):
+                delay = retry_delays[attempt] if attempt < len(retry_delays) else retry_delays[-1]
                 logger.warning(
                     "Query to %s failed (attempt %d/%d): %s. Retrying in %ds",
                     output_path.name,
                     attempt + 1,
-                    EXPORT_MAX_RETRIES + 1,
+                    max_retries + 1,
                     exc,
                     delay,
                 )
@@ -213,6 +230,13 @@ def export_all(
     memory_limit: str = "4GB",
     temp_directory: Path | None = None,
     dashboard: object | None = None,
+    *,
+    http_chunk_size: int = 1_048_576,
+    http_connect_timeout: int = 30,
+    duckdb_sample_size: int = 100_000,
+    duckdb_row_group_size: int = 100_000,
+    max_retries: int = DEFAULT_EXPORT_MAX_RETRIES,
+    retry_delays: tuple[int, ...] = DEFAULT_EXPORT_RETRY_DELAYS,
 ) -> ExportResult:
     """Run every registered SPARQL export and convert results to Parquet.
 
@@ -235,6 +259,20 @@ def export_all(
         DuckDB memory budget for Parquet conversion.
     temp_directory : Path or None
         DuckDB spill directory. Defaults to ``output_dir / ".duckdb_tmp"``.
+    dashboard : Dashboard or None
+        Optional dashboard for live progress updates.
+    http_chunk_size : int
+        HTTP streaming chunk size in bytes.
+    http_connect_timeout : int
+        HTTP connect timeout in seconds.
+    duckdb_sample_size : int
+        DuckDB type inference sample size.
+    duckdb_row_group_size : int
+        Parquet row group size.
+    max_retries : int
+        Max retry attempts for transient errors.
+    retry_delays : tuple[int, ...]
+        Seconds between retry attempts.
 
     Returns
     -------
@@ -268,7 +306,13 @@ def export_all(
 
         try:
             # 1. Query → TSV
-            rows = run_query_to_tsv(query, tsv_path, qlever_url, timeout)
+            rows = run_query_to_tsv(
+                query, tsv_path, qlever_url, timeout,
+                max_retries=max_retries,
+                retry_delays=retry_delays,
+                http_chunk_size=http_chunk_size,
+                http_connect_timeout=http_connect_timeout,
+            )
             tsv_mb = tsv_path.stat().st_size / 1e6
             display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
@@ -279,6 +323,8 @@ def export_all(
                 tsv_path, parquet_path,
                 memory_limit=memory_limit,
                 temp_directory=duckdb_tmp,
+                sample_size=duckdb_sample_size,
+                row_group_size=duckdb_row_group_size,
             )
             pq_mb = parquet_path.stat().st_size / 1e6
             display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
