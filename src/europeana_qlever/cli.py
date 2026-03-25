@@ -43,14 +43,14 @@ from .constants import (
 @click.group()
 @click.version_option(package_name="europeana-qlever")
 @click.option(
-    "-w", "--work-dir",
+    "-d", "--work-dir",
     required=True,
     type=click.Path(file_okay=False, path_type=Path),
     envvar="EUROPEANA_QLEVER_WORK_DIR",
     help="Root working directory for all output (ttl-merged/, index/, exports/).",
 )
 @click.option(
-    "--width", type=int, default=None,
+    "-w", "--width", type=int, default=None,
     envvar="EUROPEANA_QLEVER_WIDTH",
     help="Fixed console width (e.g. 50 for phone). Default: auto-detect.",
 )
