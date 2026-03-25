@@ -213,8 +213,8 @@ class Dashboard:
     def complete_stage(self) -> None:
         """Mark the current stage as complete and advance overall."""
         if self._stage_task is not None:
-            task_obj = self._progress.tasks[self._stage_task]
-            if task_obj.total is not None:
+            task_obj = self._progress._tasks.get(self._stage_task)
+            if task_obj is not None and task_obj.total is not None:
                 self._progress.update(self._stage_task, completed=task_obj.total)
         self._progress.advance(self._overall_task)
         self._refresh()
