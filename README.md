@@ -82,7 +82,7 @@ uv run europeana-qlever --help
 
 ## Usage
 
-Every command requires a **work directory** (`-w` / `--work-dir`), where all output is written. You can also set the `EUROPEANA_QLEVER_WORK_DIR` environment variable instead of passing `-w` each time.
+Every command requires a **work directory** (`-d` / `--work-dir`), where all output is written. You can also set the `EUROPEANA_QLEVER_WORK_DIR` environment variable instead of passing `-d` each time.
 
 The work directory contains these subdirectories (created automatically as needed):
 
@@ -106,13 +106,13 @@ rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10 --che
 Merging discovers all RDF prefixes (via rdflib sampling) and extracts ZIPs in parallel into chunked TTL files (~5 GB each) with a unified prefix header. Pass the source TTL directory as an argument:
 
 ```bash
-uv run europeana-qlever -w /data/europeana merge ~/data/europeana/TTL
+uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL
 ```
 
 Options:
 
 ```bash
-uv run europeana-qlever -w /data/europeana merge ~/data/europeana/TTL \
+uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL \
   --chunk-size 5.0 \
   --workers 4 \
   --sample-size 100
@@ -123,14 +123,14 @@ Resource usage is logged to `<work-dir>/monitor.log` during merge.
 You can also run prefix discovery standalone:
 
 ```bash
-uv run europeana-qlever -w /data/europeana scan-prefixes ~/data/europeana/TTL \
+uv run europeana-qlever -d /data/europeana scan-prefixes ~/data/europeana/TTL \
   --sample-size 100 --files-per-zip 5
 ```
 
 #### 3. Generate the Qleverfile
 
 ```bash
-uv run europeana-qlever -w /data/europeana write-qleverfile --qlever-bin /path/to/qlever/build
+uv run europeana-qlever -d /data/europeana write-qleverfile --qlever-bin /path/to/qlever/build
 ```
 
 This writes a `Qleverfile` and `settings.json` into `<work-dir>/index/` with EDM-optimised settings (all languages kept, external prefixes for long URIs, Unicode support, etc.).
@@ -138,7 +138,7 @@ This writes a `Qleverfile` and `settings.json` into `<work-dir>/index/` with EDM
 #### 4. Build the index
 
 ```bash
-uv run europeana-qlever -w /data/europeana index
+uv run europeana-qlever -d /data/europeana index
 ```
 
 This takes approximately 2–5 hours depending on hardware. Run in tmux or screen for long sessions.
@@ -146,7 +146,7 @@ This takes approximately 2–5 hours depending on hardware. Run in tmux or scree
 #### 5. Start the SPARQL server
 
 ```bash
-uv run europeana-qlever -w /data/europeana start
+uv run europeana-qlever -d /data/europeana start
 ```
 
 Verify with a basic query:
@@ -163,19 +163,19 @@ Export runs SPARQL queries against the server and writes Parquet files to `<work
 
 ```bash
 # Export all bundled queries
-uv run europeana-qlever -w /data/europeana export --all
+uv run europeana-qlever -d /data/europeana export --all
 
 # Export specific query files
-uv run europeana-qlever -w /data/europeana export path/to/custom_query.sparql
+uv run europeana-qlever -d /data/europeana export path/to/custom_query.sparql
 
 # Skip already-exported queries
-uv run europeana-qlever -w /data/europeana export --all --skip-existing --timeout 7200
+uv run europeana-qlever -d /data/europeana export --all --skip-existing --timeout 7200
 ```
 
 #### 7. Stop the server
 
 ```bash
-uv run europeana-qlever -w /data/europeana stop
+uv run europeana-qlever -d /data/europeana stop
 ```
 
 #### Full pipeline
@@ -183,18 +183,18 @@ uv run europeana-qlever -w /data/europeana stop
 Run everything end-to-end (merge → write-qleverfile → index → start → export → stop):
 
 ```bash
-uv run europeana-qlever -w /data/europeana pipeline ~/data/europeana/TTL
+uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL
 
 # Skip stages whose output already exists
-uv run europeana-qlever -w /data/europeana pipeline ~/data/europeana/TTL --skip-merge --skip-index
+uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL --skip-merge --skip-index
 ```
 
 ## CLI commands
 
-All commands require `-w <work-dir>` (or `EUROPEANA_QLEVER_WORK_DIR` env var).
+All commands require `-d <work-dir>` (or `EUROPEANA_QLEVER_WORK_DIR` env var).
 
 ```
-europeana-qlever -w WORK_DIR
+europeana-qlever -d WORK_DIR
 ├── scan-prefixes TTL_DIR      Discover all RDF prefixes used across the TTL dump
 ├── merge TTL_DIR              Merge all Europeana TTL ZIPs into chunked TTL files
 ├── write-qleverfile           Generate a Qleverfile configured for the Europeana dataset
@@ -217,33 +217,33 @@ SPARQL queries are generated dynamically by the `QueryBuilder` class in `query.p
 List all available queries:
 
 ```bash
-uv run europeana-qlever -w /data/europeana list-queries
+uv run europeana-qlever -d /data/europeana list-queries
 ```
 
 ### Export examples
 
 ```bash
 # Backward compatible — runs all 7 base queries
-uv run europeana-qlever -w /data/europeana export --all
+uv run europeana-qlever -d /data/europeana export --all
 
 # Run specific queries by name
-uv run europeana-qlever -w /data/europeana export -q items_enriched -q open_reusable_inventory
+uv run europeana-qlever -d /data/europeana export -q items_enriched -q open_reusable_inventory
 
 # Run all analytics queries
-uv run europeana-qlever -w /data/europeana export --query-set analytics
+uv run europeana-qlever -d /data/europeana export --query-set analytics
 
 # Run every query (base + AI + analytics = 36)
-uv run europeana-qlever -w /data/europeana export --query-set all
+uv run europeana-qlever -d /data/europeana export --query-set all
 
 # Filtered export: openly-licensed images from the Netherlands
-uv run europeana-qlever -w /data/europeana export -q items_enriched \
+uv run europeana-qlever -d /data/europeana export -q items_enriched \
   --country Netherlands --type IMAGE --rights-category open
 
 # Sample 10,000 items for development
-uv run europeana-qlever -w /data/europeana export -q items_enriched --limit 10000
+uv run europeana-qlever -d /data/europeana export -q items_enriched --limit 10000
 
 # Custom .sparql files still work
-uv run europeana-qlever -w /data/europeana export path/to/custom_query.sparql
+uv run europeana-qlever -d /data/europeana export path/to/custom_query.sparql
 ```
 
 ### Filter options
@@ -276,7 +276,7 @@ Queries resolve multilingual labels using a parallel English + vernacular model:
 Add more languages with `--language`:
 
 ```bash
-uv run europeana-qlever -w /data/europeana export -q items_enriched --language fr --language de
+uv run europeana-qlever -d /data/europeana export -q items_enriched --language fr --language de
 ```
 
 This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
@@ -291,7 +291,7 @@ This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
 | `tests/` | Unit tests |
 | `EDM.md` | Europeana Data Model reference — entity relationships, RDF namespaces, rights framework, and domain context |
 
-**Work directory** (specified via `-w`):
+**Work directory** (specified via `-d`):
 
 | Path | Purpose |
 |------|---------|
@@ -305,14 +305,14 @@ This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
 Europeana refreshes the FTP dump weekly. To update:
 
 1. Re-download changed ZIPs: `rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10`
-2. Re-run the pipeline: `uv run europeana-qlever -w /data/europeana pipeline ~/data/europeana/TTL`
+2. Re-run the pipeline: `uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL`
 
 Or step by step (QLever does not support incremental updates; full re-index is needed):
 
-1. Re-merge: `uv run europeana-qlever -w /data/europeana merge ~/data/europeana/TTL`
-2. Re-index: `uv run europeana-qlever -w /data/europeana index`
-3. Restart: `uv run europeana-qlever -w /data/europeana start`
-4. Re-export: `uv run europeana-qlever -w /data/europeana export --all`
+1. Re-merge: `uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL`
+2. Re-index: `uv run europeana-qlever -d /data/europeana index`
+3. Restart: `uv run europeana-qlever -d /data/europeana start`
+4. Re-export: `uv run europeana-qlever -d /data/europeana export --all`
 
 ## License
 

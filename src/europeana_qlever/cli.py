@@ -8,8 +8,8 @@ Install & run::
 
 Or for a single command::
 
-    uv run europeana-qlever -w ~/europeana merge /data/TTL --workers 12
-    uv run europeana-qlever -w ~/europeana export -q core_metadata
+    uv run europeana-qlever -d ~/europeana merge /data/TTL --workers 12
+    uv run europeana-qlever -d ~/europeana export -q core_metadata
 """
 
 from __future__ import annotations

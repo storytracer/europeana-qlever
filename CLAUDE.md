@@ -33,7 +33,7 @@ Note: source lives under `src/europeana_qlever/` (src layout), mapped in `pyproj
 
 ### Work directory layout (not in repo)
 
-All output lives under a single work directory specified via `-w` / `--work-dir` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Subdirectory names are defined in `constants.py`.
+All output lives under a single work directory specified via `-d` / `--work-dir` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Subdirectory names are defined in `constants.py`.
 
 | Subdirectory | Constant | Purpose |
 |--------------|----------|---------|
@@ -49,21 +49,21 @@ The source TTL ZIP directory is user-managed and passed as a positional argument
 ```bash
 uv sync                                                         # Install dependencies
 uv run europeana-qlever --help                                   # Show all CLI commands
-uv run europeana-qlever -w WORK_DIR merge TTL_DIR                # Merge TTL ZIPs into chunks
-uv run europeana-qlever -w WORK_DIR write-qleverfile             # Generate Qleverfile + settings.json
-uv run europeana-qlever -w WORK_DIR index                        # Build QLever index
-uv run europeana-qlever -w WORK_DIR start                        # Start SPARQL server on :7001
-uv run europeana-qlever -w WORK_DIR stop                         # Stop SPARQL server
-uv run europeana-qlever -w WORK_DIR list-queries                 # List all 36 available queries
-uv run europeana-qlever -w WORK_DIR export --all                 # Export all base queries to Parquet
-uv run europeana-qlever -w WORK_DIR export --query-set all       # Export all 36 queries
-uv run europeana-qlever -w WORK_DIR export -q items_enriched     # Export a specific named query
-uv run europeana-qlever -w WORK_DIR export FILE.sparql           # Export a custom .sparql file
-uv run europeana-qlever -w WORK_DIR pipeline TTL_DIR             # Run full pipeline end-to-end
+uv run europeana-qlever -d WORK_DIR merge TTL_DIR                # Merge TTL ZIPs into chunks
+uv run europeana-qlever -d WORK_DIR write-qleverfile             # Generate Qleverfile + settings.json
+uv run europeana-qlever -d WORK_DIR index                        # Build QLever index
+uv run europeana-qlever -d WORK_DIR start                        # Start SPARQL server on :7001
+uv run europeana-qlever -d WORK_DIR stop                         # Stop SPARQL server
+uv run europeana-qlever -d WORK_DIR list-queries                 # List all 36 available queries
+uv run europeana-qlever -d WORK_DIR export --all                 # Export all base queries to Parquet
+uv run europeana-qlever -d WORK_DIR export --query-set all       # Export all 36 queries
+uv run europeana-qlever -d WORK_DIR export -q items_enriched     # Export a specific named query
+uv run europeana-qlever -d WORK_DIR export FILE.sparql           # Export a custom .sparql file
+uv run europeana-qlever -d WORK_DIR pipeline TTL_DIR             # Run full pipeline end-to-end
 uv run pytest tests/test_query.py                                # Run query generator tests
 ```
 
-All commands require `-w WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Output paths are derived automatically. Always use `uv run` — never bare `python` or `pip install`.
+All commands require `-d WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Output paths are derived automatically. Always use `uv run` — never bare `python` or `pip install`.
 
 ## Architecture notes
 
