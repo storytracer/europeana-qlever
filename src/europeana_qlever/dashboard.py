@@ -206,7 +206,7 @@ class Dashboard:
             layout,
             console=self._original_console,
             refresh_per_second=self.refresh_rate,
-            screen=False,
+            screen=True,
         )
         self._live.start()
 
