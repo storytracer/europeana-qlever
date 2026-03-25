@@ -36,6 +36,20 @@ class MergeResult:
 
 
 @dataclass
+class ValidateResult:
+    """Outcome of a validation operation."""
+
+    total_zips: int = 0
+    total_entries: int = 0
+    valid_entries: int = 0
+    invalid_entries: int = 0
+    checksum_ok: int = 0
+    checksum_failed: list[str] = field(default_factory=list)
+    checksum_missing: int = 0
+    manifest_path: Path | None = None
+
+
+@dataclass
 class ExportResult:
     """Outcome of an export-all operation."""
 
@@ -62,6 +76,13 @@ class StageState:
     processed_zips: list[str] = field(default_factory=list)
     failed_zips: list[str] = field(default_factory=list)
     chunks_written: int = 0
+    # Validate-specific
+    total_entries: int = 0
+    valid_entries: int = 0
+    invalid_entries: int = 0
+    checksum_ok_count: int = 0
+    checksum_failed_list: list[str] = field(default_factory=list)
+    checksum_missing_count: int = 0
     # Export-specific
     completed_queries: list[str] = field(default_factory=list)
     failed_queries: dict[str, str] = field(default_factory=dict)
@@ -72,12 +93,27 @@ class StageState:
             d["completed_at"] = self.completed_at
         if self.error:
             d["error"] = self.error
+        # Merge-specific
         if self.processed_zips:
             d["processed_zips"] = self.processed_zips
         if self.failed_zips:
             d["failed_zips"] = self.failed_zips
         if self.chunks_written:
             d["chunks_written"] = self.chunks_written
+        # Validate-specific
+        if self.total_entries:
+            d["total_entries"] = self.total_entries
+        if self.valid_entries:
+            d["valid_entries"] = self.valid_entries
+        if self.invalid_entries:
+            d["invalid_entries"] = self.invalid_entries
+        if self.checksum_ok_count:
+            d["checksum_ok_count"] = self.checksum_ok_count
+        if self.checksum_failed_list:
+            d["checksum_failed_list"] = self.checksum_failed_list
+        if self.checksum_missing_count:
+            d["checksum_missing_count"] = self.checksum_missing_count
+        # Export-specific
         if self.completed_queries:
             d["completed_queries"] = self.completed_queries
         if self.failed_queries:
@@ -93,6 +129,12 @@ class StageState:
             processed_zips=d.get("processed_zips", []),
             failed_zips=d.get("failed_zips", []),
             chunks_written=d.get("chunks_written", 0),
+            total_entries=d.get("total_entries", 0),
+            valid_entries=d.get("valid_entries", 0),
+            invalid_entries=d.get("invalid_entries", 0),
+            checksum_ok_count=d.get("checksum_ok_count", 0),
+            checksum_failed_list=d.get("checksum_failed_list", []),
+            checksum_missing_count=d.get("checksum_missing_count", 0),
             completed_queries=d.get("completed_queries", []),
             failed_queries=d.get("failed_queries", {}),
         )
@@ -137,6 +179,18 @@ class PipelineState:
             s.status = "complete"  # complete with warnings
         else:
             s.status = "complete"
+        s.completed_at = self._now()
+        self.updated_at = self._now()
+
+    def update_validate(self, result: ValidateResult) -> None:
+        s = self.get_stage("validate")
+        s.total_entries = result.total_entries
+        s.valid_entries = result.valid_entries
+        s.invalid_entries = result.invalid_entries
+        s.checksum_ok_count = result.checksum_ok
+        s.checksum_failed_list = result.checksum_failed
+        s.checksum_missing_count = result.checksum_missing
+        s.status = "complete"
         s.completed_at = self._now()
         self.updated_at = self._now()
 

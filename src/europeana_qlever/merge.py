@@ -57,6 +57,10 @@ _PREFIX_DECL_RE = re.compile(r"@prefix\s+(\S+):\s+<([^>]+)>")
 # Byte markers for safety check during bulk copy
 _PREFIX_MARKER = b"@prefix"
 _BASE_MARKER = b"@base"
+_STRAY_AT_MARKER = b"\n@ "
+
+# Defense-in-depth: catch lines starting with @ that aren't @prefix or @base
+_BAD_AT_LINE_RE = re.compile(r"^@(?!prefix\s|base\s)\S", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -173,16 +177,25 @@ def scan_prefixes_from_sample(
 # Fallback: line-by-line filtering for entries with stray prefix lines
 # ---------------------------------------------------------------------------
 
+def _should_filter_line(line: str) -> bool:
+    """Return True if *line* should be stripped from merged output.
+
+    Catches @prefix/@base declarations **and** malformed @ directives
+    (e.g. ``@ spa .``) as a defense-in-depth safety net.
+    """
+    return bool(_PREFIX_RE.match(line) or _BAD_AT_LINE_RE.match(line))
+
+
 def _fallback_line_filter(
     initial_chunk: bytes,
     entry: io.BufferedIOBase,
     out: io.BufferedWriter,
 ) -> int:
-    """Filter prefix/base lines from *initial_chunk* + rest of *entry*.
+    """Filter prefix/base/bad-@ lines from *initial_chunk* + rest of *entry*.
 
-    Called when the bulk copy phase detects a stray ``@prefix`` or ``@base``
-    marker in a read chunk. Switches to line-by-line filtering for the
-    remainder of that ZIP entry.
+    Called when the bulk copy phase detects a stray ``@prefix``, ``@base``,
+    or suspicious ``@ `` marker in a read chunk. Switches to line-by-line
+    filtering for the remainder of that ZIP entry.
 
     Returns bytes written.
     """
@@ -192,7 +205,7 @@ def _fallback_line_filter(
         if not raw_line.strip():
             continue
         line = raw_line.decode("utf-8", errors="replace")
-        if _PREFIX_RE.match(line):
+        if _should_filter_line(line):
             continue
         # Re-add newline stripped by split
         data = raw_line + b"\n"
@@ -201,7 +214,7 @@ def _fallback_line_filter(
     # Continue line-by-line for the rest of the entry
     for raw_line in entry:
         line = raw_line.decode("utf-8", errors="replace")
-        if line.strip() and not _PREFIX_RE.match(line):
+        if line.strip() and not _should_filter_line(line):
             out.write(raw_line)
             bytes_written += len(raw_line)
     return bytes_written
@@ -215,6 +228,7 @@ def _extract_zip_to_file(
     zip_path: Path,
     output_file: Path,
     bulk_read_size: int = DEFAULT_BULK_READ_SIZE,
+    skip_entries: frozenset[str] = frozenset(),
 ) -> int:
     """Extract all TTL from *zip_path*, stripping prefix/base declarations.
 
@@ -226,6 +240,9 @@ def _extract_zip_to_file(
     If a stray @prefix/@base is detected during bulk copy, falls back to
     line-by-line filtering for the remainder of that entry.
 
+    Entries whose names appear in *skip_entries* (populated from the
+    validation manifest) are silently skipped.
+
     Returns bytes written, or 0 on error.
     """
     bytes_written = 0
@@ -234,6 +251,12 @@ def _extract_zip_to_file(
             with zipfile.ZipFile(zip_path) as zf:
                 for name in zf.namelist():
                     if not name.endswith(".ttl"):
+                        continue
+                    if name in skip_entries:
+                        logger.debug(
+                            "Skipping invalid entry %s:%s (validation)",
+                            zip_path.name, name,
+                        )
                         continue
                     with zf.open(name) as entry:
                         # Phase 1: skip prefix/base header lines
@@ -252,10 +275,15 @@ def _extract_zip_to_file(
                             chunk = entry.read(bulk_read_size)
                             if not chunk:
                                 break
-                            if _PREFIX_MARKER in chunk or _BASE_MARKER in chunk:
-                                # Rare: stray prefix/base in data — fall back
+                            if (
+                                _PREFIX_MARKER in chunk
+                                or _BASE_MARKER in chunk
+                                or _STRAY_AT_MARKER in chunk
+                                or chunk.startswith(b"@ ")
+                            ):
+                                # Rare: stray directive in data — fall back
                                 logger.debug(
-                                    "Stray @prefix/@base in %s:%s, "
+                                    "Stray @prefix/@base/@ in %s:%s, "
                                     "falling back to line-by-line",
                                     zip_path.name, name,
                                 )
@@ -370,6 +398,7 @@ def merge_ttl(
     prefixes: dict[str, str] | None = None,
     monitor: object | None = None,
     skip_zips: frozenset[str] = frozenset(),
+    manifest: dict | None = None,
     dashboard: object | None = None,
     bulk_read_size: int = DEFAULT_BULK_READ_SIZE,
     copy_buf_size: int = DEFAULT_COPY_BUF_SIZE,
@@ -397,6 +426,9 @@ def merge_ttl(
         and memory is high, submissions are throttled or paused.
     skip_zips : frozenset[str]
         ZIP filenames to skip (for resuming a previous merge).
+    manifest : dict or None
+        Validation manifest mapping ``{zip_name: ZipReport}``. When provided,
+        invalid entries within each ZIP are skipped during extraction.
     dashboard : Dashboard or None
         Optional dashboard for live progress updates.
 
@@ -535,8 +567,18 @@ def merge_ttl(
                     raise writer_errors[0]
 
                 tmp_path = tmp_dir / f"{i:06d}.tmp"
+                # Build per-ZIP skip set from validation manifest
+                zip_skip_entries: frozenset[str] = frozenset()
+                if manifest is not None:
+                    zip_report = manifest.get(zp.name)
+                    if zip_report is not None:
+                        zip_skip_entries = frozenset(
+                            e.entry_name
+                            for e in zip_report.invalid_entries
+                        )
                 future = pool.submit(
                     _extract_zip_to_file, zp, tmp_path, bulk_read_size,
+                    zip_skip_entries,
                 )
                 future.add_done_callback(
                     lambda fut, t=tmp_path, z=zp: _on_future_done(fut, t, z)

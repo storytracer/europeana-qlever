@@ -123,6 +123,55 @@ def scan_prefixes_cmd(ttl_dir: Path, sample_size: int, files_per_zip: int):
 
 
 # ---------------------------------------------------------------------------
+# validate
+# ---------------------------------------------------------------------------
+
+@cli.command()
+@click.argument("ttl_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--workers", default=0, show_default=True,
+              help="Parallel workers (0 = auto-detect).")
+@click.option("--no-checksums", is_flag=True, default=False,
+              help="Skip MD5 checksum verification.")
+@click.pass_context
+def validate(
+    ctx: click.Context,
+    ttl_dir: Path,
+    workers: int,
+    no_checksums: bool,
+):
+    """Validate Europeana TTL ZIPs before merging.
+
+    Verifies MD5 checksums (if .md5sum files exist) and parses every TTL
+    entry with rdflib to catch syntax errors. Invalid entries are logged
+    and recorded in a manifest that the merge stage uses to skip them.
+
+    Writes validate_manifest.json to <work-dir>/.
+    """
+    from .validate import validate_all
+
+    work_dir: Path = ctx.obj["work_dir"]
+    budget = ctx.obj["budget"]
+
+    if workers == 0:
+        workers = budget.merge_workers()
+        display.console.print(f"[dim]Auto-detected {workers} workers[/dim]")
+
+    result = validate_all(
+        ttl_dir,
+        work_dir,
+        workers=workers,
+        verify_checksums_flag=not no_checksums,
+    )
+
+    if result.invalid_entries > 0:
+        display.console.print(
+            f"\n[yellow]{result.invalid_entries:,} invalid entries will be "
+            f"skipped during merge[/yellow]"
+        )
+        ctx.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # merge
 # ---------------------------------------------------------------------------
 
@@ -634,6 +683,7 @@ def export(
               help="DuckDB memory budget for export (e.g. '4GB' or 'auto').")
 @click.option("--timeout", default=3600, show_default=True,
               help="Per-query timeout in seconds for export.")
+@click.option("--skip-validate", is_flag=True, help="Skip TTL validation.")
 @click.option("--skip-merge", is_flag=True, help="Skip merge if chunks already exist.")
 @click.option("--skip-index", is_flag=True, help="Skip indexing if index already exists.")
 @click.option("--force", is_flag=True, default=False,
@@ -652,11 +702,12 @@ def pipeline(
     cache_size: str,
     duckdb_memory: str,
     timeout: int,
+    skip_validate: bool,
     skip_merge: bool,
     skip_index: bool,
     force: bool,
 ):
-    """Run the full pipeline: merge → write-qleverfile → index → start → export.
+    """Run the full pipeline: validate → merge → write-qleverfile → index → start → export.
 
     Takes TTL_DIR (directory of .zip files) and runs all stages in sequence.
     Each stage can be skipped if its output already exists (use --skip-merge,
@@ -669,12 +720,14 @@ def pipeline(
     """
     import logging
 
+    from .constants import VALIDATE_MANIFEST
     from .dashboard import Dashboard
     from .export import export_all
     from .merge import merge_ttl, scan_prefixes_from_sample
     from .monitor import ResourceMonitor
     from .query import QueryBuilder
     from .state import PipelineState
+    from .validate import load_manifest, validate_all
 
     log = logging.getLogger(__name__)
 
@@ -726,6 +779,54 @@ def pipeline(
                 refresh_rate=budget.dashboard_refresh_rate(),
             ) as dash:
 
+                # --- Stage 0: Validate ---
+                manifest_path = work_dir / VALIDATE_MANIFEST
+                if state.is_complete("validate"):
+                    dash.log("Validation already complete (from checkpoint)")
+                    dash.complete_stage()
+                elif skip_validate:
+                    dash.log("Skipping validation (--skip-validate)")
+                    state.mark_complete("validate")
+                    state.save(state_path)
+                    dash.complete_stage()
+                else:
+                    all_zips_for_val = sorted(ttl_dir.glob("*.zip"))
+                    dash.set_stage("Validate", total=len(all_zips_for_val))
+                    dash.set_info("workers", str(workers))
+
+                    validate_result = validate_all(
+                        ttl_dir, work_dir,
+                        workers=workers,
+                        verify_checksums_flag=True,
+                        dashboard=dash,
+                    )
+                    state.update_validate(validate_result)
+                    state.save(state_path)
+                    dash.complete_stage()
+
+                    if validate_result.invalid_entries:
+                        msg = (
+                            f"Validate: {validate_result.invalid_entries:,} "
+                            f"invalid entries will be skipped during merge"
+                        )
+                        dash.log(msg)
+                        log.warning(msg)
+                    if validate_result.checksum_failed:
+                        msg = (
+                            f"Validate: {len(validate_result.checksum_failed)} "
+                            f"checksum failure(s) — ZIPs excluded"
+                        )
+                        dash.log(msg)
+                        log.warning(msg)
+                        failures.append(msg)
+
+                # Load validation manifest for merge
+                manifest = load_manifest(manifest_path)
+                checksum_failed_zips = frozenset(
+                    r.zip_name for r in manifest.values()
+                    if r.checksum_ok is False
+                )
+
                 # --- Stage 1: Merge ---
                 chunks = sorted(merged_dir.glob("europeana_*.ttl"))
                 if state.is_complete("merge"):
@@ -743,6 +844,8 @@ def pipeline(
                     # Resume: skip ZIPs already processed in a prior run
                     merge_stage = state.get_stage("merge")
                     skip_zips = frozenset(merge_stage.processed_zips)
+                    # Also skip checksum-failed ZIPs
+                    skip_zips = skip_zips | checksum_failed_zips
 
                     # Update stage with actual total after prefix scan
                     all_zips = sorted(ttl_dir.glob("*.zip"))
@@ -753,7 +856,8 @@ def pipeline(
                     merge_result = merge_ttl(
                         ttl_dir, merged_dir,
                         chunk_size_gb=chunk_size, workers=workers, prefixes=prefixes,
-                        monitor=monitor, skip_zips=skip_zips, dashboard=dash,
+                        monitor=monitor, skip_zips=skip_zips, manifest=manifest,
+                        dashboard=dash,
                         bulk_read_size=budget.bulk_read_size(),
                         copy_buf_size=budget.copy_buf_size(),
                         backpressure_thresholds=budget.backpressure_thresholds(),
