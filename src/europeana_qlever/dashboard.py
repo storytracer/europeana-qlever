@@ -305,7 +305,7 @@ class Dashboard:
                 Layout(self._build_log_panel(), name="log"),
             )
         else:
-            top = Layout(size=10)
+            top = Layout(size=13)
             top.split_row(
                 Layout(self._build_system_panel(), name="system", ratio=1),
                 Layout(self._build_progress_panel(), name="progress", ratio=1),
@@ -353,7 +353,7 @@ class Dashboard:
         disk_pct = (disk_used_gb / snap.disk_total_gb * 100) if snap.disk_total_gb > 0 else 0
         lines.append(_pct_bar(
             "DISK", disk_pct,
-            _format_gb(snap.disk_free_gb), _format_gb(snap.disk_total_gb),
+            _format_gb(disk_used_gb), _format_gb(snap.disk_total_gb),
             "magenta", warn_pct=warn, critical_pct=crit,
         ))
 
@@ -365,20 +365,32 @@ class Dashboard:
             "cyan", warn_pct=warn, critical_pct=crit,
         ))
 
-        # Tool metrics
-        if self._info:
+        # Process-group metrics (our tool's own usage)
+        if hasattr(snap, "process_cpu_pct"):
             lines.append(Text())
+            lines.append(_pct_bar(
+                "PROC", snap.process_cpu_pct,
+                f"{snap.process_cpu_pct:.0f}%", f"{cpus}C",
+                "bright_green", warn_pct=warn, critical_pct=crit,
+            ))
+            rss_line = Text()
+            proc_rss_gb = snap.process_rss_mb / 1024
+            rss_line.append(" RSS  ", style="bold")
+            if proc_rss_gb >= 1.0:
+                rss_line.append(f"{proc_rss_gb:.1f} GB", style="dim")
+            else:
+                rss_line.append(f"{snap.process_rss_mb:.0f} MB", style="dim")
+            if snap.child_count > 0:
+                rss_line.append(f"  ({snap.child_count} children)", style="dim")
+            lines.append(rss_line)
+
+        # Tool metrics (concurrency, etc.)
+        if self._info:
             for k, v in self._info.items():
                 line = Text()
                 line.append(f" {k}: ", style="bold")
                 line.append(v, style="dim")
                 lines.append(line)
-
-        # RSS
-        rss_line = Text()
-        rss_line.append(" RSS: ", style="bold")
-        rss_line.append(f"{snap.rss_mb:.0f} MB", style="dim")
-        lines.append(rss_line)
 
         content = Text("\n").join(lines)
         return Panel(content, title="System", border_style="dim", padding=(0, 1))

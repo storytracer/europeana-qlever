@@ -39,6 +39,7 @@ _CSV_HEADER = [
     "timestamp", "rss_mb", "available_mb", "total_mb",
     "memory_pct", "disk_free_gb", "disk_total_gb",
     "cpu_pct", "swap_used_gb", "swap_total_gb",
+    "process_cpu_pct", "process_rss_mb", "child_count",
 ]
 
 
@@ -56,6 +57,10 @@ class ResourceSnapshot:
     cpu_pct: float  # system-wide CPU %
     swap_used_gb: float
     swap_total_gb: float
+    # Process-group metrics (main + child processes)
+    process_cpu_pct: float = 0.0  # our tool's CPU, normalized to 0-100%
+    process_rss_mb: float = 0.0  # total RSS across main + children
+    child_count: int = 0  # number of child processes
 
 
 class ResourceMonitor:
@@ -93,6 +98,12 @@ class ResourceMonitor:
         self._thread: threading.Thread | None = None
         self._process = psutil.Process()
 
+        # Cache of child psutil.Process objects keyed by PID.
+        # Reusing the same objects across samples is required because
+        # psutil.Process.cpu_percent() computes a delta between calls —
+        # the first call on a new object always returns 0.
+        self._children_cache: dict[int, psutil.Process] = {}
+
         # Tracking
         self._peak_rss_mb: float = 0.0
         self._min_available_mb: float = float("inf")
@@ -121,6 +132,7 @@ class ResourceMonitor:
     def start(self) -> None:
         # Prime cpu_percent (first call always returns 0)
         psutil.cpu_percent(interval=None)
+        self._process.cpu_percent(interval=None)
 
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         # Write CSV header
@@ -165,7 +177,8 @@ class ResourceMonitor:
     def snapshot(self) -> ResourceSnapshot:
         """Take a resource reading right now."""
         mem = psutil.virtual_memory()
-        rss = self._process.memory_info().rss / (1024 * 1024)
+        proc_mem = self._process.memory_info()
+        rss = proc_mem.rss / (1024 * 1024)
         cpu = psutil.cpu_percent(interval=None)
         swap = psutil.swap_memory()
         try:
@@ -175,6 +188,47 @@ class ResourceMonitor:
         except OSError:
             disk_free_gb = 0.0
             disk_total_gb = 0.0
+
+        # Process-group metrics (main + child processes).
+        # Reuse cached psutil.Process objects so cpu_percent() has a
+        # previous baseline — first call on a new object always returns 0.
+        proc_cpu = self._process.cpu_percent(interval=None)
+        proc_rss = proc_mem.rss
+        live_pids: set[int] = set()
+        try:
+            children = self._process.children(recursive=True)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            children = []
+        for child in children:
+            pid = child.pid
+            live_pids.add(pid)
+            cached = self._children_cache.get(pid)
+            if cached is None:
+                # New child — prime it (returns 0 this time, real value next)
+                try:
+                    child.cpu_percent(interval=None)
+                    child.memory_info()  # warm up
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+                self._children_cache[pid] = child
+                # Still count its RSS, just not its CPU (unprimed)
+                try:
+                    proc_rss += child.memory_info().rss
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            else:
+                try:
+                    proc_cpu += cached.cpu_percent(interval=None)
+                    proc_rss += cached.memory_info().rss
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        # Evict dead children from cache
+        dead = set(self._children_cache) - live_pids
+        for pid in dead:
+            del self._children_cache[pid]
+        child_count = len(live_pids)
+        cpu_count = psutil.cpu_count() or 1
+        process_cpu_pct = min(100.0, proc_cpu / cpu_count)
 
         return ResourceSnapshot(
             timestamp=time.time(),
@@ -187,6 +241,9 @@ class ResourceMonitor:
             cpu_pct=cpu,
             swap_used_gb=swap.used / (1024 ** 3),
             swap_total_gb=swap.total / (1024 ** 3),
+            process_cpu_pct=process_cpu_pct,
+            process_rss_mb=proc_rss / (1024 * 1024),
+            child_count=child_count,
         )
 
     def is_memory_critical(self) -> bool:
@@ -294,6 +351,9 @@ class ResourceMonitor:
             f"{snap.cpu_pct:.1f}",
             f"{snap.swap_used_gb:.2f}",
             f"{snap.swap_total_gb:.2f}",
+            f"{snap.process_cpu_pct:.1f}",
+            f"{snap.process_rss_mb:.1f}",
+            f"{snap.child_count}",
         ])
         with open(self._log_path, "a") as f:
             f.write(buf.getvalue())

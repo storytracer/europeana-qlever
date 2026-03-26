@@ -119,6 +119,13 @@ DEFAULT_MONITOR_INTERVAL_ACTIVE_SECONDS = 1.0
 DEFAULT_MONITOR_WARN_MEMORY_PCT = 80.0
 DEFAULT_MONITOR_CRITICAL_MEMORY_PCT = 90.0
 
+# Adaptive throttle defaults (CPU-aware concurrency control)
+DEFAULT_CPU_TARGET_PCT = 85.0  # scale down above this
+DEFAULT_CPU_LOW_PCT = 65.0  # scale up below this
+DEFAULT_THROTTLE_CONSECUTIVE_SAMPLES = 3
+DEFAULT_THROTTLE_STEP_DOWN = 2
+DEFAULT_THROTTLE_STEP_UP = 2
+
 # ---------------------------------------------------------------------------
 # Fallback defaults for merge I/O
 # ---------------------------------------------------------------------------

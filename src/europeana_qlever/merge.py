@@ -266,7 +266,7 @@ def _writer_loop(
     failed_zips: list[str],
     checksum_failed_zips: list[str],
     skipped_entries_total: list[int],
-    sem: threading.Semaphore,
+    sem: object,  # AdaptiveThrottle or threading.Semaphore (duck-typed)
     progress_cb: callable | None,
     dashboard: object | None,
     error_holder: list,
@@ -356,6 +356,9 @@ def merge_ttl(
     copy_buf_size: int = DEFAULT_COPY_BUF_SIZE,
     backpressure_thresholds: tuple[float, float, float] = (70.0, 80.0, 90.0),
     backpressure_sleeps: tuple[float, float] = (0.1, 0.5),
+    cpu_target: float = 85.0,
+    cpu_low: float = 65.0,
+    throttle_consecutive_samples: int = 3,
     writer_join_timeout: int = 300,
     checksum_policy: str = "skip",
 ) -> MergeResult:
@@ -435,8 +438,35 @@ def merge_ttl(
         shutil.rmtree(tmp_dir)
     tmp_dir.mkdir()
 
-    # Semaphore limits in-flight work; queue bounds temp disk usage
-    sem = threading.Semaphore(workers * 3)
+    # Adaptive throttle replaces fixed semaphore — dynamically adjusts
+    # permits based on CPU and memory pressure via monitor snapshots.
+    from .throttle import AdaptiveThrottle
+
+    bp_soft, _bp_warn, bp_crit = backpressure_thresholds
+
+    def _on_throttle_adjust(current: int, maximum: int, reason: str) -> None:
+        if dashboard is not None:
+            try:
+                dashboard.set_info("concurrency", f"{current}/{maximum} ({reason})")
+            except Exception:
+                pass
+
+    initial_concurrency = max(4, workers // 2)
+    sem = AdaptiveThrottle(
+        initial_permits=initial_concurrency,
+        max_permits=workers,
+        min_permits=2,
+        cpu_target=cpu_target,
+        cpu_low=cpu_low,
+        memory_target=bp_crit,
+        memory_low=bp_soft,
+        consecutive_samples=throttle_consecutive_samples,
+        step_down=2,
+        step_up=2,
+        on_adjust=_on_throttle_adjust,
+    )
+    if dashboard is not None:
+        dashboard.set_info("concurrency", f"{initial_concurrency}/{workers}")
 
     # Shared state (written only by writer thread)
     processed_zips: list[str] = list(skip_zips)
@@ -448,9 +478,17 @@ def merge_ttl(
     write_q: queue.Queue = queue.Queue(maxsize=max(4, workers * 2))
     writer_errors: list[Exception] = []
 
-    # Activate faster monitoring during merge
+    # Activate faster monitoring during merge and wire adaptive throttle
     if monitor is not None and hasattr(monitor, "set_active"):
         monitor.set_active(True)
+        existing_cb = monitor._on_sample
+
+        def _chained_sample(snap: object) -> None:
+            sem.adjust(snap)
+            if existing_cb is not None:
+                existing_cb(snap)
+
+        monitor._on_sample = _chained_sample
 
     logger.info("Starting merge of %d ZIPs with %d workers", len(zip_files), workers)
 
@@ -507,40 +545,35 @@ def merge_ttl(
                 bw, inv, reason = 0, 0, "extraction"
             write_q.put((tmp, zp, bw, inv, reason))
 
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            for i, zp in enumerate(zip_files):
-                # Graduated backpressure based on memory usage
-                if monitor is not None and hasattr(monitor, "memory_pct"):
-                    bp_soft, bp_warn, bp_crit = backpressure_thresholds
-                    bp_soft_sleep, bp_warn_sleep = backpressure_sleeps
-                    pct = monitor.memory_pct()
-                    if pct >= bp_crit:
-                        monitor.wait_for_memory(timeout=120)
-                    elif pct >= bp_warn:
-                        time.sleep(bp_warn_sleep)
-                    elif pct >= bp_soft:
-                        time.sleep(bp_soft_sleep)
+        interrupted = False
+        try:
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                for i, zp in enumerate(zip_files):
+                    # Adaptive throttle bounds concurrency — blocks when
+                    # permits are exhausted (auto-adjusted by CPU/memory)
+                    sem.acquire()
 
-                # Bound concurrency via semaphore
-                sem.acquire()
+                    # Check for writer thread errors
+                    if writer_errors:
+                        raise writer_errors[0]
 
-                # Check for writer thread errors
-                if writer_errors:
-                    raise writer_errors[0]
+                    tmp_path = tmp_dir / f"{i:06d}.tmp"
+                    future = pool.submit(
+                        _extract_zip_to_file, zp, tmp_path, checksum_policy,
+                    )
+                    future.add_done_callback(
+                        lambda fut, t=tmp_path, z=zp: _on_future_done(fut, t, z)
+                    )
+        except KeyboardInterrupt:
+            interrupted = True
+            logger.info("Merge interrupted by user after %d/%d ZIPs",
+                        len(processed_zips), len(zip_files))
+        finally:
+            # Always signal writer to finish and wait, even on interrupt
+            write_q.put(None)
+            writer_thread.join(timeout=10 if interrupted else writer_join_timeout)
 
-                tmp_path = tmp_dir / f"{i:06d}.tmp"
-                future = pool.submit(
-                    _extract_zip_to_file, zp, tmp_path, checksum_policy,
-                )
-                future.add_done_callback(
-                    lambda fut, t=tmp_path, z=zp: _on_future_done(fut, t, z)
-                )
-
-        # Signal writer to finish and wait
-        write_q.put(None)
-        writer_thread.join(timeout=writer_join_timeout)
-
-    if writer_errors:
+    if not interrupted and writer_errors:
         raise writer_errors[0]
 
     # Deactivate fast monitoring
@@ -552,13 +585,20 @@ def merge_ttl(
 
     # Summary
     total_bytes = sum(p.stat().st_size for p in chunk_files)
-    display.console.print(
-        f"\n[green]Done.[/green] {len(zip_files):,} ZIPs → "
-        f"{len(chunk_files)} chunk(s) "
-        f"({total_bytes / 1e9:.1f} GB) in {display.short_path(output_dir)}"
-    )
-    for p in chunk_files:
-        display.console.print(f"  {p.name}  ({p.stat().st_size / 1e9:.2f} GB)")
+    if interrupted:
+        display.console.print(
+            f"\n[yellow]Interrupted.[/yellow] {len(processed_zips):,}/{len(zip_files):,} "
+            f"ZIPs processed → {len(chunk_files)} chunk(s) "
+            f"({total_bytes / 1e9:.1f} GB)"
+        )
+    else:
+        display.console.print(
+            f"\n[green]Done.[/green] {len(zip_files):,} ZIPs → "
+            f"{len(chunk_files)} chunk(s) "
+            f"({total_bytes / 1e9:.1f} GB) in {display.short_path(output_dir)}"
+        )
+        for p in chunk_files:
+            display.console.print(f"  {p.name}  ({p.stat().st_size / 1e9:.2f} GB)")
 
     if checksum_failed_zips:
         display.console.print(
@@ -595,9 +635,12 @@ def merge_ttl(
         skipped_entries=total_skipped,
     )
     logger.info(
-        "Merge complete: %d chunks, %d processed, %d failed, "
+        "Merge %s: %d chunks, %d processed, %d failed, "
         "%d checksum-skipped, %d skipped entries, %.1f GB",
+        "interrupted" if interrupted else "complete",
         len(chunk_files), len(processed_zips), len(failed_zips),
         len(checksum_failed_zips), total_skipped, total_bytes / 1e9,
     )
+    if interrupted:
+        raise KeyboardInterrupt
     return result

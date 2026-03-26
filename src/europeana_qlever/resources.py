@@ -92,9 +92,9 @@ class ResourceBudget:
         by_mem = int(self.available_memory_gb / 0.25)
         return max(4, min(by_cpu, by_mem))
 
-    def merge_semaphore(self, workers: int) -> int:
-        """Semaphore permits: ``workers * 3``."""
-        return workers * 3
+    def merge_initial_concurrency(self, workers: int) -> int:
+        """Initial concurrency permits: ``workers // 2``, floor of 4."""
+        return max(4, workers // 2)
 
     def merge_queue_size(self, workers: int) -> int:
         """Writer queue maxsize: ``workers * 2``, minimum 4."""
@@ -136,6 +136,18 @@ class ResourceBudget:
     def backpressure_sleeps(self) -> tuple[float, float]:
         """(soft_sleep, warn_sleep) in seconds."""
         return (0.1, 0.5)
+
+    def cpu_target_pct(self) -> float:
+        """CPU % above which adaptive throttle reduces concurrency. Default 85%."""
+        return 85.0
+
+    def cpu_low_pct(self) -> float:
+        """CPU % below which adaptive throttle increases concurrency. Default 65%."""
+        return 65.0
+
+    def throttle_consecutive_samples(self) -> int:
+        """Consecutive samples before throttle adjusts. Default 3."""
+        return 3
 
     def writer_join_timeout(self) -> int:
         """Writer thread join timeout in seconds. Default 300."""
@@ -307,6 +319,11 @@ class ResourceBudget:
         tbl.add_row("Copy buffer", _fmt_bytes(self.copy_buf_size()), "auto")
         tbl.add_row("Chunk size", f"{self.merge_chunk_size_gb()} GB", "auto")
         tbl.add_row("Backpressure", f"{bp[0]:.0f}/{bp[1]:.0f}/{bp[2]:.0f}%", "auto")
+        tbl.add_row(
+            "CPU throttle",
+            f"{self.cpu_low_pct():.0f}–{self.cpu_target_pct():.0f}%",
+            "auto",
+        )
 
         tbl.add_section()
 

@@ -221,28 +221,35 @@ def merge(
         display.console.print(f"[dim]Auto-detected {workers} workers[/dim]")
 
     prefixes = scan_prefixes_from_sample(ttl_dir, sample_size=sample_size)
-    with ResourceMonitor(
-        work_dir,
-        log_file=work_dir / "monitor.log",
-        console=display.console,
-        interval=budget.monitor_idle_interval(),
-        active_interval=budget.monitor_active_interval(),
-        warn_pct=budget.monitor_warn_pct(),
-        critical_pct=budget.monitor_critical_pct(),
-    ) as monitor:
-        result = merge_ttl(
-            ttl_dir,
-            merged_dir,
-            chunk_size_gb=chunk_size,
-            workers=workers,
-            prefixes=prefixes,
-            monitor=monitor,
-            copy_buf_size=budget.copy_buf_size(),
-            backpressure_thresholds=budget.backpressure_thresholds(),
-            backpressure_sleeps=budget.backpressure_sleeps(),
-            writer_join_timeout=budget.writer_join_timeout(),
-            checksum_policy=checksum_policy,
-        )
+    try:
+        with ResourceMonitor(
+            work_dir,
+            log_file=work_dir / "monitor.log",
+            console=display.console,
+            interval=budget.monitor_idle_interval(),
+            active_interval=budget.monitor_active_interval(),
+            warn_pct=budget.monitor_warn_pct(),
+            critical_pct=budget.monitor_critical_pct(),
+        ) as monitor:
+            result = merge_ttl(
+                ttl_dir,
+                merged_dir,
+                chunk_size_gb=chunk_size,
+                workers=workers,
+                prefixes=prefixes,
+                monitor=monitor,
+                copy_buf_size=budget.copy_buf_size(),
+                backpressure_thresholds=budget.backpressure_thresholds(),
+                backpressure_sleeps=budget.backpressure_sleeps(),
+                cpu_target=budget.cpu_target_pct(),
+                cpu_low=budget.cpu_low_pct(),
+                throttle_consecutive_samples=budget.throttle_consecutive_samples(),
+                writer_join_timeout=budget.writer_join_timeout(),
+                checksum_policy=checksum_policy,
+            )
+    except KeyboardInterrupt:
+        display.console.print("\n[yellow]Merge interrupted.[/yellow]")
+        raise SystemExit(130)
     if result.failed_zips:
         display.console.print(
             f"\n[yellow]Warning: {len(result.failed_zips)} ZIP(s) failed "
@@ -815,7 +822,6 @@ def pipeline(
                     all_zips = sorted(ttl_dir.glob("*.zip"))
                     remaining = len(all_zips) - len(skip_zips)
                     dash.set_stage("Merge", total=remaining)
-                    dash.set_info("workers", str(workers))
 
                     merge_result = merge_ttl(
                         ttl_dir, merged_dir,
@@ -825,6 +831,9 @@ def pipeline(
                         copy_buf_size=budget.copy_buf_size(),
                         backpressure_thresholds=budget.backpressure_thresholds(),
                         backpressure_sleeps=budget.backpressure_sleeps(),
+                        cpu_target=budget.cpu_target_pct(),
+                        cpu_low=budget.cpu_low_pct(),
+                        throttle_consecutive_samples=budget.throttle_consecutive_samples(),
                         writer_join_timeout=budget.writer_join_timeout(),
                         checksum_policy=checksum_policy,
                     )
@@ -912,6 +921,11 @@ def pipeline(
                     for name, err in export_result.failed.items():
                         failures.append(f"Export {name}: {err}")
 
+    except KeyboardInterrupt:
+        log.info("Pipeline interrupted by user")
+        state.save(state_path)
+        display.console.print("\n[yellow]Pipeline interrupted. Progress saved — resume with the same command.[/yellow]")
+        raise SystemExit(130)
     except Exception as exc:
         log.exception("Pipeline failed")
         state.mark_failed("pipeline", str(exc))
