@@ -35,12 +35,12 @@ The pipeline is designed to run within bounded memory. Each stage has explicit m
 
 | Stage | Default | How memory is bounded |
 |-------|---------|----------------------|
-| **Merge** | 4 workers | Workers stream line-by-line to temp files; semaphore limits in-flight work; backpressure pauses submissions when system memory is critical |
+| **Merge** | adaptive | Workers stream line-by-line to temp files; `AdaptiveThrottle` dynamically adjusts concurrency based on CPU and memory pressure (starts at `workers // 2`, scales between 2 and `workers`). Invalid TTL entries are validated inline via rdflib and skipped |
 | **Index** | 8 GB stxxl | Configurable via `--stxxl-memory` |
 | **Query serving** | 10 GB query / 5 GB cache | Configurable via `--query-memory` / `--cache-size` |
 | **Parquet export** | 4 GB DuckDB | DuckDB spills to disk when memory limit is exceeded |
 
-A background **resource monitor** (`psutil`) runs throughout the pipeline, sampling RSS, available memory, and disk space every 5 seconds. Samples are logged to `<work-dir>/monitor.log` (CSV). Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, critical memory pressure pauses new work until memory recovers.
+A background **resource monitor** (`psutil`) runs throughout the pipeline, sampling RSS, available memory, disk space, and CPU usage (system-wide and per-process) every 1–2 seconds. Samples are logged to `<work-dir>/monitor.log` (CSV). Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, an **adaptive throttle** dynamically adjusts worker concurrency based on CPU and memory pressure, using hysteresis to avoid jitter.
 
 ## Prerequisites
 
@@ -103,7 +103,7 @@ rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10 --che
 
 #### 2. Merge TTL files
 
-Merging discovers all RDF prefixes (via rdflib sampling) and extracts ZIPs in parallel into chunked TTL files (~5 GB each) with a unified prefix header. Pass the source TTL directory as an argument:
+Merging discovers all RDF prefixes (via rdflib sampling) and extracts ZIPs in parallel into chunked TTL files (~5 GB each) with a unified prefix header. Each TTL entry is validated inline via rdflib — invalid entries are skipped and logged. Concurrency is managed by an adaptive throttle that scales based on CPU and memory pressure. Pass the source TTL directory as an argument:
 
 ```bash
 uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL
@@ -148,6 +148,19 @@ You can also run prefix discovery standalone:
 uv run europeana-qlever -d /data/europeana scan-prefixes ~/data/europeana/TTL \
   --sample-size 100 --files-per-zip 5
 ```
+
+#### Validate (optional)
+
+Run a read-only pre-flight check that parses every TTL entry with rdflib and optionally verifies MD5 checksums. No files are written.
+
+```bash
+uv run europeana-qlever -d /data/europeana validate ~/data/europeana/TTL
+
+# Include checksum verification
+uv run europeana-qlever -d /data/europeana validate ~/data/europeana/TTL --no-checksums=false
+```
+
+Note: validation is also performed inline during merge — invalid entries are automatically skipped.
 
 #### 3. Generate the Qleverfile
 
@@ -218,6 +231,7 @@ All commands require `-d <work-dir>` (or `EUROPEANA_QLEVER_WORK_DIR` env var).
 ```
 europeana-qlever -d WORK_DIR
 ├── scan-prefixes TTL_DIR      Discover all RDF prefixes used across the TTL dump
+├── validate TTL_DIR           Read-only pre-flight check (rdflib parsing + optional checksums)
 ├── merge TTL_DIR              Merge all Europeana TTL ZIPs into chunked TTL files
 ├── write-qleverfile           Generate a Qleverfile configured for the Europeana dataset
 ├── index                      Build the QLever index from merged TTL chunks
@@ -307,9 +321,14 @@ This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
 
 **Repository:**
 
-| Directory | Purpose |
+| Directory / File | Purpose |
 |-----------|---------|
 | `src/europeana_qlever/` | Python CLI source code |
+| `src/europeana_qlever/throttle.py` | Adaptive CPU/memory-aware concurrency throttle |
+| `src/europeana_qlever/validate.py` | TTL validation (standalone + inline for merge) |
+| `src/europeana_qlever/dashboard.py` | Live Rich terminal dashboard |
+| `src/europeana_qlever/resources.py` | System resource detection & budget calculation |
+| `src/europeana_qlever/state.py` | Pipeline state tracking & validation results |
 | `tests/` | Unit tests |
 | `EDM.md` | Europeana Data Model reference — entity relationships, RDF namespaces, rights framework, and domain context |
 
