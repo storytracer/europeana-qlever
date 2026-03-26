@@ -7,6 +7,16 @@ during extraction). The merge worker imports :func:`validate_entry` and
 
 The standalone ``validate`` command uses :func:`validate_all` to scan all
 ZIPs and print a summary report without writing any files.
+
+.. note:: **Europeana FTP md5sum files are unreliable** (as of March 2026).
+
+   Of ~2,300 md5sum files tested, only 7% match their companion ZIPs.
+   Two issues exist on the server: (1) stale checksums — md5sum files are
+   periodically regenerated from freshly built ZIPs that are never published
+   to the FTP, while the actual ZIP files retain older content; (2) leading-
+   zero stripping — 126 md5sum files contain 31 or 30 hex characters instead
+   of the expected 32.  Checksum verification is therefore **skipped by
+   default** in the merge pipeline (``--checksum-policy=skip``).
 """
 
 from __future__ import annotations

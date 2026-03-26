@@ -181,6 +181,15 @@ def validate(
               help="Parallel extraction threads (0 = auto-detect).")
 @click.option("--sample-size", default=50, show_default=True,
               help="ZIPs to sample for prefix discovery.")
+@click.option(
+    "--checksum-policy",
+    type=click.Choice(["skip", "warn", "strict"], case_sensitive=False),
+    default="skip",
+    show_default=True,
+    help="MD5 checksum handling. Default 'skip' because Europeana FTP md5sum "
+         "files are unreliable (see README). 'warn' logs mismatches but "
+         "continues, 'strict' skips mismatched ZIPs.",
+)
 @click.pass_context
 def merge(
     ctx: click.Context,
@@ -188,6 +197,7 @@ def merge(
     chunk_size: float,
     workers: int,
     sample_size: int,
+    checksum_policy: str,
 ):
     """Merge all Europeana TTL ZIPs into chunked, QLever-ready TTL files.
 
@@ -231,6 +241,7 @@ def merge(
             backpressure_thresholds=budget.backpressure_thresholds(),
             backpressure_sleeps=budget.backpressure_sleeps(),
             writer_join_timeout=budget.writer_join_timeout(),
+            checksum_policy=checksum_policy,
         )
     if result.failed_zips:
         display.console.print(
@@ -685,6 +696,14 @@ def export(
 @click.option("--skip-index", is_flag=True, help="Skip indexing if index already exists.")
 @click.option("--force", is_flag=True, default=False,
               help="Ignore checkpoint and start fresh.")
+@click.option(
+    "--checksum-policy",
+    type=click.Choice(["skip", "warn", "strict"], case_sensitive=False),
+    default="skip",
+    show_default=True,
+    help="MD5 checksum handling for merge stage. Default 'skip' because "
+         "Europeana FTP md5sum files are unreliable (see README).",
+)
 @click.pass_context
 def pipeline(
     ctx: click.Context,
@@ -702,6 +721,7 @@ def pipeline(
     skip_merge: bool,
     skip_index: bool,
     force: bool,
+    checksum_policy: str,
 ):
     """Run the full pipeline: merge → write-qleverfile → index → start → export.
 
@@ -806,6 +826,7 @@ def pipeline(
                         backpressure_thresholds=budget.backpressure_thresholds(),
                         backpressure_sleeps=budget.backpressure_sleeps(),
                         writer_join_timeout=budget.writer_join_timeout(),
+                        checksum_policy=checksum_policy,
                     )
                     state.update_merge(merge_result)
                     state.save(state_path)

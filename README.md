@@ -120,6 +120,28 @@ uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL \
 
 Resource usage is logged to `<work-dir>/monitor.log` during merge.
 
+##### MD5 checksum verification
+
+Europeana's FTP server provides `.md5sum` companion files for each ZIP. However,
+these files are **unreliable** — as of March 2026, only 159 of 2,272 md5sum files
+(7%) match their companion ZIPs. Two issues exist on the FTP server:
+
+1. **Stale checksums** (2,104 files): md5sum files are periodically regenerated
+   from freshly built ZIPs that are never published to the FTP, while the actual
+   ZIP files retain older content. The md5sum server modification times are months
+   newer than the ZIP modification times.
+
+2. **Leading-zero stripping** (126 files): md5sum files contain 31 or 30
+   hex characters instead of the expected 32 — leading zeros are stripped from
+   the hash.
+
+MD5 verification is therefore **skipped by default**. To opt in:
+
+```bash
+europeana-qlever merge --checksum-policy=warn TTL_DIR   # log mismatches, continue
+europeana-qlever merge --checksum-policy=strict TTL_DIR  # skip mismatched ZIPs
+```
+
 You can also run prefix discovery standalone:
 
 ```bash

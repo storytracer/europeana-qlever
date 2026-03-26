@@ -174,22 +174,34 @@ def scan_prefixes_from_sample(
 def _extract_zip_to_file(
     zip_path: Path,
     output_file: Path,
-) -> tuple[int, int]:
+    checksum_policy: str = "skip",
+) -> tuple[int, int, str | None]:
     """Extract validated TTL from *zip_path*, skipping invalid entries.
 
     Each ``.ttl`` entry is read into memory, parsed with rdflib to validate
     Turtle syntax, and only written if parsing succeeds. Invalid entries are
-    logged and skipped. MD5 checksum is verified if a companion ``.md5sum``
-    file exists.
+    logged and skipped.
 
-    Returns ``(bytes_written, invalid_count)``.
+    Returns ``(bytes_written, invalid_count, failure_reason)`` where
+    *failure_reason* is ``None`` on success, ``"checksum"`` when a checksum
+    mismatch caused the ZIP to be skipped, or ``"extraction"`` on error.
     """
     try:
-        # Verify checksum first
-        _name, cs_ok, cs_err = verify_one_checksum(zip_path)
-        if cs_ok is False:
-            logger.warning("Checksum failed for %s: %s — skipping ZIP", zip_path.name, cs_err)
-            return (0, 0)
+        # Verify checksum if requested
+        if checksum_policy != "skip":
+            _name, cs_ok, cs_err = verify_one_checksum(zip_path)
+            if cs_ok is False:
+                if checksum_policy == "strict":
+                    logger.warning(
+                        "Checksum mismatch for %s: %s — skipping ZIP",
+                        zip_path.name, cs_err,
+                    )
+                    return (0, 0, "checksum")
+                # policy == "warn": log but continue
+                logger.warning(
+                    "Checksum mismatch for %s: %s — continuing anyway",
+                    zip_path.name, cs_err,
+                )
 
         bytes_written = 0
         invalid_count = 0
@@ -229,7 +241,7 @@ def _extract_zip_to_file(
                         out.write(raw_line + b"\n")
                         bytes_written += len(raw_line) + 1
 
-        return (bytes_written, invalid_count)
+        return (bytes_written, invalid_count, None)
 
     except Exception as exc:
         logger.error("Extraction failed for %s: %s", zip_path.name, exc)
@@ -237,7 +249,7 @@ def _extract_zip_to_file(
             output_file.unlink(missing_ok=True)
         except OSError:
             pass
-        return (0, 0)
+        return (0, 0, "extraction")
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +264,7 @@ def _writer_loop(
     chunk_files: list[Path],
     processed_zips: list[str],
     failed_zips: list[str],
+    checksum_failed_zips: list[str],
     skipped_entries_total: list[int],
     sem: threading.Semaphore,
     progress_cb: callable | None,
@@ -261,8 +274,8 @@ def _writer_loop(
 ) -> None:
     """Background writer that assembles temp files into chunk output files.
 
-    Reads ``(tmp_path, zip_path, bytes_written, invalid_count)`` tuples
-    from *write_q*. A ``None`` sentinel signals shutdown.
+    Reads ``(tmp_path, zip_path, bytes_written, invalid_count, reason)``
+    tuples from *write_q*. A ``None`` sentinel signals shutdown.
     """
     chunk_num = 0
     current_size = 0
@@ -283,7 +296,7 @@ def _writer_loop(
             item = write_q.get()
             if item is None:
                 break
-            tmp_path, zip_path, bytes_written, invalid_count = item
+            tmp_path, zip_path, bytes_written, invalid_count, reason = item
 
             skipped_entries_total[0] += invalid_count
 
@@ -307,8 +320,12 @@ def _writer_loop(
                 if tmp_path.exists():
                     tmp_path.unlink(missing_ok=True)
                 if bytes_written == 0:
-                    failed_zips.append(zip_path.name)
-                    logger.warning("ZIP extraction failed: %s", zip_path.name)
+                    if reason == "checksum":
+                        checksum_failed_zips.append(zip_path.name)
+                        logger.warning("Checksum mismatch — skipped: %s", zip_path.name)
+                    else:
+                        failed_zips.append(zip_path.name)
+                        logger.warning("ZIP extraction failed: %s", zip_path.name)
 
             sem.release()
             if progress_cb is not None:
@@ -340,12 +357,14 @@ def merge_ttl(
     backpressure_thresholds: tuple[float, float, float] = (70.0, 80.0, 90.0),
     backpressure_sleeps: tuple[float, float] = (0.1, 0.5),
     writer_join_timeout: int = 300,
+    checksum_policy: str = "skip",
 ) -> MergeResult:
     """Merge all TTL ZIPs into chunked output files with parallel extraction.
 
     Each TTL entry is validated with rdflib before writing. Invalid entries
-    are skipped and logged. Checksum verification is performed per-ZIP
-    when companion ``.md5sum`` files exist.
+    are skipped and logged. Checksum verification is controlled by
+    *checksum_policy*: ``"skip"`` (default, no verification), ``"warn"``
+    (log mismatches but continue), or ``"strict"`` (skip mismatched ZIPs).
 
     Uses ProcessPoolExecutor for true parallelism (rdflib parsing is
     CPU-bound and would be serialised by the GIL with threads).
@@ -422,6 +441,7 @@ def merge_ttl(
     # Shared state (written only by writer thread)
     processed_zips: list[str] = list(skip_zips)
     failed_zips: list[str] = []
+    checksum_failed_zips: list[str] = []
     skipped_entries_total: list[int] = [0]  # mutable container for writer thread
 
     # Writer queue + thread
@@ -469,7 +489,8 @@ def merge_ttl(
             target=_writer_loop,
             args=(
                 write_q, chunk_size_bytes, prefix_block, output_dir,
-                chunk_files, processed_zips, failed_zips, skipped_entries_total,
+                chunk_files, processed_zips, failed_zips, checksum_failed_zips,
+                skipped_entries_total,
                 sem, _progress_cb, dashboard, writer_errors, copy_buf_size,
             ),
             name="merge-writer",
@@ -480,11 +501,11 @@ def merge_ttl(
         def _on_future_done(fut: Future, tmp: Path, zp: Path) -> None:
             """Callback fired when a worker completes — enqueues for writer."""
             try:
-                bw, inv = fut.result()
+                bw, inv, reason = fut.result()
             except Exception as exc:
                 logger.error("Worker process failed for %s: %s", zp.name, exc)
-                bw, inv = 0, 0
-            write_q.put((tmp, zp, bw, inv))
+                bw, inv, reason = 0, 0, "extraction"
+            write_q.put((tmp, zp, bw, inv, reason))
 
         with ProcessPoolExecutor(max_workers=workers) as pool:
             for i, zp in enumerate(zip_files):
@@ -509,7 +530,7 @@ def merge_ttl(
 
                 tmp_path = tmp_dir / f"{i:06d}.tmp"
                 future = pool.submit(
-                    _extract_zip_to_file, zp, tmp_path,
+                    _extract_zip_to_file, zp, tmp_path, checksum_policy,
                 )
                 future.add_done_callback(
                     lambda fut, t=tmp_path, z=zp: _on_future_done(fut, t, z)
@@ -539,9 +560,20 @@ def merge_ttl(
     for p in chunk_files:
         display.console.print(f"  {p.name}  ({p.stat().st_size / 1e9:.2f} GB)")
 
+    if checksum_failed_zips:
+        display.console.print(
+            f"\n[yellow]{len(checksum_failed_zips):,} ZIP(s) skipped: "
+            f"MD5 checksum mismatch[/yellow]"
+        )
+        logger.warning(
+            "Merge: %d ZIPs skipped due to checksum mismatch",
+            len(checksum_failed_zips),
+        )
+
     if failed_zips:
         display.console.print(
-            f"\n[yellow]{len(failed_zips):,} ZIP(s) failed during merge[/yellow]"
+            f"\n[yellow]{len(failed_zips):,} ZIP(s) failed: "
+            f"extraction error[/yellow]"
         )
         logger.warning(
             "Merge completed with %d failed ZIPs out of %d",
@@ -563,8 +595,9 @@ def merge_ttl(
         skipped_entries=total_skipped,
     )
     logger.info(
-        "Merge complete: %d chunks, %d processed, %d failed, %d skipped entries, %.1f GB",
+        "Merge complete: %d chunks, %d processed, %d failed, "
+        "%d checksum-skipped, %d skipped entries, %.1f GB",
         len(chunk_files), len(processed_zips), len(failed_zips),
-        total_skipped, total_bytes / 1e9,
+        len(checksum_failed_zips), total_skipped, total_bytes / 1e9,
     )
     return result
