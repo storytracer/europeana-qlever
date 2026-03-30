@@ -214,8 +214,13 @@ def parse_rdf_term(raw: str) -> str:
         return ""
     first = raw[0]
     if first == '"' or first == "<" or raw.startswith("_:"):
-        # Delegate to rdflib for proper RDF term parsing
-        term = from_n3(raw)
+        # Delegate to rdflib for proper RDF term parsing.
+        # Fall back to manual stripping on malformed values (e.g. trailing
+        # backslash that breaks rdflib's escape decoder).
+        try:
+            term = from_n3(raw)
+        except Exception:
+            return raw.strip('"<>').split('"')[0]
         if term is None:
             return ""
         return str(term)
