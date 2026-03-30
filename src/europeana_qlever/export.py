@@ -11,6 +11,10 @@ import logging
 import time
 from pathlib import Path
 
+import os
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
+
 import duckdb
 import httpx
 import pyarrow as pa
@@ -204,6 +208,19 @@ def parse_rdf_term(raw: str) -> str:
     return raw
 
 
+def _parse_batch(raw_lines: list[str], num_cols: int) -> list[list[str]]:
+    """Parse a batch of raw TSV lines with rdflib.  Runs in a worker process."""
+    rows = []
+    for line in raw_lines:
+        cells = line.rstrip("\n").split("\t")
+        if len(cells) < num_cols:
+            cells.extend([""] * (num_cols - len(cells)))
+        elif len(cells) > num_cols:
+            cells = cells[:num_cols]
+        rows.append([parse_rdf_term(c) for c in cells])
+    return rows
+
+
 def _write_batch(
     writer: pq.ParquetWriter,
     col_names: list[str],
@@ -217,18 +234,33 @@ def _write_batch(
     writer.write_batch(batch)
 
 
+def _read_raw_batches(
+    fh, batch_size: int
+) -> list[str]:
+    """Yield batches of raw TSV lines from an open file handle."""
+    batch: list[str] = []
+    for line in fh:
+        batch.append(line)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
 def tsv_to_parquet(
     tsv_path: Path,
     parquet_path: Path,
     *,
     batch_size: int = PARQUET_BATCH_SIZE,
     row_group_size: int = 100_000,
+    workers: int | None = None,
 ) -> int:
     """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow.
 
-    Reads the TSV line-by-line, parses each cell with
-    :func:`parse_rdf_term`, accumulates rows into batches, and streams
-    to Parquet via :class:`pyarrow.parquet.ParquetWriter`.
+    Reads raw TSV lines into batches, parses each batch in parallel
+    using :class:`~concurrent.futures.ProcessPoolExecutor`, and streams
+    parsed results to Parquet via :class:`pyarrow.parquet.ParquetWriter`.
 
     Parameters
     ----------
@@ -237,15 +269,20 @@ def tsv_to_parquet(
     parquet_path : Path
         Output Parquet file path.
     batch_size : int
-        Rows per PyArrow write batch (~200 MB memory per batch).
+        Rows per parse/write batch (~200 MB memory per batch).
     row_group_size : int
         Parquet row group size.
+    workers : int or None
+        Number of parallel parse workers.  Defaults to half the CPU count.
 
     Returns
     -------
     int
         Number of rows written.
     """
+    if workers is None:
+        workers = max(1, (os.cpu_count() or 4) // 2)
+
     with open(tsv_path, "r", encoding="utf-8") as fh:
         # Read and clean header (strip ?-prefixes)
         header = fh.readline().strip()
@@ -264,27 +301,13 @@ def tsv_to_parquet(
         )
 
         total_rows = 0
-        batch_rows: list[list[str]] = []
+        parse = partial(_parse_batch, num_cols=num_cols)
 
-        for line in fh:
-            cells = line.rstrip("\n").split("\t")
-            # Pad or truncate to match header column count
-            if len(cells) < num_cols:
-                cells.extend([""] * (num_cols - len(cells)))
-            elif len(cells) > num_cols:
-                cells = cells[:num_cols]
-            parsed = [parse_rdf_term(c) for c in cells]
-            batch_rows.append(parsed)
-
-            if len(batch_rows) >= batch_size:
-                _write_batch(writer, col_names, batch_rows)
-                total_rows += len(batch_rows)
-                batch_rows = []
-
-        # Flush remaining rows
-        if batch_rows:
-            _write_batch(writer, col_names, batch_rows)
-            total_rows += len(batch_rows)
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            # executor.map preserves order and pre-fetches batches
+            for parsed_rows in executor.map(parse, _read_raw_batches(fh, batch_size)):
+                _write_batch(writer, col_names, parsed_rows)
+                total_rows += len(parsed_rows)
 
         writer.close()
 
