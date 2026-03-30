@@ -42,26 +42,6 @@ class QueryFilters:
     offset: int | None = None
 
 
-@dataclass
-class CompositeQuery:
-    """A query split into sub-queries whose results are joined in DuckDB.
-
-    Each sub-query runs independently as a SPARQL export (TSV → Parquet).
-    After all parts complete, *join_sql* is executed in DuckDB to produce
-    the final Parquet file from the intermediate part files.
-
-    The *join_sql* template uses ``{dir}`` as a placeholder for the output
-    directory path (resolved at export time).
-    """
-
-    parts: dict[str, str]
-    """Mapping of part name suffix → SPARQL text."""
-
-    join_sql: str
-    """DuckDB SQL that reads from part Parquet files and produces the
-    final result.  Use ``{dir}/name.parquet`` paths."""
-
-
 # ---------------------------------------------------------------------------
 # Query descriptions
 # ---------------------------------------------------------------------------
@@ -419,131 +399,6 @@ class QueryBuilder:
         }
         return mapping.get(category, [])
 
-    # -- Flat sub-query helpers (for CompositeQuery) -------------------------
-
-    def _flat_property_query(
-        self,
-        prop_uri: str,
-        col_name: str,
-        f: QueryFilters,
-        *,
-        entity: str = "proxy",
-    ) -> str:
-        """Flat sub-query: one row per value for a multi-valued property.
-
-        *entity* selects the join pattern:
-        ``"proxy"`` uses the provider proxy,
-        ``"europeana_proxy"`` uses the Europeana proxy.
-        """
-        limit_block = self._limit_offset(f)
-        filter_block = self._build_filters(f)
-
-        if entity == "europeana_proxy":
-            prefixes = self._prefix_block({"edm", "ore"})
-            join = self._europeana_proxy()
-            subject = "?eProxy"
-            filter_block = self._build_filters(
-                f, year_var=f"?{col_name}" if col_name == "year" else None,
-            )
-        else:
-            prefixes = self._prefix_block({"dc", "edm", "ore"})
-            join = self._provider_proxy()
-            subject = "?proxy"
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item ?{col_name}
-            WHERE {{
-              {join}
-              {subject} {prop_uri} ?{col_name} .
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
-
-    def _flat_lang_tagged_query(
-        self,
-        prop_uri: str,
-        col_name: str,
-        f: QueryFilters,
-    ) -> str:
-        """Flat sub-query for a language-tagged property.
-
-        Returns one row per value with its language tag and the item's
-        own language (for vernacular resolution in DuckDB).
-        """
-        prefixes = self._prefix_block({"dc", "edm", "ore"})
-        proxy = self._provider_proxy()
-        filter_block = self._build_filters(f)
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item ?{col_name} (LANG(?{col_name}) AS ?{col_name}_lang) ?item_lang
-            WHERE {{
-              {proxy}
-              ?proxy {prop_uri} ?{col_name} .
-              OPTIONAL {{ ?proxy dc:language ?item_lang }}
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
-
-    def _lang_resolve_duckdb(
-        self,
-        col_name: str,
-        part_name: str,
-        extras: list[str] | None = None,
-    ) -> str:
-        """DuckDB SQL subquery for language resolution via FIRST() FILTER.
-
-        Returns a subquery that resolves en → native → any, plus extra
-        language columns, from a flat lang-tagged Parquet file.
-        """
-        extra_cols = ""
-        for lang in (extras or []):
-            safe = lang.replace("-", "_")
-            extra_cols += (
-                f",\n        FIRST({col_name}) FILTER "
-                f"(WHERE {col_name}_lang = '{lang}') AS {col_name}_{safe}"
-            )
-
-        return textwrap.dedent(f"""\
-            SELECT item,
-                FIRST({col_name}) FILTER (WHERE {col_name}_lang = 'en') AS {col_name}_en,
-                FIRST({col_name}) FILTER (WHERE {col_name}_lang = item_lang) AS {col_name}_native,
-                FIRST(item_lang) FILTER (WHERE {col_name}_lang = item_lang) AS {col_name}_native_lang{extra_cols},
-                COALESCE(
-                    FIRST({col_name}) FILTER (WHERE {col_name}_lang = 'en'),
-                    FIRST({col_name}) FILTER (WHERE {col_name}_lang = item_lang),
-                    FIRST({col_name})
-                ) AS {col_name}
-            FROM '{{dir}}/{part_name}.parquet'
-            GROUP BY item""")
-
-    def _agg_duckdb(
-        self,
-        col_name: str,
-        part_name: str,
-        *,
-        extra_cols: list[str] | None = None,
-    ) -> str:
-        """DuckDB SQL subquery for STRING_AGG on a multi-valued property.
-
-        *extra_cols* lists additional columns to aggregate alongside
-        the primary column (e.g. ``["creator_uri"]``).
-        """
-        sep = self.separator
-        aggs = [f"STRING_AGG(DISTINCT {col_name}, '{sep}') AS {col_name}s"]
-        for ec in (extra_cols or []):
-            aggs.append(f"STRING_AGG(DISTINCT {ec}, '{sep}') AS {ec}s")
-        agg_str = ",\n           ".join(aggs)
-        return textwrap.dedent(f"""\
-            SELECT item,
-                   {agg_str}
-            FROM '{{dir}}/{part_name}.parquet'
-            GROUP BY item""")
-
     # -----------------------------------------------------------------------
     # Base queries (replace the 6 static .sparql files + 1 new)
     # -----------------------------------------------------------------------
@@ -720,179 +575,166 @@ class QueryBuilder:
     # AI dataset queries
     # -----------------------------------------------------------------------
 
-    def items_enriched(self, filters: QueryFilters | None = None) -> CompositeQuery:
-        """Denormalised one-row-per-item AI dataset export.
-
-        Returns a :class:`CompositeQuery` with flat sub-queries (zero GROUP BY)
-        and a DuckDB join that handles language resolution and aggregation.
-        """
+    def items_enriched(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        extras = self._extra_langs(f)
-
-        core = self._items_enriched_core(f)
-        creators = self._items_enriched_creators(f, extras)
-        titles = self._flat_lang_tagged_query("dc:title", "title", f)
-        descriptions = self._flat_lang_tagged_query("dc:description", "description", f)
-        subjects = self._flat_property_query("dc:subject", "subject", f)
-        dates = self._flat_property_query("dc:date", "date", f)
-        years = self._flat_property_query("edm:year", "year", f, entity="europeana_proxy")
-        languages = self._flat_property_query("dc:language", "language", f)
-
-        title_resolve = self._lang_resolve_duckdb("title", "items_enriched_titles", extras)
-        desc_resolve = self._lang_resolve_duckdb("description", "items_enriched_descriptions", extras)
-        creator_agg = self._agg_duckdb("creator", "items_enriched_creators", extra_cols=["creator_uri"])
-        subject_agg = self._agg_duckdb("subject", "items_enriched_subjects")
-        date_agg = self._agg_duckdb("date", "items_enriched_dates")
-        year_agg = self._agg_duckdb("year", "items_enriched_years")
-        lang_agg = self._agg_duckdb("language", "items_enriched_languages")
-
-        join_sql = textwrap.dedent(f"""\
-            SELECT base.*,
-                   t.title, t.title_en, t.title_native, t.title_native_lang,
-                   d.description, d.description_en, d.description_native, d.description_native_lang,
-                   c.creators, c.creator_uris,
-                   s.subjects, dt.dates, y.years, l.languages
-            FROM '{{dir}}/items_enriched_core.parquet' base
-            LEFT JOIN (
-            {textwrap.indent(title_resolve, '    ')}
-            ) t ON base.item = t.item
-            LEFT JOIN (
-            {textwrap.indent(desc_resolve, '    ')}
-            ) d ON base.item = d.item
-            LEFT JOIN (
-            {textwrap.indent(creator_agg, '    ')}
-            ) c ON base.item = c.item
-            LEFT JOIN (
-            {textwrap.indent(subject_agg, '    ')}
-            ) s ON base.item = s.item
-            LEFT JOIN (
-            {textwrap.indent(date_agg, '    ')}
-            ) dt ON base.item = dt.item
-            LEFT JOIN (
-            {textwrap.indent(year_agg, '    ')}
-            ) y ON base.item = y.item
-            LEFT JOIN (
-            {textwrap.indent(lang_agg, '    ')}
-            ) l ON base.item = l.item
-        """).strip()
-
-        # Add extra language columns to SELECT if needed
-        if extras:
-            extra_title_cols = ", ".join(f"t.title_{l.replace('-', '_')}" for l in extras)
-            extra_desc_cols = ", ".join(f"d.description_{l.replace('-', '_')}" for l in extras)
-            join_sql = join_sql.replace(
-                "t.title_native_lang,",
-                f"t.title_native_lang, {extra_title_cols},",
-            ).replace(
-                "d.description_native_lang,",
-                f"d.description_native_lang, {extra_desc_cols},",
-            )
-
-        return CompositeQuery(
-            parts={
-                "items_enriched_core": core,
-                "items_enriched_titles": titles,
-                "items_enriched_descriptions": descriptions,
-                "items_enriched_creators": creators,
-                "items_enriched_subjects": subjects,
-                "items_enriched_dates": dates,
-                "items_enriched_years": years,
-                "items_enriched_languages": languages,
-            },
-            join_sql=join_sql,
-        )
-
-    def _items_enriched_core(self, f: QueryFilters) -> str:
-        """Single-valued properties only — no GROUP BY, exactly 1 row per item."""
-        prefixes = self._prefix_block({"edm", "ore"})
+        prefixes = self._prefix_block({
+            "dc", "dcterms", "edm", "ore", "skos", "owl", "xsd",
+        })
         proxy = self._provider_proxy()
         agg = self._aggregation()
         eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(f)
+        sep = self.separator
+        filter_block = self._build_filters(f, year_var="?_year")
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
 
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item ?type ?rights ?data_provider ?country
-                   ?completeness ?is_shown_at ?is_shown_by
-                   ?preview ?landing_page ?dataset_name
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?data_provider .
-              OPTIONAL {{ ?agg edm:isShownAt ?is_shown_at }}
-              OPTIONAL {{ ?agg edm:isShownBy ?is_shown_by }}
-              {eagg}
-              ?eAgg edm:country ?country .
-              OPTIONAL {{ ?eAgg edm:completeness ?completeness }}
-              OPTIONAL {{ ?eAgg edm:preview ?preview }}
-              OPTIONAL {{ ?eAgg edm:landingPage ?landing_page }}
-              OPTIONAL {{ ?eAgg edm:datasetName ?dataset_name }}
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
+        vernacular = self._bind_vernacular()
+        title_fragment, title_vars = self._lang_resolve_item(
+            "dc:title", "?proxy", "title", extra_langs=extras,
+        )
+        desc_fragment, desc_vars = self._lang_resolve_item(
+            "dc:description", "?proxy", "desc", extra_langs=extras,
+        )
 
-    def _items_enriched_creators(
-        self, f: QueryFilters, extras: list[str],
-    ) -> str:
-        """One row per creator per item, with entity label resolution."""
-        prefixes = self._prefix_block({
-            "dc", "edm", "ore", "skos",
-        })
-        proxy = self._provider_proxy()
-        filter_block = self._build_filters(f)
-        limit_block = self._limit_offset(f)
+        # Build SELECT columns for title
+        title_select = [
+            f"(SAMPLE({title_vars['resolved']}) AS ?title)",
+            f"(SAMPLE({title_vars['en']}) AS ?title_en)",
+            f"(SAMPLE({title_vars['native']}) AS ?title_native)",
+            f"(SAMPLE({title_vars['native_lang']}) AS ?title_native_lang)",
+        ]
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            title_select.append(f"(SAMPLE({title_vars[lang]}) AS ?title_{safe})")
 
+        # Build SELECT columns for description
+        desc_select = [
+            f"(SAMPLE({desc_vars['resolved']}) AS ?description)",
+            f"(SAMPLE({desc_vars['en']}) AS ?description_en)",
+            f"(SAMPLE({desc_vars['native']}) AS ?description_native)",
+            f"(SAMPLE({desc_vars['native_lang']}) AS ?description_native_lang)",
+        ]
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            desc_select.append(f"(SAMPLE({desc_vars[lang]}) AS ?description_{safe})")
+
+        title_cols = "\n  ".join(title_select)
+        desc_cols = "\n  ".join(desc_select)
+
+        # Creator entity resolution with language chain
         creator_label_resolve = self._lang_resolve_entity(
-            "skos:prefLabel", "?_creatorRef", "?_creatorLabel",
-            extra_langs=extras,
+            "skos:prefLabel", "?_creatorRef", "?_creatorLabel", extra_langs=extras,
         )
         creator_label_indented = creator_label_resolve.replace("\n  ", "\n    ")
 
         return textwrap.dedent(f"""\
             {prefixes}
             SELECT ?item
-              (COALESCE(?_creatorLabel, ?_creatorLit, STR(?_creatorRef)) AS ?creator)
-              (IF(BOUND(?_creatorRef), STR(?_creatorRef), "") AS ?creator_uri)
+              {title_cols}
+              {desc_cols}
+              (GROUP_CONCAT(DISTINCT ?_creator; SEPARATOR="{sep}") AS ?creators)
+              (GROUP_CONCAT(DISTINCT ?_creatorURI; SEPARATOR="{sep}") AS ?creator_uris)
+              (GROUP_CONCAT(DISTINCT ?_subject; SEPARATOR="{sep}") AS ?subjects)
+              (GROUP_CONCAT(DISTINCT ?_date; SEPARATOR="{sep}") AS ?dates)
+              (GROUP_CONCAT(DISTINCT ?_year; SEPARATOR="{sep}") AS ?years)
+              (SAMPLE(?_type) AS ?type)
+              (GROUP_CONCAT(DISTINCT ?_language; SEPARATOR="{sep}") AS ?languages)
+              (SAMPLE(?_country) AS ?country)
+              (SAMPLE(?_dataProvider) AS ?data_provider)
+              (SAMPLE(?_rights) AS ?rights)
+              (SAMPLE(?_completeness) AS ?completeness)
+              (SAMPLE(?_isShownAt) AS ?is_shown_at)
+              (SAMPLE(?_isShownBy) AS ?is_shown_by)
+              (SAMPLE(?_preview) AS ?preview)
+              (SAMPLE(?_landingPage) AS ?landing_page)
+              (SAMPLE(?_datasetName) AS ?dataset_name)
             WHERE {{
               {proxy}
+              {vernacular}
+              ?proxy edm:type ?_type .
+              {title_fragment}
+              {desc_fragment}
               OPTIONAL {{
                 ?proxy dc:creator ?_creatorRef . FILTER(isIRI(?_creatorRef))
                 {creator_label_indented}
+                BIND(STR(?_creatorRef) AS ?_creatorURI)
               }}
               OPTIONAL {{ ?proxy dc:creator ?_creatorLit . FILTER(isLiteral(?_creatorLit)) }}
-              FILTER(BOUND(?_creatorRef) || BOUND(?_creatorLit))
+              BIND(COALESCE(?_creatorLabel, ?_creatorLit, STR(?_creatorRef)) AS ?_creator)
+              OPTIONAL {{ ?proxy dc:subject ?_subject }}
+              OPTIONAL {{ ?proxy dc:date ?_date }}
+              OPTIONAL {{ ?proxy dc:language ?_language }}
+              {agg}
+              ?agg edm:rights ?_rights ;
+                   edm:dataProvider ?_dataProvider .
+              OPTIONAL {{ ?agg edm:isShownAt ?_isShownAt }}
+              OPTIONAL {{ ?agg edm:isShownBy ?_isShownBy }}
+              {eagg}
+              ?eAgg edm:country ?_country .
+              OPTIONAL {{ ?eAgg edm:completeness ?_completeness }}
+              OPTIONAL {{ ?eAgg edm:preview ?_preview }}
+              OPTIONAL {{ ?eAgg edm:landingPage ?_landingPage }}
+              OPTIONAL {{ ?eAgg edm:datasetName ?_datasetName }}
+              OPTIONAL {{
+                ?eProxy ore:proxyFor ?item .
+                ?eProxy edm:europeanaProxy "true" .
+                ?eProxy edm:year ?_year .
+              }}
               {filter_block}
             }}
+            GROUP BY ?item
             {limit_block}
         """).strip()
 
-    def text_corpus(self, filters: QueryFilters | None = None) -> CompositeQuery:
-        """NLP training corpus: items with title + description.
-
-        Returns a :class:`CompositeQuery` — core + title/description
-        sub-queries with DuckDB language resolution.
-        """
+    def text_corpus(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        extras = self._extra_langs(f)
-
-        prefixes = self._prefix_block({"dc", "edm", "ore"})
+        prefixes = self._prefix_block({"dc", "edm", "ore", "xsd"})
         proxy = self._provider_proxy()
         agg = self._aggregation()
         eagg = self._europeana_aggregation()
         filter_block = self._build_filters(f)
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
 
-        core = textwrap.dedent(f"""\
+        vernacular = self._bind_vernacular()
+        title_fragment, title_vars = self._lang_resolve_item(
+            "dc:title", "?proxy", "title", extra_langs=extras,
+        )
+        desc_fragment, desc_vars = self._lang_resolve_item(
+            "dc:description", "?proxy", "desc", extra_langs=extras,
+        )
+
+        # Build extra title columns
+        extra_title_cols = ""
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            extra_title_cols += f"\n       {title_vars[lang]} AS ?title_{safe}"
+
+        # Build extra desc columns
+        extra_desc_cols = ""
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            extra_desc_cols += f"\n       {desc_vars[lang]} AS ?description_{safe}"
+
+        return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?item ?language ?type ?rights ?country ?dataProvider
+            SELECT ?item
+                   ({title_vars["resolved"]} AS ?title)
+                   ({title_vars["en"]} AS ?title_en)
+                   ({title_vars["native"]} AS ?title_native)
+                   ({title_vars["native_lang"]} AS ?title_native_lang){extra_title_cols}
+                   ({desc_vars["resolved"]} AS ?description)
+                   ({desc_vars["en"]} AS ?description_en)
+                   ({desc_vars["native"]} AS ?description_native)
+                   ({desc_vars["native_lang"]} AS ?description_native_lang){extra_desc_cols}
+                   ?language ?type ?rights ?country ?dataProvider
             WHERE {{
               {proxy}
+              {vernacular}
               ?proxy edm:type ?type .
-              ?proxy dc:title ?_title .
+              {title_fragment}
+              FILTER(BOUND({title_vars["resolved"]}))
+              {desc_fragment}
               OPTIONAL {{ ?proxy dc:language ?language }}
               {agg}
               ?agg edm:rights ?rights ;
@@ -904,70 +746,42 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-        titles = self._flat_lang_tagged_query("dc:title", "title", f)
-        descriptions = self._flat_lang_tagged_query("dc:description", "description", f)
-
-        title_resolve = self._lang_resolve_duckdb("title", "text_corpus_titles", extras)
-        desc_resolve = self._lang_resolve_duckdb("description", "text_corpus_descriptions", extras)
-
-        join_sql = textwrap.dedent(f"""\
-            SELECT base.*,
-                   t.title, t.title_en, t.title_native, t.title_native_lang,
-                   d.description, d.description_en, d.description_native, d.description_native_lang
-            FROM '{{dir}}/text_corpus_core.parquet' base
-            LEFT JOIN (
-            {textwrap.indent(title_resolve, '    ')}
-            ) t ON base.item = t.item
-            LEFT JOIN (
-            {textwrap.indent(desc_resolve, '    ')}
-            ) d ON base.item = d.item
-            WHERE t.title IS NOT NULL
-        """).strip()
-
-        if extras:
-            extra_title_cols = ", ".join(f"t.title_{l.replace('-', '_')}" for l in extras)
-            extra_desc_cols = ", ".join(f"d.description_{l.replace('-', '_')}" for l in extras)
-            join_sql = join_sql.replace(
-                "t.title_native_lang,",
-                f"t.title_native_lang, {extra_title_cols},",
-            ).replace(
-                "d.description_native_lang",
-                f"d.description_native_lang, {extra_desc_cols}",
-            )
-
-        return CompositeQuery(
-            parts={
-                "text_corpus_core": core,
-                "text_corpus_titles": titles,
-                "text_corpus_descriptions": descriptions,
-            },
-            join_sql=join_sql,
-        )
-
-    def image_metadata(self, filters: QueryFilters | None = None) -> CompositeQuery:
-        """IMAGE items with technical web resource metadata.
-
-        Returns a :class:`CompositeQuery` — core + title sub-query
-        with DuckDB language resolution.
-        """
+    def image_metadata(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        extras = self._extra_langs(f)
-
-        prefixes = self._prefix_block({"edm", "ebucore", "ore"})
+        prefixes = self._prefix_block({"dc", "edm", "ebucore", "ore", "xsd"})
         proxy = self._provider_proxy()
         agg = self._aggregation()
         eagg = self._europeana_aggregation()
         filter_block = self._build_filters(f)
         limit_block = self._limit_offset(f)
+        extras = self._extra_langs(f)
 
-        core = textwrap.dedent(f"""\
+        vernacular = self._bind_vernacular()
+        title_fragment, title_vars = self._lang_resolve_item(
+            "dc:title", "?proxy", "title", extra_langs=extras,
+        )
+
+        # Build extra title columns for SELECT
+        extra_title_cols = ""
+        for lang in extras:
+            safe = lang.replace("-", "_")
+            extra_title_cols += f"\n       {title_vars[lang]} AS ?title_{safe}"
+
+        return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?item ?rights ?country ?dataProvider
+            SELECT ?item
+                   ({title_vars["resolved"]} AS ?title)
+                   ({title_vars["en"]} AS ?title_en)
+                   ({title_vars["native"]} AS ?title_native)
+                   ({title_vars["native_lang"]} AS ?title_native_lang){extra_title_cols}
+                   ?rights ?country ?dataProvider
                    ?url ?mime ?width ?height ?bytes
             WHERE {{
               {proxy}
+              {vernacular}
               ?proxy edm:type ?type .
               FILTER(?type = "IMAGE")
+              {title_fragment}
               {agg}
               ?agg edm:rights ?rights ;
                    edm:dataProvider ?dataProvider ;
@@ -982,34 +796,6 @@ class QueryBuilder:
             }}
             {limit_block}
         """).strip()
-
-        titles = self._flat_lang_tagged_query("dc:title", "title", f)
-
-        title_resolve = self._lang_resolve_duckdb("title", "image_metadata_titles", extras)
-
-        join_sql = textwrap.dedent(f"""\
-            SELECT base.*,
-                   t.title, t.title_en, t.title_native, t.title_native_lang
-            FROM '{{dir}}/image_metadata_core.parquet' base
-            LEFT JOIN (
-            {textwrap.indent(title_resolve, '    ')}
-            ) t ON base.item = t.item
-        """).strip()
-
-        if extras:
-            extra_cols = ", ".join(f"t.title_{l.replace('-', '_')}" for l in extras)
-            join_sql = join_sql.replace(
-                "t.title_native_lang",
-                f"t.title_native_lang, {extra_cols}",
-            )
-
-        return CompositeQuery(
-            parts={
-                "image_metadata_core": core,
-                "image_metadata_titles": titles,
-            },
-            join_sql=join_sql,
-        )
 
     def entity_links(
         self, entity_type: str = "agent", filters: QueryFilters | None = None
@@ -1735,7 +1521,7 @@ class QueryBuilder:
             "timespans": self.timespans(filters),
         }
 
-    def all_ai_queries(self, filters: QueryFilters | None = None) -> dict[str, str | CompositeQuery]:
+    def all_ai_queries(self, filters: QueryFilters | None = None) -> dict[str, str]:
         return {
             "items_enriched": self.items_enriched(filters),
             "text_corpus": self.text_corpus(filters),
@@ -1772,8 +1558,8 @@ class QueryBuilder:
             "quality_tier_distribution": self.quality_tier_distribution(filters),
         }
 
-    def all_queries(self, filters: QueryFilters | None = None) -> dict[str, str | CompositeQuery]:
-        result: dict[str, str | CompositeQuery] = {}
+    def all_queries(self, filters: QueryFilters | None = None) -> dict[str, str]:
+        result: dict[str, str] = {}
         result.update(self.all_base_queries(filters))
         result.update(self.all_ai_queries(filters))
         result.update(self.all_analytics_queries(filters))
