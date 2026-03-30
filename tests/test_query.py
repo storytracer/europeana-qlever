@@ -89,6 +89,8 @@ class TestQueryBuilder:
         result = self.qb.items_enriched()
         assert isinstance(result, CompositeQuery)
         assert "items_enriched_core" in result.parts
+        assert "items_enriched_titles" in result.parts
+        assert "items_enriched_descriptions" in result.parts
         assert "items_enriched_creators" in result.parts
         assert "items_enriched_subjects" in result.parts
         assert "items_enriched_dates" in result.parts
@@ -126,23 +128,23 @@ class TestQueryBuilder:
     # --- Language resolution tests ---
 
     def test_default_produces_en_native_any(self):
-        """Default config: title_en, title_native, title (resolved), no extra lang columns."""
+        """Default config: DuckDB join resolves title_en, title_native, etc."""
         qb = QueryBuilder()
-        core = qb.items_enriched().parts["items_enriched_core"]
-        assert "title_en" in core
-        assert "title_native" in core
-        assert "title_native_lang" in core
+        result = qb.items_enriched()
+        # Language columns are now in the DuckDB join SQL, not in SPARQL
+        assert "title_en" in result.join_sql
+        assert "title_native" in result.join_sql
+        assert "title_native_lang" in result.join_sql
         # No French/German/etc. unless user specifies
-        assert "title_fr" not in core
-        assert "title_de" not in core
+        assert "title_fr" not in result.join_sql
+        assert "title_de" not in result.join_sql
 
     def test_parallel_columns_in_items_enriched(self):
-        """items_enriched core exposes en, native, and resolved columns."""
+        """items_enriched DuckDB join exposes en, native, and resolved columns."""
         qb = QueryBuilder()
-        core = qb.items_enriched().parts["items_enriched_core"]
-        assert "SAMPLE(" in core
+        result = qb.items_enriched()
         for col in ["title_en", "title_native", "title_native_lang"]:
-            assert col in core
+            assert col in result.join_sql
 
     def test_base_query_single_resolved_column(self):
         """core_metadata produces a single ?title column, not parallel columns."""
@@ -155,20 +157,20 @@ class TestQueryBuilder:
         assert "title_native" not in select_clause
 
     def test_extra_languages_add_columns(self):
-        """Extra languages produce additional columns."""
+        """Extra languages produce additional DuckDB columns."""
         qb = QueryBuilder(languages=["fr", "de"])
-        core = qb.items_enriched().parts["items_enriched_core"]
-        assert "title_fr" in core
-        assert "title_de" in core
+        result = qb.items_enriched()
+        assert "title_fr" in result.join_sql
+        assert "title_de" in result.join_sql
 
     def test_filter_languages_override_constructor(self):
         """QueryFilters.languages overrides constructor."""
         qb = QueryBuilder(languages=["fr"])
         f = QueryFilters(languages=["nl", "pl"])
-        core = qb.items_enriched(f).parts["items_enriched_core"]
-        assert "title_nl" in core
-        assert "title_pl" in core
-        assert "title_fr" not in core
+        result = qb.items_enriched(f)
+        assert "title_nl" in result.join_sql
+        assert "title_pl" in result.join_sql
+        assert "title_fr" not in result.join_sql
 
     def test_entity_resolution_no_vernacular(self):
         """Entity labels resolve via en → extras → any, no vernacular."""
@@ -182,17 +184,21 @@ class TestQueryBuilder:
         sparql = qb.entity_links(entity_type="agent")
         assert "_any" in sparql
 
-    def test_vernacular_bound_from_dc_language(self):
-        """The vernacular language is bound from dc:language and reused."""
+    def test_vernacular_resolved_in_duckdb(self):
+        """Language resolution uses item_lang in DuckDB, not SPARQL OPTIONALs."""
         qb = QueryBuilder()
-        core = qb.items_enriched().parts["items_enriched_core"]
-        assert "dc:language ?_language" in core
-        assert "LANG(?_title_native) = ?_language" in core
+        result = qb.items_enriched()
+        # Titles sub-query exports LANG() and item_lang
+        titles = result.parts["items_enriched_titles"]
+        assert "LANG(?title)" in titles
+        assert "item_lang" in titles
+        # DuckDB join resolves via FIRST() FILTER
+        assert "item_lang" in result.join_sql
 
-    def test_coalesce_in_resolved_title(self):
-        """The resolved title uses COALESCE."""
-        core = self.qb.items_enriched().parts["items_enriched_core"]
-        assert "COALESCE" in core
+    def test_coalesce_in_duckdb_join(self):
+        """The resolved title uses COALESCE in DuckDB join."""
+        result = self.qb.items_enriched()
+        assert "COALESCE" in result.join_sql
 
     # --- Web resources query tests ---
 
@@ -282,21 +288,24 @@ class TestQueryBuilder:
     # --- Description columns in AI queries ---
 
     def test_items_enriched_has_description_columns(self):
-        core = self.qb.items_enriched().parts["items_enriched_core"]
-        assert "description_en" in core
-        assert "description_native" in core
-        assert "description_native_lang" in core
+        result = self.qb.items_enriched()
+        assert "description_en" in result.join_sql
+        assert "description_native" in result.join_sql
+        assert "description_native_lang" in result.join_sql
 
-    def test_text_corpus_has_parallel_columns(self):
-        sparql = self.qb.text_corpus()
-        assert "title_en" in sparql
-        assert "title_native" in sparql
-        assert "description_en" in sparql
+    def test_text_corpus_returns_composite(self):
+        result = self.qb.text_corpus()
+        assert isinstance(result, CompositeQuery)
+        assert "text_corpus_core" in result.parts
+        assert "text_corpus_titles" in result.parts
+        assert "title_en" in result.join_sql
 
-    def test_image_metadata_has_parallel_title_columns(self):
-        sparql = self.qb.image_metadata()
-        assert "title_en" in sparql
-        assert "title_native" in sparql
+    def test_image_metadata_returns_composite(self):
+        result = self.qb.image_metadata()
+        assert isinstance(result, CompositeQuery)
+        assert "image_metadata_core" in result.parts
+        assert "image_metadata_titles" in result.parts
+        assert "title_en" in result.join_sql
 
     # --- Geolocated places uses entity resolution ---
 
