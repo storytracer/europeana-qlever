@@ -1207,7 +1207,7 @@ class QueryBuilder:
     def items_by_type_and_country(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore"})
-        proxy = self._provider_proxy()
+        eproxy = self._europeana_proxy()
         eagg = self._europeana_aggregation()
         limit_block = self._limit_offset(f)
 
@@ -1215,8 +1215,8 @@ class QueryBuilder:
             {prefixes}
             SELECT ?type ?country (COUNT(?item) AS ?count)
             WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
+              {eproxy}
+              ?eProxy edm:type ?type .
               {eagg}
               ?eAgg edm:country ?country .
             }}
@@ -1269,7 +1269,7 @@ class QueryBuilder:
     def items_by_type_and_language(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore"})
-        proxy = self._provider_proxy()
+        eproxy = self._europeana_proxy()
         eagg = self._europeana_aggregation()
         limit_block = self._limit_offset(f)
 
@@ -1277,8 +1277,8 @@ class QueryBuilder:
             {prefixes}
             SELECT ?type ?language (COUNT(?item) AS ?count)
             WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
+              {eproxy}
+              ?eProxy edm:type ?type .
               {eagg}
               ?eAgg edm:language ?language .
             }}
