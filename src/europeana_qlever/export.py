@@ -1,11 +1,8 @@
 """Export SPARQL results from QLever to TSV and convert to Parquet.
 
-Uses httpx for streaming HTTP (handles multi-GB responses without loading
-into memory) and DuckDB for Parquet conversion (fastest path on ARM64,
-zero-copy columnar write with zstd compression).
-
-The hybrid pipeline supports both simple SPARQL exports (Phase 1) and
-composite DuckDB exports (Phase 2) that join multiple Parquet base tables.
+Phase 1 streams SPARQL TSV results to disk via httpx, then parses RDF
+terms with rdflib and writes Parquet with PyArrow.  Phase 2 uses DuckDB
+to compose final exports from multiple Parquet base tables.
 """
 
 from __future__ import annotations
@@ -16,6 +13,9 @@ from pathlib import Path
 
 import duckdb
 import httpx
+import pyarrow as pa
+import pyarrow.parquet as pq
+from rdflib.util import from_n3
 from rich.progress import (
     DownloadColumn,
     Progress,
@@ -169,143 +169,122 @@ def run_query_to_tsv(
     raise last_exc  # type: ignore[misc]
 
 
-def _read_tsv_header(tsv_path: Path) -> list[str]:
-    """Read the first line of a TSV and return column names."""
-    with open(tsv_path, "r", encoding="utf-8") as fh:
-        header_line = fh.readline().strip()
-    return header_line.split("\t") if header_line else []
+PARQUET_BATCH_SIZE = 100_000
+"""Default number of rows per PyArrow write batch."""
 
 
-def _strip_question_mark_aliases(columns: list[str]) -> str | None:
-    """Build a SELECT clause that strips leading ``?`` from column names.
+def parse_rdf_term(raw: str) -> str:
+    """Parse a SPARQL TSV cell from N-Triples syntax to a clean string value.
 
-    Returns ``None`` if no columns need renaming (no ``?`` prefixes).
+    Uses :func:`rdflib.util.from_n3` for proper handling of escape
+    sequences, language tags, and datatype suffixes.
 
-    .. deprecated:: Use :func:`_build_select_clause` instead.
+    - ``<http://…>``               →  ``http://…``
+    - ``"text"@en``                →  ``text``
+    - ``"text"``                   →  ``text``
+    - ``"42"^^<xsd:integer>``      →  ``42``
+    - ``"text with \\"q\\""@en``   →  ``text with "q"``
+    - ``IMAGE``                    →  ``IMAGE``  (bare value, unchanged)
+    - ``""`` (empty)               →  ``""``
     """
-    needs_rename = any(c.startswith("?") for c in columns)
-    if not needs_rename:
-        return None
-    parts = []
-    for col in columns:
-        clean = col.lstrip("?")
-        if clean != col:
-            parts.append(f'"{col}" AS "{clean}"')
-        else:
-            parts.append(f'"{col}"')
-    return ", ".join(parts)
+    if not raw:
+        return ""
+    first = raw[0]
+    if first == '"' or first == "<" or raw.startswith("_:"):
+        # Delegate to rdflib for proper RDF term parsing
+        term = from_n3(raw)
+        if term is None:
+            return ""
+        return str(term)
+    # Bare value (plain literal like IMAGE, Portugal, or integer 42)
+    return raw
 
 
-def _build_select_clause(
-    columns: list[str],
-    varchar_columns: set[str] | None = None,
-) -> str:
-    """Build a SELECT clause that strips ``?`` prefixes and ``<>`` IRI brackets.
-
-    Every column gets ``?``-prefix removal (QLever TSV headers use ``?item``
-    etc.).  VARCHAR columns additionally get a ``CASE WHEN … LIKE '<%%>'``
-    guard that strips the angle brackets QLever wraps around IRI values in
-    TSV export.  Non-VARCHAR columns (e.g. integers) are passed through
-    unchanged to preserve DuckDB's type inference.
-
-    Parameters
-    ----------
-    columns
-        Raw TSV header column names (may have ``?`` prefixes).
-    varchar_columns
-        Set of column names (with original ``?`` prefix) that DuckDB inferred
-        as VARCHAR.  When ``None``, all columns are treated as VARCHAR.
-    """
-    all_varchar = varchar_columns is None
-    parts = []
-    for col in columns:
-        clean = col.lstrip("?")
-        if all_varchar or col in varchar_columns:
-            parts.append(
-                f"CASE WHEN \"{col}\" LIKE '<%%>' "
-                f"THEN SUBSTRING(\"{col}\", 2, LENGTH(\"{col}\") - 2) "
-                f"ELSE \"{col}\" END AS \"{clean}\""
-            )
-        elif clean != col:
-            parts.append(f'"{col}" AS "{clean}"')
-        else:
-            parts.append(f'"{col}"')
-    return ", ".join(parts)
+def _write_batch(
+    writer: pq.ParquetWriter,
+    col_names: list[str],
+    rows: list[list[str]],
+) -> None:
+    """Convert a batch of parsed rows to a RecordBatch and write to Parquet."""
+    # Transpose rows→columns
+    columns = list(zip(*rows)) if rows else []
+    arrays = [pa.array(col, type=pa.string()) for col in columns]
+    batch = pa.RecordBatch.from_arrays(arrays, names=col_names)
+    writer.write_batch(batch)
 
 
 def tsv_to_parquet(
     tsv_path: Path,
     parquet_path: Path,
     *,
-    sample_size: int = 100_000,
+    batch_size: int = PARQUET_BATCH_SIZE,
     row_group_size: int = 100_000,
-    memory_limit: str = "4GB",
-    temp_directory: Path | None = None,
 ) -> int:
-    """Convert a TSV file to Parquet using DuckDB.
+    """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow.
 
-    Strips leading ``?`` from QLever TSV column headers so that Parquet
-    files have clean column names (e.g. ``item`` instead of ``?item``).
+    Reads the TSV line-by-line, parses each cell with
+    :func:`parse_rdf_term`, accumulates rows into batches, and streams
+    to Parquet via :class:`pyarrow.parquet.ParquetWriter`.
 
     Parameters
     ----------
     tsv_path : Path
-        Input TSV (tab-separated, with header).
+        Input TSV with SPARQL N-Triples serialization.
     parquet_path : Path
         Output Parquet file path.
-    sample_size : int
-        Rows sampled for type inference.
+    batch_size : int
+        Rows per PyArrow write batch (~200 MB memory per batch).
     row_group_size : int
         Parquet row group size.
-    memory_limit : str
-        DuckDB memory budget (e.g. ``"4GB"``). When exceeded, DuckDB
-        spills intermediate results to *temp_directory* on disk.
-    temp_directory : Path or None
-        Directory for DuckDB spill files. Created automatically if set.
 
     Returns
     -------
     int
         Number of rows written.
     """
-    con = duckdb.connect()
-    con.execute(f"SET memory_limit = '{memory_limit}'")
-    if temp_directory is not None:
-        temp_directory.mkdir(parents=True, exist_ok=True)
-        con.execute(f"SET temp_directory = '{temp_directory}'")
+    with open(tsv_path, "r", encoding="utf-8") as fh:
+        # Read and clean header (strip ?-prefixes)
+        header = fh.readline().strip()
+        if not header:
+            return 0
+        col_names = [c.lstrip("?") for c in header.split("\t")]
+        schema = pa.schema([(name, pa.string()) for name in col_names])
+        num_cols = len(col_names)
 
-    # Build SELECT that strips ?-prefixes and <> IRI brackets.
-    # First detect which columns DuckDB infers as VARCHAR so we only
-    # apply string operations to those (preserving integer types etc.).
-    columns = _read_tsv_header(tsv_path)
-    csv_src = (
-        f"read_csv_auto('{tsv_path}', delim='\\t', header=true, "
-        f"sample_size={sample_size}, ignore_errors=true)"
-    )
-    if columns:
-        con.execute(f"CREATE TEMP VIEW _raw AS SELECT * FROM {csv_src}")
-        type_rows = con.execute(
-            "SELECT column_name, data_type FROM information_schema.columns "
-            "WHERE table_name = '_raw'"
-        ).fetchall()
-        varchar_cols = {name for name, dtype in type_rows if dtype == "VARCHAR"}
-        select_clause = _build_select_clause(columns, varchar_cols)
-        con.execute("DROP VIEW _raw")
-    else:
-        select_clause = "*"
-
-    con.execute(f"""
-        COPY (
-            SELECT {select_clause} FROM {csv_src}
+        writer = pq.ParquetWriter(
+            str(parquet_path),
+            schema,
+            compression="zstd",
+            write_statistics=True,
+            use_dictionary=True,
         )
-        TO '{parquet_path}'
-        (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})
-    """)
-    count: int = con.execute(
-        f"SELECT COUNT(*) FROM '{parquet_path}'"
-    ).fetchone()[0]  # type: ignore[index]
-    con.close()
-    return count
+
+        total_rows = 0
+        batch_rows: list[list[str]] = []
+
+        for line in fh:
+            cells = line.rstrip("\n").split("\t")
+            # Pad or truncate to match header column count
+            if len(cells) < num_cols:
+                cells.extend([""] * (num_cols - len(cells)))
+            elif len(cells) > num_cols:
+                cells = cells[:num_cols]
+            parsed = [parse_rdf_term(c) for c in cells]
+            batch_rows.append(parsed)
+
+            if len(batch_rows) >= batch_size:
+                _write_batch(writer, col_names, batch_rows)
+                total_rows += len(batch_rows)
+                batch_rows = []
+
+        # Flush remaining rows
+        if batch_rows:
+            _write_batch(writer, col_names, batch_rows)
+            total_rows += len(batch_rows)
+
+        writer.close()
+
+    return total_rows
 
 
 def _compose_to_parquet(
@@ -538,12 +517,8 @@ def export_all(
                 display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
                 display.console.print("  Converting to Parquet…")
-                duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
                 count = tsv_to_parquet(
                     tsv_path, parquet_path,
-                    memory_limit=memory_limit,
-                    temp_directory=duckdb_tmp,
-                    sample_size=duckdb_sample_size,
                     row_group_size=duckdb_row_group_size,
                 )
                 pq_mb = parquet_path.stat().st_size / 1e6

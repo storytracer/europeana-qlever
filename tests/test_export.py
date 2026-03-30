@@ -1,22 +1,92 @@
-"""Unit tests for export resilience: retry logic, continue-on-failure, and ?-stripping."""
+"""Unit tests for export: RDF term parsing, Parquet conversion, retry logic, continue-on-failure."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import duckdb
 import httpx
 import pytest
+from rdflib import Literal, URIRef
+from rdflib.namespace import XSD
 
 from europeana_qlever.export import (
-    _build_select_clause,
     _cleanup_partial,
     _is_transient,
-    _read_tsv_header,
-    _strip_question_mark_aliases,
     export_all,
+    parse_rdf_term,
     run_query_to_tsv,
     tsv_to_parquet,
 )
 from europeana_qlever.query import QuerySpec
+
+
+class TestParseRdfTerm:
+    """Test rdflib-based RDF term parsing from SPARQL TSV cells."""
+
+    def test_iri(self):
+        assert parse_rdf_term("<http://example.org/item/1>") == "http://example.org/item/1"
+
+    def test_iri_https(self):
+        assert parse_rdf_term("<https://www.europeana.eu/item/123>") == "https://www.europeana.eu/item/123"
+
+    def test_iri_urn(self):
+        assert parse_rdf_term("<urn:isbn:0451450523>") == "urn:isbn:0451450523"
+
+    def test_language_tagged_literal(self):
+        assert parse_rdf_term('"Soldiers in the trenches"@en') == "Soldiers in the trenches"
+
+    def test_language_tagged_literal_fr(self):
+        assert parse_rdf_term('"Bonjour le monde"@fr') == "Bonjour le monde"
+
+    def test_quoted_literal(self):
+        assert parse_rdf_term('"en"') == "en"
+
+    def test_typed_literal_integer(self):
+        result = parse_rdf_term('"42"^^<http://www.w3.org/2001/XMLSchema#integer>')
+        assert result == "42"
+
+    def test_typed_literal_decimal(self):
+        result = parse_rdf_term('"3.14"^^<http://www.w3.org/2001/XMLSchema#decimal>')
+        assert result == "3.14"
+
+    def test_escaped_quotes(self):
+        assert parse_rdf_term(r'"text with \"quotes\""@en') == 'text with "quotes"'
+
+    def test_bare_value_string(self):
+        assert parse_rdf_term("IMAGE") == "IMAGE"
+
+    def test_bare_value_country(self):
+        assert parse_rdf_term("Portugal") == "Portugal"
+
+    def test_bare_value_integer(self):
+        assert parse_rdf_term("42") == "42"
+
+    def test_empty_string(self):
+        assert parse_rdf_term("") == ""
+
+    def test_blank_node(self):
+        result = parse_rdf_term("_:b1")
+        assert result  # Should produce a non-empty string
+
+    def test_rdflib_roundtrip_uri(self):
+        """parse_rdf_term undoes n3() serialization for URIRef."""
+        term = URIRef("http://data.europeana.eu/item/123")
+        assert parse_rdf_term(term.n3()) == str(term)
+
+    def test_rdflib_roundtrip_literal_lang(self):
+        """parse_rdf_term undoes n3() serialization for language-tagged Literal."""
+        term = Literal("hello", lang="en")
+        assert parse_rdf_term(term.n3()) == str(term)
+
+    def test_rdflib_roundtrip_literal_typed(self):
+        """parse_rdf_term undoes n3() serialization for typed Literal."""
+        term = Literal("42", datatype=XSD.integer)
+        assert parse_rdf_term(term.n3()) == str(term)
+
+    def test_rdflib_roundtrip_literal_plain(self):
+        """parse_rdf_term undoes n3() serialization for plain Literal."""
+        term = Literal("hello")
+        assert parse_rdf_term(term.n3()) == str(term)
 
 
 class TestIsTransient:
@@ -75,104 +145,82 @@ class TestCleanupPartial:
         assert not f2.exists()
 
 
-class TestQuestionMarkStripping:
-    def test_read_tsv_header(self, tmp_path: Path):
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text("?item\t?title\t?type\nval1\tval2\tval3\n")
-        headers = _read_tsv_header(tsv)
-        assert headers == ["?item", "?title", "?type"]
+class TestTsvToParquet:
+    """End-to-end tests for rdflib + PyArrow TSV→Parquet conversion."""
 
-    def test_read_tsv_header_no_prefix(self, tmp_path: Path):
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text("item\ttitle\ttype\n")
-        headers = _read_tsv_header(tsv)
-        assert headers == ["item", "title", "type"]
-
-    def test_strip_aliases_with_prefix(self):
-        result = _strip_question_mark_aliases(["?item", "?title", "?type"])
-        assert result is not None
-        assert '"?item" AS "item"' in result
-        assert '"?title" AS "title"' in result
-
-    def test_strip_aliases_no_prefix(self):
-        result = _strip_question_mark_aliases(["item", "title", "type"])
-        assert result is None
-
-    def test_strip_aliases_mixed(self):
-        result = _strip_question_mark_aliases(["?item", "count"])
-        assert result is not None
-        assert '"?item" AS "item"' in result
-        assert '"count"' in result
-
-
-class TestBuildSelectClause:
-    def test_strips_question_marks_and_iri_brackets(self):
-        result = _build_select_clause(["?item", "?title", "?type"])
-        # All columns get IRI stripping + ?-prefix removal
-        assert 'AS "item"' in result
-        assert 'AS "title"' in result
-        assert 'AS "type"' in result
-        assert "LIKE '<%%>'" in result
-
-    def test_no_question_mark_prefix(self):
-        result = _build_select_clause(["item", "title"])
-        assert 'AS "item"' in result
-        assert 'AS "title"' in result
-
-    def test_end_to_end_parquet(self, tmp_path: Path):
-        """IRI brackets are stripped and non-IRI values pass through."""
+    def test_all_rdf_forms(self, tmp_path: Path):
+        """All SPARQL TSV serialization forms are parsed correctly."""
         tsv = tmp_path / "test.tsv"
         tsv.write_text(
-            "?item\t?title\t?rights\t?count\n"
-            "<http://example.org/1>\tHello\t<http://cc.org/by/4.0/>\t42\n"
-            "<http://example.org/2>\tWorld\t<http://cc.org/by/3.0/>\t7\n"
+            "?item\t?title\t?lang\t?rights\t?count\n"
+            '<http://example.org/1>\t"Hello World"@en\t"en"\t<http://cc.org/by/4.0/>\t42\n'
+            '<http://example.org/2>\t"Bonjour"@fr\t"fr"\t<http://cc.org/by/3.0/>\t7\n'
         )
         parquet = tmp_path / "test.parquet"
         count = tsv_to_parquet(tsv, parquet)
         assert count == 2
 
-        import duckdb
         rows = duckdb.execute(
-            f"SELECT item, title, rights, count FROM '{parquet}'"
+            f"SELECT item, title, lang, rights, count FROM '{parquet}'"
         ).fetchall()
+        # IRIs: <> stripped
         assert rows[0][0] == "http://example.org/1"
-        assert rows[0][1] == "Hello"
-        assert rows[0][2] == "http://cc.org/by/4.0/"
-        assert rows[1][0] == "http://example.org/2"
+        assert rows[0][3] == "http://cc.org/by/4.0/"
+        # Language-tagged literals: quotes + @lang stripped
+        assert rows[0][1] == "Hello World"
+        assert rows[1][1] == "Bonjour"
+        # Quoted literals: quotes stripped
+        assert rows[0][2] == "en"
+        assert rows[1][2] == "fr"
+        # Bare values pass through
+        assert rows[0][4] == "42"
 
-    def test_preserves_integer_types(self, tmp_path: Path):
-        """Numeric columns are not cast to VARCHAR by IRI stripping."""
+    def test_plain_literals_unchanged(self, tmp_path: Path):
         tsv = tmp_path / "test.tsv"
-        tsv.write_text(
-            "?item\t?completeness\n"
-            "<http://example.org/1>\t5\n"
-            "<http://example.org/2>\t10\n"
-        )
+        tsv.write_text("?type\t?country\nIMAGE\tPortugal\n")
         parquet = tmp_path / "test.parquet"
         tsv_to_parquet(tsv, parquet)
 
-        import duckdb
-        types = duckdb.execute(
-            f"SELECT typeof(item), typeof(completeness) FROM '{parquet}' LIMIT 1"
-        ).fetchone()
-        assert types[0] == "VARCHAR"
-        assert types[1] == "BIGINT"
+        rows = duckdb.execute(f"SELECT * FROM '{parquet}'").fetchall()
+        assert rows[0] == ("IMAGE", "Portugal")
 
-    def test_null_and_empty_values(self, tmp_path: Path):
-        """NULL and empty values are not mangled by IRI stripping."""
+    def test_empty_cells(self, tmp_path: Path):
         tsv = tmp_path / "test.tsv"
         tsv.write_text("?item\t?opt\n<http://example.org/1>\t\n")
         parquet = tmp_path / "test.parquet"
         count = tsv_to_parquet(tsv, parquet)
         assert count == 1
 
-        import duckdb
-        rows = duckdb.execute(
-            f"SELECT item, opt FROM '{parquet}'"
-        ).fetchall()
+        rows = duckdb.execute(f"SELECT item, opt FROM '{parquet}'").fetchall()
         assert rows[0][0] == "http://example.org/1"
-        # Empty TSV field → NULL or empty string
-        assert rows[0][1] is None or rows[0][1] == ""
+        assert rows[0][1] == ""
+
+    def test_empty_tsv(self, tmp_path: Path):
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text("")
+        parquet = tmp_path / "test.parquet"
+        count = tsv_to_parquet(tsv, parquet)
+        assert count == 0
+
+    def test_question_mark_prefix_stripped(self, tmp_path: Path):
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text("?item\t?title\nfoo\tbar\n")
+        parquet = tmp_path / "test.parquet"
+        tsv_to_parquet(tsv, parquet)
+
+        rows = duckdb.execute(f"SELECT item, title FROM '{parquet}'").fetchall()
+        assert rows[0] == ("foo", "bar")
+
+    def test_batching(self, tmp_path: Path):
+        """Rows exceeding batch_size are correctly handled across batches."""
+        tsv = tmp_path / "test.tsv"
+        lines = ["?item\t?val"]
+        for i in range(150):
+            lines.append(f"<http://example.org/{i}>\t{i}")
+        tsv.write_text("\n".join(lines) + "\n")
+        parquet = tmp_path / "test.parquet"
+        count = tsv_to_parquet(tsv, parquet, batch_size=50)
+        assert count == 150
 
 
 class TestRunQueryToTsvRetry:
