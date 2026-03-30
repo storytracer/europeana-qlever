@@ -261,38 +261,18 @@ def merge(
 # write-qleverfile
 # ---------------------------------------------------------------------------
 
-@cli.command("write-qleverfile")
-@click.option("--qlever-bin", type=click.Path(exists=True, file_okay=False, path_type=Path),
-              default=None, help="Path to qlever-code/build/ with native binaries.")
-@click.option("--docker", is_flag=True, default=False,
-              help="Use Docker runtime instead of native binaries.")
-@click.option("--port", default=QLEVER_PORT, show_default=True)
-@click.option("--stxxl-memory", default="auto", show_default=True,
-              help="RAM for external sorting during index build (or 'auto').")
-@click.option("--query-memory", default="auto", show_default=True,
-              help="RAM budget for query execution (or 'auto').")
-@click.option("--cache-size", default="auto", show_default=True,
-              help="Query result cache size (or 'auto').")
-@click.pass_context
-def write_qleverfile_cmd(
-    ctx: click.Context,
-    qlever_bin: Path | None,
-    docker: bool,
-    port: int,
-    stxxl_memory: str,
-    query_memory: str,
-    cache_size: str,
-):
-    """Generate a Qleverfile configured for the Europeana EDM dataset.
-
-    Writes to <work-dir>/index/Qleverfile. Defaults to SYSTEM=native (binaries
-    on PATH). Use --qlever-bin to specify a custom binary directory, or --docker
-    to use Docker instead.
-    """
-    index_dir: Path = ctx.obj["index_dir"]
-    merged_dir: Path = ctx.obj["merged_dir"]
-    budget = ctx.obj["budget"]
-
+def _write_qleverfile(
+    index_dir: Path,
+    merged_dir: Path,
+    budget,
+    port: int = QLEVER_PORT,
+    qlever_bin: Path | None = None,
+    docker: bool = False,
+    stxxl_memory: str = "auto",
+    query_memory: str = "auto",
+    cache_size: str = "auto",
+) -> Path:
+    """Generate and write a Qleverfile. Returns the path to the written file."""
     # Resolve auto values
     if stxxl_memory == "auto":
         stxxl_memory = budget.qlever_stxxl()
@@ -370,6 +350,49 @@ UI_PORT = 7000
     # Also write settings.json for manual qlever-index invocations
     settings_path = index_dir / "settings.json"
     settings_path.write_text(json.dumps(settings, indent=2))
+
+    return qleverfile_path
+
+
+@cli.command("write-qleverfile")
+@click.option("--qlever-bin", type=click.Path(exists=True, file_okay=False, path_type=Path),
+              default=None, help="Path to qlever-code/build/ with native binaries.")
+@click.option("--docker", is_flag=True, default=False,
+              help="Use Docker runtime instead of native binaries.")
+@click.option("--port", default=QLEVER_PORT, show_default=True)
+@click.option("--stxxl-memory", default="auto", show_default=True,
+              help="RAM for external sorting during index build (or 'auto').")
+@click.option("--query-memory", default="auto", show_default=True,
+              help="RAM budget for query execution (or 'auto').")
+@click.option("--cache-size", default="auto", show_default=True,
+              help="Query result cache size (or 'auto').")
+@click.pass_context
+def write_qleverfile_cmd(
+    ctx: click.Context,
+    qlever_bin: Path | None,
+    docker: bool,
+    port: int,
+    stxxl_memory: str,
+    query_memory: str,
+    cache_size: str,
+):
+    """Generate a Qleverfile configured for the Europeana EDM dataset.
+
+    Writes to <work-dir>/index/Qleverfile. Defaults to SYSTEM=native (binaries
+    on PATH). Use --qlever-bin to specify a custom binary directory, or --docker
+    to use Docker instead.
+    """
+    index_dir: Path = ctx.obj["index_dir"]
+    merged_dir: Path = ctx.obj["merged_dir"]
+    budget = ctx.obj["budget"]
+
+    qleverfile_path = _write_qleverfile(
+        index_dir, merged_dir, budget,
+        port=port, qlever_bin=qlever_bin, docker=docker,
+        stxxl_memory=stxxl_memory, query_memory=query_memory,
+        cache_size=cache_size,
+    )
+    settings_path = index_dir / "settings.json"
 
     display.console.print(f"[green]Qleverfile written to {display.short_path(qleverfile_path)}[/green]")
     display.console.print(f"[green]settings.json written to {display.short_path(settings_path)}[/green]")
@@ -467,17 +490,33 @@ def start(ctx: click.Context):
     configured port, it is stopped first.
     """
     index_dir: Path = ctx.obj["index_dir"]
+    merged_dir: Path = ctx.obj["merged_dir"]
     budget = ctx.obj["budget"]
     qleverfile_path = index_dir / "Qleverfile"
     if not qleverfile_path.exists():
         display.console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
         raise SystemExit(1)
 
+    # Preserve non-resource settings from existing Qleverfile, then
+    # regenerate with current resource budget.
+    old = _parse_qleverfile(qleverfile_path)
+    old_runtime = old.get("runtime", {})
+    old_server = old.get("server", {})
+    docker = old_runtime.get("SYSTEM", "native") == "docker"
+    qlever_bin_str = old_runtime.get("QLEVER_BIN_DIR")
+    qlever_bin = Path(qlever_bin_str) if qlever_bin_str else None
+    port = int(old_server.get("PORT", QLEVER_PORT))
+
+    _write_qleverfile(
+        index_dir, merged_dir, budget,
+        port=port, qlever_bin=qlever_bin, docker=docker,
+    )
+
     # Display resource budget
     display.console.print(budget.summary_table())
     display.console.print()
 
-    # Parse Qleverfile and display the server command that will be used
+    # Parse freshly written Qleverfile and display the server command
     sections = _parse_qleverfile(qleverfile_path)
     data = sections.get("data", {})
     server = sections.get("server", {})
