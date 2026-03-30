@@ -169,11 +169,11 @@ class TestQueryBuilder:
         assert "_any" in sparql
 
     def test_vernacular_bound_from_dc_language(self):
-        """The vernacular language is bound from dc:language."""
+        """The vernacular language is bound from dc:language and reused."""
         qb = QueryBuilder()
         sparql = qb.items_enriched()
-        assert "dc:language" in sparql
-        assert "vernacularLang" in sparql
+        assert "dc:language ?_language" in sparql
+        assert "LANG(?_title_native) = ?_language" in sparql
 
     def test_coalesce_in_resolved_title(self):
         """The resolved title uses COALESCE."""

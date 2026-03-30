@@ -588,12 +588,13 @@ class QueryBuilder:
         limit_block = self._limit_offset(f)
         extras = self._extra_langs(f)
 
-        vernacular = self._bind_vernacular()
         title_fragment, title_vars = self._lang_resolve_item(
             "dc:title", "?proxy", "title", extra_langs=extras,
+            vernacular_var="?_language",
         )
         desc_fragment, desc_vars = self._lang_resolve_item(
             "dc:description", "?proxy", "desc", extra_langs=extras,
+            vernacular_var="?_language",
         )
 
         # Build SELECT columns for title
@@ -650,7 +651,7 @@ class QueryBuilder:
               (SAMPLE(?_datasetName) AS ?dataset_name)
             WHERE {{
               {proxy}
-              {vernacular}
+              OPTIONAL {{ ?proxy dc:language ?_language }}
               ?proxy edm:type ?_type .
               {title_fragment}
               {desc_fragment}
@@ -663,7 +664,6 @@ class QueryBuilder:
               BIND(COALESCE(?_creatorLabel, ?_creatorLit, STR(?_creatorRef)) AS ?_creator)
               OPTIONAL {{ ?proxy dc:subject ?_subject }}
               OPTIONAL {{ ?proxy dc:date ?_date }}
-              OPTIONAL {{ ?proxy dc:language ?_language }}
               {agg}
               ?agg edm:rights ?_rights ;
                    edm:dataProvider ?_dataProvider .
