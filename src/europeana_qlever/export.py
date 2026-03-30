@@ -180,6 +180,8 @@ def _strip_question_mark_aliases(columns: list[str]) -> str | None:
     """Build a SELECT clause that strips leading ``?`` from column names.
 
     Returns ``None`` if no columns need renaming (no ``?`` prefixes).
+
+    .. deprecated:: Use :func:`_build_select_clause` instead.
     """
     needs_rename = any(c.startswith("?") for c in columns)
     if not needs_rename:
@@ -188,6 +190,43 @@ def _strip_question_mark_aliases(columns: list[str]) -> str | None:
     for col in columns:
         clean = col.lstrip("?")
         if clean != col:
+            parts.append(f'"{col}" AS "{clean}"')
+        else:
+            parts.append(f'"{col}"')
+    return ", ".join(parts)
+
+
+def _build_select_clause(
+    columns: list[str],
+    varchar_columns: set[str] | None = None,
+) -> str:
+    """Build a SELECT clause that strips ``?`` prefixes and ``<>`` IRI brackets.
+
+    Every column gets ``?``-prefix removal (QLever TSV headers use ``?item``
+    etc.).  VARCHAR columns additionally get a ``CASE WHEN … LIKE '<%%>'``
+    guard that strips the angle brackets QLever wraps around IRI values in
+    TSV export.  Non-VARCHAR columns (e.g. integers) are passed through
+    unchanged to preserve DuckDB's type inference.
+
+    Parameters
+    ----------
+    columns
+        Raw TSV header column names (may have ``?`` prefixes).
+    varchar_columns
+        Set of column names (with original ``?`` prefix) that DuckDB inferred
+        as VARCHAR.  When ``None``, all columns are treated as VARCHAR.
+    """
+    all_varchar = varchar_columns is None
+    parts = []
+    for col in columns:
+        clean = col.lstrip("?")
+        if all_varchar or col in varchar_columns:
+            parts.append(
+                f"CASE WHEN \"{col}\" LIKE '<%%>' "
+                f"THEN SUBSTRING(\"{col}\", 2, LENGTH(\"{col}\") - 2) "
+                f"ELSE \"{col}\" END AS \"{clean}\""
+            )
+        elif clean != col:
             parts.append(f'"{col}" AS "{clean}"')
         else:
             parts.append(f'"{col}"')
@@ -235,20 +274,29 @@ def tsv_to_parquet(
         temp_directory.mkdir(parents=True, exist_ok=True)
         con.execute(f"SET temp_directory = '{temp_directory}'")
 
-    # Read header to check for ?-prefixed column names
+    # Build SELECT that strips ?-prefixes and <> IRI brackets.
+    # First detect which columns DuckDB infers as VARCHAR so we only
+    # apply string operations to those (preserving integer types etc.).
     columns = _read_tsv_header(tsv_path)
-    aliases = _strip_question_mark_aliases(columns)
-    select_clause = aliases if aliases else "*"
+    csv_src = (
+        f"read_csv_auto('{tsv_path}', delim='\\t', header=true, "
+        f"sample_size={sample_size}, ignore_errors=true)"
+    )
+    if columns:
+        con.execute(f"CREATE TEMP VIEW _raw AS SELECT * FROM {csv_src}")
+        type_rows = con.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_name = '_raw'"
+        ).fetchall()
+        varchar_cols = {name for name, dtype in type_rows if dtype == "VARCHAR"}
+        select_clause = _build_select_clause(columns, varchar_cols)
+        con.execute("DROP VIEW _raw")
+    else:
+        select_clause = "*"
 
     con.execute(f"""
         COPY (
-            SELECT {select_clause} FROM read_csv_auto(
-                '{tsv_path}',
-                delim='\t',
-                header=true,
-                sample_size={sample_size},
-                ignore_errors=true
-            )
+            SELECT {select_clause} FROM {csv_src}
         )
         TO '{parquet_path}'
         (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})

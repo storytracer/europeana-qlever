@@ -7,12 +7,14 @@ import httpx
 import pytest
 
 from europeana_qlever.export import (
+    _build_select_clause,
     _cleanup_partial,
     _is_transient,
     _read_tsv_header,
     _strip_question_mark_aliases,
     export_all,
     run_query_to_tsv,
+    tsv_to_parquet,
 )
 from europeana_qlever.query import QuerySpec
 
@@ -101,6 +103,76 @@ class TestQuestionMarkStripping:
         assert result is not None
         assert '"?item" AS "item"' in result
         assert '"count"' in result
+
+
+class TestBuildSelectClause:
+    def test_strips_question_marks_and_iri_brackets(self):
+        result = _build_select_clause(["?item", "?title", "?type"])
+        # All columns get IRI stripping + ?-prefix removal
+        assert 'AS "item"' in result
+        assert 'AS "title"' in result
+        assert 'AS "type"' in result
+        assert "LIKE '<%%>'" in result
+
+    def test_no_question_mark_prefix(self):
+        result = _build_select_clause(["item", "title"])
+        assert 'AS "item"' in result
+        assert 'AS "title"' in result
+
+    def test_end_to_end_parquet(self, tmp_path: Path):
+        """IRI brackets are stripped and non-IRI values pass through."""
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text(
+            "?item\t?title\t?rights\t?count\n"
+            "<http://example.org/1>\tHello\t<http://cc.org/by/4.0/>\t42\n"
+            "<http://example.org/2>\tWorld\t<http://cc.org/by/3.0/>\t7\n"
+        )
+        parquet = tmp_path / "test.parquet"
+        count = tsv_to_parquet(tsv, parquet)
+        assert count == 2
+
+        import duckdb
+        rows = duckdb.execute(
+            f"SELECT item, title, rights, count FROM '{parquet}'"
+        ).fetchall()
+        assert rows[0][0] == "http://example.org/1"
+        assert rows[0][1] == "Hello"
+        assert rows[0][2] == "http://cc.org/by/4.0/"
+        assert rows[1][0] == "http://example.org/2"
+
+    def test_preserves_integer_types(self, tmp_path: Path):
+        """Numeric columns are not cast to VARCHAR by IRI stripping."""
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text(
+            "?item\t?completeness\n"
+            "<http://example.org/1>\t5\n"
+            "<http://example.org/2>\t10\n"
+        )
+        parquet = tmp_path / "test.parquet"
+        tsv_to_parquet(tsv, parquet)
+
+        import duckdb
+        types = duckdb.execute(
+            f"SELECT typeof(item), typeof(completeness) FROM '{parquet}' LIMIT 1"
+        ).fetchone()
+        assert types[0] == "VARCHAR"
+        assert types[1] == "BIGINT"
+
+    def test_null_and_empty_values(self, tmp_path: Path):
+        """NULL and empty values are not mangled by IRI stripping."""
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text("?item\t?opt\n<http://example.org/1>\t\n")
+        parquet = tmp_path / "test.parquet"
+        count = tsv_to_parquet(tsv, parquet)
+        assert count == 1
+
+        import duckdb
+        rows = duckdb.execute(
+            f"SELECT item, opt FROM '{parquet}'"
+        ).fetchall()
+        assert rows[0][0] == "http://example.org/1"
+        # Empty TSV field → NULL or empty string
+        assert rows[0][1] is None or rows[0][1] == ""
 
 
 class TestRunQueryToTsvRetry:
