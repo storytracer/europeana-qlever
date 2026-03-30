@@ -20,6 +20,7 @@ src/europeana_qlever/
   cli.py                          # Click command definitions (all commands)
   constants.py                    # EDM namespaces, QLever settings, rights URIs, throttle/monitor thresholds
   dashboard.py                    # Live Rich dashboard (system resources, pipeline progress, log tail)
+  analysis.py                     # Query performance analysis (QLever runtime info → Markdown report)
   display.py                      # Terminal output helpers (console setup, formatting)
   export.py                       # QLever HTTP streaming + DuckDB Parquet conversion
   merge.py                        # Parallel TTL extraction, inline validation, prefix discovery
@@ -30,6 +31,7 @@ src/europeana_qlever/
   throttle.py                     # Adaptive concurrency throttle (CPU/memory-aware, replaces semaphore)
   validate.py                     # Standalone validation + inline entry validation for merge
 tests/
+  test_analysis.py                # Query performance analysis tests
   test_export.py                  # Export functionality tests
   test_query.py                   # Unit tests for query generation
   test_state.py                   # State persistence tests
@@ -66,6 +68,8 @@ uv run europeana-qlever -d WORK_DIR index                        # Build QLever 
 uv run europeana-qlever -d WORK_DIR start                        # Start SPARQL server on :7001
 uv run europeana-qlever -d WORK_DIR stop                         # Stop SPARQL server
 uv run europeana-qlever -d WORK_DIR list-queries                 # List all 36 available queries
+uv run europeana-qlever -d WORK_DIR analyze -q items_enriched    # Analyze query performance
+uv run europeana-qlever -d WORK_DIR analyze --query-set ai       # Analyze all AI queries
 uv run europeana-qlever -d WORK_DIR export --all                 # Export all base queries to Parquet
 uv run europeana-qlever -d WORK_DIR export --query-set all       # Export all 36 queries
 uv run europeana-qlever -d WORK_DIR export -q items_enriched     # Export a specific named query
