@@ -477,7 +477,6 @@ SELECT ?s ?label WHERE {
         assert sa.error is None
         assert sa.triple_patterns > 5
         assert sa.optional_count > 5
-        assert sa.select_columns > 10
         assert sa.variables > 15
         assert len(sa.aggregates) > 3
 

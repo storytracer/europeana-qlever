@@ -253,8 +253,16 @@ class QueryBuilder:
         return list(self.extra_languages)
 
     def _bind_vernacular(self, proxy_var: str = "?proxy") -> str:
-        """Bind the item's vernacular language from dc:language."""
-        return f"OPTIONAL {{ {proxy_var} dc:language ?_vernacularLang }}"
+        """Bind the item's vernacular language from dc:language.
+
+        Uses a SAMPLE subquery to pick exactly one language per item,
+        preventing row multiplication when dc:language is multi-valued.
+        """
+        return (
+            f"OPTIONAL {{ SELECT {proxy_var} (SAMPLE(?__vl) AS ?_vernacularLang) "
+            f"WHERE {{ {proxy_var} dc:language ?__vl }} "
+            f"GROUP BY {proxy_var} }}"
+        )
 
     def _core_subquery(
         self,
@@ -362,9 +370,14 @@ class QueryBuilder:
             coalesce_vars.append(v)
             var_map[lang] = v
 
-        # 4. Wildcard fallback
+        # 4. Wildcard fallback — SAMPLE subquery to prevent row multiplication
         any_var = f"?_{base_name}_any"
-        parts.append(f"OPTIONAL {{ {subject_var} {prop_uri} {any_var} }}")
+        inner_var = f"?__any_{base_name}"
+        parts.append(
+            f"OPTIONAL {{ SELECT {subject_var} (SAMPLE({inner_var}) AS {any_var}) "
+            f"WHERE {{ {subject_var} {prop_uri} {inner_var} }} "
+            f"GROUP BY {subject_var} }}"
+        )
         coalesce_vars.append(any_var)
 
         # Resolved column
@@ -404,9 +417,14 @@ class QueryBuilder:
             parts.append(f'OPTIONAL {{ {subject_var} {prop_uri} {v} . FILTER(LANG({v}) = "{lang}") }}')
             coalesce_vars.append(v)
 
-        # Wildcard
+        # Wildcard — SAMPLE subquery to prevent row multiplication
         any_var = f"?_{base}_any"
-        parts.append(f"OPTIONAL {{ {subject_var} {prop_uri} {any_var} }}")
+        inner_var = f"?__any_{base}"
+        parts.append(
+            f"OPTIONAL {{ SELECT {subject_var} (SAMPLE({inner_var}) AS {any_var}) "
+            f"WHERE {{ {subject_var} {prop_uri} {inner_var} }} "
+            f"GROUP BY {subject_var} }}"
+        )
         coalesce_vars.append(any_var)
 
         parts.append(f"BIND(COALESCE({', '.join(coalesce_vars)}) AS {output_var})")
@@ -637,6 +655,26 @@ class QueryBuilder:
     # AI dataset queries
     # -----------------------------------------------------------------------
 
+    def _pre_aggregate(
+        self,
+        subject_var: str,
+        prop_uri: str,
+        out_var: str,
+        separator: str,
+    ) -> str:
+        """Pre-aggregate a multi-valued property via GROUP_CONCAT subquery.
+
+        Returns an OPTIONAL subquery that produces one pre-concatenated
+        row per subject, preventing row multiplication in the outer query.
+        """
+        inner = f"?__pa_{out_var.lstrip('?')}"
+        return (
+            f"OPTIONAL {{ SELECT {subject_var} "
+            f'(GROUP_CONCAT(DISTINCT {inner}; SEPARATOR="{separator}") AS {out_var}) '
+            f"WHERE {{ {subject_var} {prop_uri} {inner} }} "
+            f"GROUP BY {subject_var} }}"
+        )
+
     def items_enriched(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({
@@ -689,18 +727,50 @@ class QueryBuilder:
         )
         creator_label_indented = creator_label_resolve.replace("\n  ", "\n    ")
 
+        # Pre-aggregate multi-valued properties in subqueries to prevent
+        # row multiplication in the outer GROUP BY.
+        subjects_agg = self._pre_aggregate("?proxy", "dc:subject", "?_subjects", sep)
+        dates_agg = self._pre_aggregate("?proxy", "dc:date", "?_dates", sep)
+        languages_agg = self._pre_aggregate("?proxy", "dc:language", "?_languages", sep)
+        years_agg = (
+            "OPTIONAL { SELECT ?item "
+            f'(GROUP_CONCAT(DISTINCT ?__pa_year; SEPARATOR="{sep}") AS ?_years) '
+            "WHERE { ?__eP ore:proxyFor ?item . "
+            '?__eP edm:europeanaProxy "true" . '
+            "?__eP edm:year ?__pa_year . } "
+            "GROUP BY ?item }"
+        )
+
+        # Creator pre-aggregation: resolve labels inside the subquery,
+        # then GROUP_CONCAT the results.
+        creators_agg = textwrap.dedent(f"""\
+            OPTIONAL {{ SELECT ?proxy
+              (GROUP_CONCAT(DISTINCT ?__cr_label; SEPARATOR="{sep}") AS ?_creators)
+              (GROUP_CONCAT(DISTINCT ?__cr_uri; SEPARATOR="{sep}") AS ?_creator_uris)
+            WHERE {{
+              {{
+                ?proxy dc:creator ?__cr_ref . FILTER(isIRI(?__cr_ref))
+                {creator_label_indented}
+                BIND(STR(?__cr_ref) AS ?__cr_uri)
+                BIND(COALESCE(?_creatorLabel, STR(?__cr_ref)) AS ?__cr_label)
+              }} UNION {{
+                ?proxy dc:creator ?__cr_lit . FILTER(isLiteral(?__cr_lit))
+                BIND(STR(?__cr_lit) AS ?__cr_label)
+              }}
+            }} GROUP BY ?proxy }}""")
+
         return textwrap.dedent(f"""\
             {prefixes}
             SELECT ?item
               {title_cols}
               {desc_cols}
-              (GROUP_CONCAT(DISTINCT ?_creator; SEPARATOR="{sep}") AS ?creators)
-              (GROUP_CONCAT(DISTINCT ?_creatorURI; SEPARATOR="{sep}") AS ?creator_uris)
-              (GROUP_CONCAT(DISTINCT ?_subject; SEPARATOR="{sep}") AS ?subjects)
-              (GROUP_CONCAT(DISTINCT ?_date; SEPARATOR="{sep}") AS ?dates)
-              (GROUP_CONCAT(DISTINCT ?_year; SEPARATOR="{sep}") AS ?years)
+              (SAMPLE(?_creators) AS ?creators)
+              (SAMPLE(?_creator_uris) AS ?creator_uris)
+              (SAMPLE(?_subjects) AS ?subjects)
+              (SAMPLE(?_dates) AS ?dates)
+              (SAMPLE(?_years) AS ?years)
               (SAMPLE(?_type) AS ?type)
-              (GROUP_CONCAT(DISTINCT ?_language; SEPARATOR="{sep}") AS ?languages)
+              (SAMPLE(?_languages) AS ?languages)
               (SAMPLE(?_country) AS ?country)
               (SAMPLE(?_dataProvider) AS ?data_provider)
               (SAMPLE(?_rights) AS ?rights)
@@ -715,16 +785,11 @@ class QueryBuilder:
               {vernacular}
               {title_fragment}
               {desc_fragment}
-              OPTIONAL {{
-                ?proxy dc:creator ?_creatorRef . FILTER(isIRI(?_creatorRef))
-                {creator_label_indented}
-                BIND(STR(?_creatorRef) AS ?_creatorURI)
-              }}
-              OPTIONAL {{ ?proxy dc:creator ?_creatorLit . FILTER(isLiteral(?_creatorLit)) }}
-              BIND(COALESCE(?_creatorLabel, ?_creatorLit, STR(?_creatorRef)) AS ?_creator)
-              OPTIONAL {{ ?proxy dc:subject ?_subject }}
-              OPTIONAL {{ ?proxy dc:date ?_date }}
-              OPTIONAL {{ ?proxy dc:language ?_language }}
+              {creators_agg}
+              {subjects_agg}
+              {dates_agg}
+              {languages_agg}
+              {years_agg}
             }}
             GROUP BY ?item
             {limit_block}
