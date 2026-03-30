@@ -671,7 +671,7 @@ def export(
     Filter options (--country, --type, etc.) apply to named queries.
     """
     from .export import export_all
-    from .query import QueryBuilder, QueryFilters
+    from .query import CompositeQuery, QueryBuilder, QueryFilters
 
     # Validate mutually-exclusive modes
     modes = sum([
@@ -706,7 +706,7 @@ def export(
     )
 
     qb = QueryBuilder()
-    queries: dict[str, str] = {}
+    queries: dict[str, str | CompositeQuery] = {}
 
     if sparql_files:
         # Legacy mode: read .sparql files directly

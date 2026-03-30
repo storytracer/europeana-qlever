@@ -28,6 +28,7 @@ from .constants import (
     DEFAULT_EXPORT_RETRY_DELAYS,
     QLEVER_PORT,
 )
+from .query import CompositeQuery
 from .state import ExportResult
 
 logger = logging.getLogger(__name__)
@@ -196,6 +197,11 @@ def tsv_to_parquet(
     int
         Number of rows written.
     """
+    # Read header to strip SPARQL "?" prefix from column names
+    with open(tsv_path) as f:
+        raw_cols = f.readline().strip().split("\t")
+    aliases = ", ".join(f'"{c}" AS "{c.lstrip("?")}"' for c in raw_cols)
+
     con = duckdb.connect()
     con.execute(f"SET memory_limit = '{memory_limit}'")
     if temp_directory is not None:
@@ -203,7 +209,7 @@ def tsv_to_parquet(
         con.execute(f"SET temp_directory = '{temp_directory}'")
     con.execute(f"""
         COPY (
-            SELECT * FROM read_csv_auto(
+            SELECT {aliases} FROM read_csv_auto(
                 '{tsv_path}',
                 delim='\t',
                 header=true,
@@ -221,9 +227,84 @@ def tsv_to_parquet(
     return count
 
 
+def _run_composite(
+    name: str,
+    composite: CompositeQuery,
+    output_dir: Path,
+    qlever_url: str,
+    timeout: int,
+    memory_limit: str,
+    temp_directory: Path | None,
+    *,
+    http_chunk_size: int,
+    http_connect_timeout: int,
+    duckdb_sample_size: int,
+    duckdb_row_group_size: int,
+    max_retries: int,
+    retry_delays: tuple[int, ...],
+) -> Path:
+    """Execute a CompositeQuery: run each sub-query, then join in DuckDB."""
+    part_files: list[Path] = []
+
+    for part_name, sparql in composite.parts.items():
+        tsv_path = output_dir / f"{part_name}.tsv"
+        parquet_path = output_dir / f"{part_name}.parquet"
+
+        rows = run_query_to_tsv(
+            sparql, tsv_path, qlever_url, timeout,
+            max_retries=max_retries,
+            retry_delays=retry_delays,
+            http_chunk_size=http_chunk_size,
+            http_connect_timeout=http_connect_timeout,
+        )
+        tsv_mb = tsv_path.stat().st_size / 1e6
+        display.console.print(f"  {part_name}: {rows:,} rows · {tsv_mb:.1f} MB")
+
+        duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
+        tsv_to_parquet(
+            tsv_path, parquet_path,
+            memory_limit=memory_limit,
+            temp_directory=duckdb_tmp,
+            sample_size=duckdb_sample_size,
+            row_group_size=duckdb_row_group_size,
+        )
+        tsv_path.unlink()
+        part_files.append(parquet_path)
+
+    # Join parts in DuckDB
+    display.console.print("  Joining parts in DuckDB…")
+    final_path = output_dir / f"{name}.parquet"
+    duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
+    join_sql = composite.join_sql.format(dir=output_dir)
+
+    con = duckdb.connect()
+    con.execute(f"SET memory_limit = '{memory_limit}'")
+    duckdb_tmp.mkdir(parents=True, exist_ok=True)
+    con.execute(f"SET temp_directory = '{duckdb_tmp}'")
+    con.execute(f"""
+        COPY (
+            {join_sql}
+        )
+        TO '{final_path}'
+        (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {duckdb_row_group_size})
+    """)
+    count: int = con.execute(
+        f"SELECT COUNT(*) FROM '{final_path}'"
+    ).fetchone()[0]  # type: ignore[index]
+    con.close()
+
+    # Clean up intermediate part files
+    for p in part_files:
+        p.unlink(missing_ok=True)
+
+    pq_mb = final_path.stat().st_size / 1e6
+    display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+    return final_path
+
+
 def export_all(
     output_dir: Path,
-    queries: dict[str, str],
+    queries: dict[str, str | CompositeQuery],
     qlever_url: str = f"http://localhost:{QLEVER_PORT}",
     timeout: int = 3600,
     skip_existing: bool = False,
@@ -305,41 +386,58 @@ def export_all(
                 pass
 
         try:
-            # 1. Query → TSV
-            rows = run_query_to_tsv(
-                query, tsv_path, qlever_url, timeout,
-                max_retries=max_retries,
-                retry_delays=retry_delays,
-                http_chunk_size=http_chunk_size,
-                http_connect_timeout=http_connect_timeout,
-            )
-            tsv_mb = tsv_path.stat().st_size / 1e6
-            display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
+            if isinstance(query, CompositeQuery):
+                parquet_path = _run_composite(
+                    name, query, output_dir, qlever_url, timeout,
+                    memory_limit, temp_directory,
+                    http_chunk_size=http_chunk_size,
+                    http_connect_timeout=http_connect_timeout,
+                    duckdb_sample_size=duckdb_sample_size,
+                    duckdb_row_group_size=duckdb_row_group_size,
+                    max_retries=max_retries,
+                    retry_delays=retry_delays,
+                )
+            else:
+                # 1. Query → TSV
+                rows = run_query_to_tsv(
+                    query, tsv_path, qlever_url, timeout,
+                    max_retries=max_retries,
+                    retry_delays=retry_delays,
+                    http_chunk_size=http_chunk_size,
+                    http_connect_timeout=http_connect_timeout,
+                )
+                tsv_mb = tsv_path.stat().st_size / 1e6
+                display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
-            # 2. TSV → Parquet
-            display.console.print("  Converting to Parquet…")
-            duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
-            count = tsv_to_parquet(
-                tsv_path, parquet_path,
-                memory_limit=memory_limit,
-                temp_directory=duckdb_tmp,
-                sample_size=duckdb_sample_size,
-                row_group_size=duckdb_row_group_size,
-            )
-            pq_mb = parquet_path.stat().st_size / 1e6
-            display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+                # 2. TSV → Parquet
+                display.console.print("  Converting to Parquet…")
+                duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
+                count = tsv_to_parquet(
+                    tsv_path, parquet_path,
+                    memory_limit=memory_limit,
+                    temp_directory=duckdb_tmp,
+                    sample_size=duckdb_sample_size,
+                    row_group_size=duckdb_row_group_size,
+                )
+                pq_mb = parquet_path.stat().st_size / 1e6
+                display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
 
-            tsv_path.unlink()
+                tsv_path.unlink()
 
             result.succeeded.append(name)
             result.parquet_files.append(parquet_path)
-            logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
+            logger.info("Exported %s: %.1f MB", name, parquet_path.stat().st_size / 1e6)
 
         except Exception as exc:
             logger.error("Export failed for %s: %s", name, exc)
             display.console.print(f"  [red]FAILED: {exc}[/red]")
             result.failed[name] = str(exc)
-            _cleanup_partial(tsv_path, parquet_path)
+            cleanup = [tsv_path, parquet_path]
+            if isinstance(query, CompositeQuery):
+                for part_name in query.parts:
+                    cleanup.append(output_dir / f"{part_name}.tsv")
+                    cleanup.append(output_dir / f"{part_name}.parquet")
+            _cleanup_partial(*cleanup)
 
         if dashboard is not None:
             try:

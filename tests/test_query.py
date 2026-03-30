@@ -2,7 +2,7 @@
 
 import pytest
 
-from europeana_qlever.query import QueryBuilder, QueryFilters
+from europeana_qlever.query import CompositeQuery, QueryBuilder, QueryFilters
 
 
 class TestQueryBuilder:
@@ -20,13 +20,22 @@ class TestQueryBuilder:
             assert col in sparql
 
     def test_all_queries_have_select_and_where(self):
-        for name, sparql in self.qb.all_queries().items():
-            assert "SELECT" in sparql, f"{name} missing SELECT"
-            assert "WHERE" in sparql, f"{name} missing WHERE"
+        for name, query in self.qb.all_queries().items():
+            if isinstance(query, CompositeQuery):
+                for part_name, sparql in query.parts.items():
+                    assert "SELECT" in sparql, f"{part_name} missing SELECT"
+                    assert "WHERE" in sparql, f"{part_name} missing WHERE"
+            else:
+                assert "SELECT" in query, f"{name} missing SELECT"
+                assert "WHERE" in query, f"{name} missing WHERE"
 
     def test_all_queries_have_prefixes(self):
-        for name, sparql in self.qb.all_queries().items():
-            assert "PREFIX" in sparql, f"{name} missing PREFIX"
+        for name, query in self.qb.all_queries().items():
+            if isinstance(query, CompositeQuery):
+                for part_name, sparql in query.parts.items():
+                    assert "PREFIX" in sparql, f"{part_name} missing PREFIX"
+            else:
+                assert "PREFIX" in query, f"{name} missing PREFIX"
 
     # --- Registry tests ---
 
@@ -76,14 +85,19 @@ class TestQueryBuilder:
 
     # --- Specific query tests ---
 
-    def test_items_enriched_uses_group_concat(self):
-        sparql = self.qb.items_enriched()
-        assert "GROUP_CONCAT" in sparql
-        assert "GROUP BY" in sparql
+    def test_items_enriched_returns_composite(self):
+        result = self.qb.items_enriched()
+        assert isinstance(result, CompositeQuery)
+        assert "items_enriched_core" in result.parts
+        assert "items_enriched_creators" in result.parts
+        assert "items_enriched_subjects" in result.parts
+        assert "items_enriched_dates" in result.parts
+        assert "items_enriched_years" in result.parts
+        assert "items_enriched_languages" in result.parts
 
-    def test_items_enriched_uses_separator(self):
-        sparql = self.qb.items_enriched()
-        assert " ||| " in sparql
+    def test_items_enriched_join_uses_separator(self):
+        result = self.qb.items_enriched()
+        assert " ||| " in result.join_sql
 
     def test_entity_links_agent(self):
         sparql = self.qb.entity_links(entity_type="agent")
@@ -114,21 +128,21 @@ class TestQueryBuilder:
     def test_default_produces_en_native_any(self):
         """Default config: title_en, title_native, title (resolved), no extra lang columns."""
         qb = QueryBuilder()
-        sparql = qb.items_enriched()
-        assert "title_en" in sparql
-        assert "title_native" in sparql
-        assert "title_native_lang" in sparql
+        core = qb.items_enriched().parts["items_enriched_core"]
+        assert "title_en" in core
+        assert "title_native" in core
+        assert "title_native_lang" in core
         # No French/German/etc. unless user specifies
-        assert "title_fr" not in sparql
-        assert "title_de" not in sparql
+        assert "title_fr" not in core
+        assert "title_de" not in core
 
     def test_parallel_columns_in_items_enriched(self):
-        """items_enriched exposes en, native, and resolved columns."""
+        """items_enriched core exposes en, native, and resolved columns."""
         qb = QueryBuilder()
-        sparql = qb.items_enriched()
-        assert "SAMPLE(" in sparql
+        core = qb.items_enriched().parts["items_enriched_core"]
+        assert "SAMPLE(" in core
         for col in ["title_en", "title_native", "title_native_lang"]:
-            assert col in sparql
+            assert col in core
 
     def test_base_query_single_resolved_column(self):
         """core_metadata produces a single ?title column, not parallel columns."""
@@ -143,18 +157,18 @@ class TestQueryBuilder:
     def test_extra_languages_add_columns(self):
         """Extra languages produce additional columns."""
         qb = QueryBuilder(languages=["fr", "de"])
-        sparql = qb.items_enriched()
-        assert "title_fr" in sparql
-        assert "title_de" in sparql
+        core = qb.items_enriched().parts["items_enriched_core"]
+        assert "title_fr" in core
+        assert "title_de" in core
 
     def test_filter_languages_override_constructor(self):
         """QueryFilters.languages overrides constructor."""
         qb = QueryBuilder(languages=["fr"])
         f = QueryFilters(languages=["nl", "pl"])
-        sparql = qb.items_enriched(f)
-        assert "title_nl" in sparql
-        assert "title_pl" in sparql
-        assert "title_fr" not in sparql
+        core = qb.items_enriched(f).parts["items_enriched_core"]
+        assert "title_nl" in core
+        assert "title_pl" in core
+        assert "title_fr" not in core
 
     def test_entity_resolution_no_vernacular(self):
         """Entity labels resolve via en → extras → any, no vernacular."""
@@ -171,14 +185,14 @@ class TestQueryBuilder:
     def test_vernacular_bound_from_dc_language(self):
         """The vernacular language is bound from dc:language and reused."""
         qb = QueryBuilder()
-        sparql = qb.items_enriched()
-        assert "dc:language ?_language" in sparql
-        assert "LANG(?_title_native) = ?_language" in sparql
+        core = qb.items_enriched().parts["items_enriched_core"]
+        assert "dc:language ?_language" in core
+        assert "LANG(?_title_native) = ?_language" in core
 
     def test_coalesce_in_resolved_title(self):
         """The resolved title uses COALESCE."""
-        sparql = self.qb.items_enriched()
-        assert "COALESCE" in sparql
+        core = self.qb.items_enriched().parts["items_enriched_core"]
+        assert "COALESCE" in core
 
     # --- Web resources query tests ---
 
@@ -261,17 +275,17 @@ class TestQueryBuilder:
 
     def test_custom_separator(self):
         qb = QueryBuilder(separator=" ; ")
-        sparql = qb.items_enriched()
-        assert " ; " in sparql
-        assert " ||| " not in sparql
+        result = qb.items_enriched()
+        assert " ; " in result.join_sql
+        assert " ||| " not in result.join_sql
 
     # --- Description columns in AI queries ---
 
     def test_items_enriched_has_description_columns(self):
-        sparql = self.qb.items_enriched()
-        assert "description_en" in sparql
-        assert "description_native" in sparql
-        assert "description_native_lang" in sparql
+        core = self.qb.items_enriched().parts["items_enriched_core"]
+        assert "description_en" in core
+        assert "description_native" in core
+        assert "description_native_lang" in core
 
     def test_text_corpus_has_parallel_columns(self):
         sparql = self.qb.text_corpus()

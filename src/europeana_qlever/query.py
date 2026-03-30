@@ -42,6 +42,26 @@ class QueryFilters:
     offset: int | None = None
 
 
+@dataclass
+class CompositeQuery:
+    """A query split into sub-queries whose results are joined in DuckDB.
+
+    Each sub-query runs independently as a SPARQL export (TSV → Parquet).
+    After all parts complete, *join_sql* is executed in DuckDB to produce
+    the final Parquet file from the intermediate part files.
+
+    The *join_sql* template uses ``{dir}`` as a placeholder for the output
+    directory path (resolved at export time).
+    """
+
+    parts: dict[str, str]
+    """Mapping of part name suffix → SPARQL text."""
+
+    join_sql: str
+    """DuckDB SQL that reads from part Parquet files and produces the
+    final result.  Use ``{dir}/name.parquet`` paths."""
+
+
 # ---------------------------------------------------------------------------
 # Query descriptions
 # ---------------------------------------------------------------------------
@@ -575,18 +595,81 @@ class QueryBuilder:
     # AI dataset queries
     # -----------------------------------------------------------------------
 
-    def items_enriched(self, filters: QueryFilters | None = None) -> str:
+    def items_enriched(self, filters: QueryFilters | None = None) -> CompositeQuery:
+        """Denormalised one-row-per-item AI dataset export.
+
+        Returns a :class:`CompositeQuery` that splits the work into lightweight
+        sub-queries (no Cartesian product) and joins results in DuckDB.
+        """
         f = filters or QueryFilters()
+        extras = self._extra_langs(f)
+        sep = self.separator
+
+        core = self._items_enriched_core(f, extras)
+        creators = self._items_enriched_creators(f, extras)
+        subjects = self._items_enriched_simple(f, "dc:subject", "subject")
+        dates = self._items_enriched_simple(f, "dc:date", "date")
+        years = self._items_enriched_years(f)
+        languages = self._items_enriched_simple(f, "dc:language", "language")
+
+        join_sql = textwrap.dedent(f"""\
+            SELECT base.*,
+                   c.creators, c.creator_uris,
+                   s.subjects, d.dates, y.years, l.languages
+            FROM '{{dir}}/items_enriched_core.parquet' base
+            LEFT JOIN (
+                SELECT item,
+                       STRING_AGG(DISTINCT creator, '{sep}') AS creators,
+                       STRING_AGG(DISTINCT creator_uri, '{sep}') AS creator_uris
+                FROM '{{dir}}/items_enriched_creators.parquet'
+                GROUP BY item
+            ) c ON base.item = c.item
+            LEFT JOIN (
+                SELECT item, STRING_AGG(DISTINCT subject, '{sep}') AS subjects
+                FROM '{{dir}}/items_enriched_subjects.parquet'
+                GROUP BY item
+            ) s ON base.item = s.item
+            LEFT JOIN (
+                SELECT item, STRING_AGG(DISTINCT date, '{sep}') AS dates
+                FROM '{{dir}}/items_enriched_dates.parquet'
+                GROUP BY item
+            ) d ON base.item = d.item
+            LEFT JOIN (
+                SELECT item, STRING_AGG(DISTINCT year, '{sep}') AS years
+                FROM '{{dir}}/items_enriched_years.parquet'
+                GROUP BY item
+            ) y ON base.item = y.item
+            LEFT JOIN (
+                SELECT item, STRING_AGG(DISTINCT language, '{sep}') AS languages
+                FROM '{{dir}}/items_enriched_languages.parquet'
+                GROUP BY item
+            ) l ON base.item = l.item
+        """).strip()
+
+        return CompositeQuery(
+            parts={
+                "items_enriched_core": core,
+                "items_enriched_creators": creators,
+                "items_enriched_subjects": subjects,
+                "items_enriched_dates": dates,
+                "items_enriched_years": years,
+                "items_enriched_languages": languages,
+            },
+            join_sql=join_sql,
+        )
+
+    def _items_enriched_core(
+        self, f: QueryFilters, extras: list[str],
+    ) -> str:
+        """Core single-valued properties + language resolution (no multi-valued)."""
         prefixes = self._prefix_block({
-            "dc", "dcterms", "edm", "ore", "skos", "owl", "xsd",
+            "dc", "dcterms", "edm", "ore", "xsd",
         })
         proxy = self._provider_proxy()
         agg = self._aggregation()
         eagg = self._europeana_aggregation()
-        sep = self.separator
-        filter_block = self._build_filters(f, year_var="?_year")
+        filter_block = self._build_filters(f)
         limit_block = self._limit_offset(f)
-        extras = self._extra_langs(f)
 
         title_fragment, title_vars = self._lang_resolve_item(
             "dc:title", "?proxy", "title", extra_langs=extras,
@@ -597,7 +680,6 @@ class QueryBuilder:
             vernacular_var="?_language",
         )
 
-        # Build SELECT columns for title
         title_select = [
             f"(SAMPLE({title_vars['resolved']}) AS ?title)",
             f"(SAMPLE({title_vars['en']}) AS ?title_en)",
@@ -608,7 +690,6 @@ class QueryBuilder:
             safe = lang.replace("-", "_")
             title_select.append(f"(SAMPLE({title_vars[lang]}) AS ?title_{safe})")
 
-        # Build SELECT columns for description
         desc_select = [
             f"(SAMPLE({desc_vars['resolved']}) AS ?description)",
             f"(SAMPLE({desc_vars['en']}) AS ?description_en)",
@@ -622,24 +703,12 @@ class QueryBuilder:
         title_cols = "\n  ".join(title_select)
         desc_cols = "\n  ".join(desc_select)
 
-        # Creator entity resolution with language chain
-        creator_label_resolve = self._lang_resolve_entity(
-            "skos:prefLabel", "?_creatorRef", "?_creatorLabel", extra_langs=extras,
-        )
-        creator_label_indented = creator_label_resolve.replace("\n  ", "\n    ")
-
         return textwrap.dedent(f"""\
             {prefixes}
             SELECT ?item
               {title_cols}
               {desc_cols}
-              (GROUP_CONCAT(DISTINCT ?_creator; SEPARATOR="{sep}") AS ?creators)
-              (GROUP_CONCAT(DISTINCT ?_creatorURI; SEPARATOR="{sep}") AS ?creator_uris)
-              (GROUP_CONCAT(DISTINCT ?_subject; SEPARATOR="{sep}") AS ?subjects)
-              (GROUP_CONCAT(DISTINCT ?_date; SEPARATOR="{sep}") AS ?dates)
-              (GROUP_CONCAT(DISTINCT ?_year; SEPARATOR="{sep}") AS ?years)
               (SAMPLE(?_type) AS ?type)
-              (GROUP_CONCAT(DISTINCT ?_language; SEPARATOR="{sep}") AS ?languages)
               (SAMPLE(?_country) AS ?country)
               (SAMPLE(?_dataProvider) AS ?data_provider)
               (SAMPLE(?_rights) AS ?rights)
@@ -655,15 +724,6 @@ class QueryBuilder:
               ?proxy edm:type ?_type .
               {title_fragment}
               {desc_fragment}
-              OPTIONAL {{
-                ?proxy dc:creator ?_creatorRef . FILTER(isIRI(?_creatorRef))
-                {creator_label_indented}
-                BIND(STR(?_creatorRef) AS ?_creatorURI)
-              }}
-              OPTIONAL {{ ?proxy dc:creator ?_creatorLit . FILTER(isLiteral(?_creatorLit)) }}
-              BIND(COALESCE(?_creatorLabel, ?_creatorLit, STR(?_creatorRef)) AS ?_creator)
-              OPTIONAL {{ ?proxy dc:subject ?_subject }}
-              OPTIONAL {{ ?proxy dc:date ?_date }}
               {agg}
               ?agg edm:rights ?_rights ;
                    edm:dataProvider ?_dataProvider .
@@ -675,14 +735,82 @@ class QueryBuilder:
               OPTIONAL {{ ?eAgg edm:preview ?_preview }}
               OPTIONAL {{ ?eAgg edm:landingPage ?_landingPage }}
               OPTIONAL {{ ?eAgg edm:datasetName ?_datasetName }}
-              OPTIONAL {{
-                ?eProxy ore:proxyFor ?item .
-                ?eProxy edm:europeanaProxy "true" .
-                ?eProxy edm:year ?_year .
-              }}
               {filter_block}
             }}
             GROUP BY ?item
+            {limit_block}
+        """).strip()
+
+    def _items_enriched_creators(
+        self, f: QueryFilters, extras: list[str],
+    ) -> str:
+        """One row per creator per item, with entity label resolution."""
+        prefixes = self._prefix_block({
+            "dc", "edm", "ore", "skos",
+        })
+        proxy = self._provider_proxy()
+        filter_block = self._build_filters(f)
+        limit_block = self._limit_offset(f)
+
+        creator_label_resolve = self._lang_resolve_entity(
+            "skos:prefLabel", "?_creatorRef", "?_creatorLabel",
+            extra_langs=extras,
+        )
+        creator_label_indented = creator_label_resolve.replace("\n  ", "\n    ")
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item
+              (COALESCE(?_creatorLabel, ?_creatorLit, STR(?_creatorRef)) AS ?creator)
+              (IF(BOUND(?_creatorRef), STR(?_creatorRef), "") AS ?creator_uri)
+            WHERE {{
+              {proxy}
+              OPTIONAL {{
+                ?proxy dc:creator ?_creatorRef . FILTER(isIRI(?_creatorRef))
+                {creator_label_indented}
+              }}
+              OPTIONAL {{ ?proxy dc:creator ?_creatorLit . FILTER(isLiteral(?_creatorLit)) }}
+              FILTER(BOUND(?_creatorRef) || BOUND(?_creatorLit))
+              {filter_block}
+            }}
+            {limit_block}
+        """).strip()
+
+    def _items_enriched_simple(
+        self, f: QueryFilters, prop_uri: str, col_name: str,
+    ) -> str:
+        """One row per value for a simple multi-valued property."""
+        prefixes = self._prefix_block({"dc", "edm", "ore"})
+        proxy = self._provider_proxy()
+        filter_block = self._build_filters(f)
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?{col_name}
+            WHERE {{
+              {proxy}
+              ?proxy {prop_uri} ?{col_name} .
+              {filter_block}
+            }}
+            {limit_block}
+        """).strip()
+
+    def _items_enriched_years(self, f: QueryFilters) -> str:
+        """One row per year per item (from Europeana proxy)."""
+        prefixes = self._prefix_block({"edm", "ore"})
+        filter_block = self._build_filters(f, year_var="?year")
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?year
+            WHERE {{
+              ?eProxy ore:proxyFor ?item .
+              ?eProxy edm:europeanaProxy "true" .
+              ?eProxy edm:year ?year .
+              {filter_block}
+            }}
             {limit_block}
         """).strip()
 
@@ -1521,7 +1649,7 @@ class QueryBuilder:
             "timespans": self.timespans(filters),
         }
 
-    def all_ai_queries(self, filters: QueryFilters | None = None) -> dict[str, str]:
+    def all_ai_queries(self, filters: QueryFilters | None = None) -> dict[str, str | CompositeQuery]:
         return {
             "items_enriched": self.items_enriched(filters),
             "text_corpus": self.text_corpus(filters),
@@ -1558,8 +1686,8 @@ class QueryBuilder:
             "quality_tier_distribution": self.quality_tier_distribution(filters),
         }
 
-    def all_queries(self, filters: QueryFilters | None = None) -> dict[str, str]:
-        result: dict[str, str] = {}
+    def all_queries(self, filters: QueryFilters | None = None) -> dict[str, str | CompositeQuery]:
+        result: dict[str, str | CompositeQuery] = {}
         result.update(self.all_base_queries(filters))
         result.update(self.all_ai_queries(filters))
         result.update(self.all_analytics_queries(filters))
