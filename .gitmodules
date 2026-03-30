@@ -1,0 +1,3 @@
+[submodule "docs/qlever"]
+	path = docs/qlever
+	url = https://github.com/qlever-dev/qlever-docs

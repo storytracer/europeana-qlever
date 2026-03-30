@@ -1,0 +1,10 @@
+
+[Copyright management guidelines for cultural heritage institutions](../Copyright%20management%20guidelines%20for%20cultural%20heritage%20institutions.md)
+
+# Harmonise a specific approach to risk management for your organisation
+
+Evaluate risk and risk appetite, and consider whether other tools are more appropriate to mitigating risk in addition to copyright
+
+|  ⛳ **Workflow**                                                                     |  ![](/wiki/s/-1239427862/6452/802adcc4887d24bbbc33b4b925aefd398e02f9ca/_/images/icons/emoticons/star_blue.png) **Who to involve**    |  🗣️ **Who to inform**                                     |  📑 **What to document**                                      |  🖋️ **How to document**                                                  |  📲 **How to start the discussion**                                                                                                                       |
+|:-------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------|:--------------------------------------------------------------|:-------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Agree on approaches to copyright risk and risk appetite at the organisational level. | This includes the senior management, business managers, compliance teams, curatorial teams and digital staff.                        | All other teams across the organisation must be informed. | A risk framework or assessment template to inform compliance. | Internal policy documents, consider publishing online to benefit others. | Weigh and discuss the copyright risks and benefits. Show the risk of lack of copyright management. Show and compare the risks of open or closed licenses. |

@@ -1,0 +1,10 @@
+
+[Copyright management guidelines for cultural heritage institutions](../Copyright%20management%20guidelines%20for%20cultural%20heritage%20institutions.md)
+
+# Harmonise all approaches to copyright across your organisation
+
+Develop an overarching policy related to the strategic objectives of your organisation
+
+|  ⛳ **Workflow**                                                                                                                                                                                  |  ![](/wiki/s/-1239427862/6452/802adcc4887d24bbbc33b4b925aefd398e02f9ca/_/images/icons/emoticons/star_blue.png) **Who to involve**                                                         |  🗣️ **Who to inform**              |  📑 **What to document**              |  🖋️ **How to document**                    |  📲 **How to start the discussion**                                                                          |
+|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-----------------------------------|:--------------------------------------|:-------------------------------------------|:-------------------------------------------------------------------------------------------------------------|
+| <ul><li><p>Agree on approaches to copyright and re-use across your organisation </p></li><li><p>Ensure the whole organisation is aware and follows a consistent approach and policy</p></li></ul> | <ul><li><p>Senior management</p></li><li><p>Licensing specialists</p></li><li><p>Business managers</p></li><li><p>Compliance specialists</p></li><li><p>Digital specialists</p></li></ul> | Everyone else in your organisation | The top-level policy that you develop | External policy documents published online | Rely on guidance and case studies from other organisations, evidence of good practices, and your own network |

@@ -1,0 +1,29 @@
+
+[Copyright management guidelines for cultural heritage institutions](../Copyright%20management%20guidelines%20for%20cultural%20heritage%20institutions.md)
+
+# Phase 2. Expansion
+
+Nurture sufficient copyright knowledge and support across your organisation
+
+- [Supporting staff](#supporting-staff)
+- [Supporting administration](#supporting-administration)
+
+---
+
+# Supporting staff
+
+Ensure staff in the organisation have enough training or support available
+
+|  ⛳ **Workflow**                                                                                                                                                                                                                                                                                    |  ![](/wiki/s/-1239427862/6452/802adcc4887d24bbbc33b4b925aefd398e02f9ca/_/images/icons/emoticons/star_blue.png) **Who to involve**    |  📑 **What to document**                                                                                                                                                                                                            |  🖋️ **How to document**                          |  📲 **How to start the discussion**                                                                                                                                                                 |
+|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| <ul><li><p>Establish copyright education levels for all roles</p></li><li><p>Design guidance and training packages targeted to each level</p></li><li><p>Work with human resources teams and managers to ensure that all staff receive guidance and training according to their level</p></li></ul> | <ul><li><p>Human resources teams</p></li><li><p>Managers</p></li><li><p>Compliance and copyright experts</p></li></ul>               | <ul><li><p>Copyright education levels</p></li><li><p>Recording the depth and breadth of information that must be known at that level</p></li><li><p>The amount of training required at that level (frequency, detail)</p></li></ul> | Internal records available to managers and teams | <ul><li><p>Show risks of lack of copyright knowledge as connected to the strategic objectives of the organisation</p></li><li><p>Check for external input</p></li><li><p>Benchmarking</p></li></ul> |
+
+---
+
+# Supporting administration
+
+Senior management understands the importance of dealing with copyright adequately
+
+|  ⛳ **Workflow**                                                                                                                                                                                                                                                                            |  ![](/wiki/s/-1239427862/6452/802adcc4887d24bbbc33b4b925aefd398e02f9ca/_/images/icons/emoticons/star_blue.png) **Who to involve**    |  📑 **What to document**                                                                                                                                                                            |  🖋️ **How to document**                          |  📲 **How to start the discussion**                                                                                   |
+|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------|
+| <ul><li><p>Specific copyright education level for senior management, which focuses on communicating the importance of copyright to different aspects of the organisation’s work and risks</p></li><li><p>Dedicated training/copyright induction processes for senior managers</p></li></ul> | <ul><li><p>Human resources teams</p></li><li><p>Senior managers</p></li><li><p>Compliance and copyright experts</p></li></ul>        | <ul><li><p>Copyright education level</p></li><li><p>Recording the level the information that must be known at this level</p></li><li><p>The amount of training required at this level</p></li></ul> | Internal records available to managers and teams | <ul><li><p>Case studies</p></li><li><p>Risks of not understanding copyright</p></li><li><p>Benchmarking</p></li></ul> |

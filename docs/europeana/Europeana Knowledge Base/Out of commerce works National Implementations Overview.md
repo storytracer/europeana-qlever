@@ -1,0 +1,59 @@
+---
+tags:
+  - '#copyright'
+  - '#implementationoverview'
+  - '#outofcommerceworks'
+---
+
+
+
+# Out of commerce works National Implementations Overview
+
+Out of commerce works National Implementations Overview information on how the out of commerce works provisions from the [Copyright in the Digital Single Market (CDSM) Directive](https://eur-lex.europa.eu/eli/dir/2019/790/oj) have been transposed and implemented in each European Union member state. When information about licences concluded is available, it is indicated next to the country name.
+
+To navigate this overview, click on the country that you need information on: [.Austria](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Austria.md)| [.Belgium](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Belgium.md) | Bulgaria\* | [.Croatia](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Croatia.md) | Cyprus\* | [.Czechia](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Czechia.md) | Denmark\* | [.Estonia](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Estonia.md) | Finland\* | [.France](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.France.md) | [.Germany](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Germany.md) | Greece\* | [.Hungary](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Hungary.md) | [.Ireland](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Ireland.md) | [.Italy](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Italy.md) | [.Latvia](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Latvia.md) | [.Lithuania](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Lithuania.md) | [.Luxembourg](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Luxembourg.md)| Malta\* | [.Netherlands](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Netherlands.md) | Poland\* | Portugal\* | Romania\* | Slovakia\*([.Slovakia](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Slovakia.md)) | Slovenia\* | [.Spain](Out%20of%20commerce%20works%20National%20Implementations%20Overview/.Spain.md) | Sweden\*
+
+> [!IMPORTANT]
+> An asterisk \* indicates that no information is available for that country. If you have any information, please reach out to [copyright@europeana.eu](mailto:copyright@europeana.eu).
+
+> [!NOTE]
+> This overview is one of the many resources we have prepared to support professionals working with copyright and digital cultural heritage. Discover them all on [Europeana Pro](https://pro.europeana.eu/page/copyright-and-digital-cultural-heritage), and read more about out of commerce works [here](https://pro.europeana.eu/project/out-of-commerce-works-working-group#faqs).
+
+> [!NOTE]
+> This overview has been prepared and is maintained by the [Out of Commerce Works Working Group](https://pro.europeana.eu/project/out-of-commerce-works-working-group), which is part of the [Copyright Community](https://pro.europeana.eu/page/europeana-copyright) at the [Europeana Network Association](https://pro.europeana.eu/europeana-network-association). It is therefore created with input from cultural heritage professionals based in various countries. We cannot guarantee the correctness of all of the information contained in this overview, so we recommend using it as general guidance and a first reference point to look for more information.
+
+<details>
+<summary>For each country, we provide information about various aspects, described below</summary>
+
+In relation to the **transposition** of the Directive and some **implementation** measures
+
+|                                  |                                                                                                                                                                                                                                                                                                                                             |
+|:---------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Link to legal provisions         | Link to legal provisions in which the transposition text can be consulted.                                                                                                                                                                                                                                                                  |
+| Stakeholder dialogues            | Indication of whether the stakeholder dialogues have started and of any relevant aspects in its composition, results, or other.                                                                                                                                                                                                             |
+| Out of commerce determination    | Clarification of whether the national transposition or stakeholder dialogues provide indications on how to determine that materials are out of commerce, for example by establishing a cut-off date, defining non-mandatory customary channels of commerce by type of material, or indicating what can be considered a ‘reasonable effort’. |
+| Sufficiently representative CMOs | Collective management organisations (CMOs) that are considered, on the basis of the stakeholder dialogues or other decisions, to be sufficiently representative of a type of out of commerce material.                                                                                                                                      |
+| Conditions for opt-out           | Conditions established through the national transposition text or stakeholder dialogues with regards to the possibility for rights holders to  opt out.                                                                                                                                                                                     |
+| Scope of licence                 | Indication of the types of materials that fall within the scope of the licensing mechanism, and of the rights, on the basis of the law.                                                                                                                                                                                                     |
+| Scope of exception               | Indication of the types of materials that fall within the scope of the exception, and of the rights, on the basis of the law.                                                                                                                                                                                                               |
+| Publicity measures               | Clarification of whether the national transposition mandated the creation of a national database, in addition to the EUIPO’s database, and whose responsibility it is to declare the works through the relevant database.                                                                                                                   |
+| Other conditions                 | Other conditions established by the Directive or resulting from the stakeholder dialogues.                                                                                                                                                                                                                                                  |
+
+In relation to the **licences concluded**
+
+|                                                  |                                                                                                                                                                                                         |    |    |    |    |    |    |
+|:-------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:---|:---|:---|:---|:---|:---|
+| Type of agreement                                | Umbrella agreement / one-to-one licence / semi-public agreement                                                                                                                                         |    |    |    |    |    |    |
+| Collective management organisation(s)            | Name of the collective management organisation(s) with whom the licence is concluded. If possible, indicate the types of works and the rights represented by the collective management organisation(s). |    |    |    |    |    |    |
+| Cultural heritage institution                    | Name of the cultural heritage institution(s) that are subject to the terms of the licence                                                                                                               |    |    |    |    |    |    |
+| Materials                                        | Out of commerce works that fall under the scope of the agreement (type, collection…)                                                                                                                    |    |    |    |    |    |    |
+| Uses authorised                                  | Uses that cultural heritage institution(s) can make of the materials                                                                                                                                    |    |    |    |    |    |    |
+| Duration in time                                 |                                                                                                                                                                                                         |    |    |    |    |    |    |
+| Geographical coverage                            |                                                                                                                                                                                                         |    |    |    |    |    |    |
+| Fees                                             |                                                                                                                                                                                                         |    |    |    |    |    |    |
+| Additional conditions to be respected by the CHI |                                                                                                                                                                                                         |    |    |    |    |    |    |
+| Additional conditions to be respected by the CMO |                                                                                                                                                                                                         |    |    |    |    |    |    |
+| Link to licence (if public)                      |                                                                                                                                                                                                         |    |    |    |    |    |    |
+| Facilitates making available via Europeana?      |                                                                                                                                                                                                         |    |    |    |    |    |    |
+
+</details>
