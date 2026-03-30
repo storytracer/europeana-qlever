@@ -405,6 +405,7 @@ def export_all(
     dashboard: object | None = None,
     *,
     keep_base: bool = True,
+    reuse_tsv: bool = False,
     http_chunk_size: int = 1_048_576,
     http_connect_timeout: int = 30,
     duckdb_sample_size: int = 100_000,
@@ -552,15 +553,24 @@ def export_all(
                 assert spec.sparql is not None
                 tsv_path = output_dir / f"{name}.tsv"
 
-                rows = run_query_to_tsv(
-                    spec.sparql, tsv_path, qlever_url, timeout,
-                    max_retries=max_retries,
-                    retry_delays=retry_delays,
-                    http_chunk_size=http_chunk_size,
-                    http_connect_timeout=http_connect_timeout,
-                )
-                tsv_mb = tsv_path.stat().st_size / 1e6
-                display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
+                if reuse_tsv and tsv_path.exists():
+                    # Count lines for progress hint (subtract header)
+                    with open(tsv_path, "rb") as f:
+                        rows = sum(1 for _ in f) - 1
+                    tsv_mb = tsv_path.stat().st_size / 1e6
+                    display.console.print(
+                        f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB [dim](reused)[/dim]"
+                    )
+                else:
+                    rows = run_query_to_tsv(
+                        spec.sparql, tsv_path, qlever_url, timeout,
+                        max_retries=max_retries,
+                        retry_delays=retry_delays,
+                        http_chunk_size=http_chunk_size,
+                        http_connect_timeout=http_connect_timeout,
+                    )
+                    tsv_mb = tsv_path.stat().st_size / 1e6
+                    display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
                 display.console.print("  Converting to Parquet…")
                 count = tsv_to_parquet(
@@ -571,7 +581,8 @@ def export_all(
                 pq_mb = parquet_path.stat().st_size / 1e6
                 display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
 
-                tsv_path.unlink()
+                if not reuse_tsv:
+                    tsv_path.unlink()
 
             result.succeeded.append(name)
             if name not in dependency_only:

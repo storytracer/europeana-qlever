@@ -989,6 +989,9 @@ def analyze_static(
 @click.option("--keep-base/--no-keep-base", default=True, show_default=True,
               help="Keep intermediate base table Parquet files after composition. "
                    "Use --no-keep-base to clean them up.")
+@click.option("--reuse-tsv", is_flag=True, default=False,
+              help="Skip SPARQL download if the .tsv file already exists. "
+                   "Useful for re-testing Parquet conversion without re-downloading.")
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -1011,6 +1014,7 @@ def export(
     skip_existing: bool,
     duckdb_memory: str,
     keep_base: bool,
+    reuse_tsv: bool,
 ):
     """Export SPARQL query results from QLever as Parquet files.
 
@@ -1048,6 +1052,7 @@ def export(
         memory_limit=duckdb_memory,
         temp_directory=exports_dir / ".duckdb_tmp",
         keep_base=keep_base,
+        reuse_tsv=reuse_tsv,
         http_chunk_size=budget.http_chunk_size(),
         http_connect_timeout=budget.http_connect_timeout(),
         duckdb_sample_size=budget.duckdb_sample_size(),
