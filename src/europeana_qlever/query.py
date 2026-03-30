@@ -111,6 +111,7 @@ _DESCRIPTIONS: dict[str, str] = {
     "items_by_type_and_country": "Item counts grouped by edm:type and country",
     "items_by_provider": "Item counts grouped by data provider",
     "items_by_language": "Item counts grouped by edm:language",
+    "items_by_type_and_language": "Item counts grouped by edm:type and edm:language",
     "mime_type_distribution": "Item counts grouped by MIME type and edm:type",
     "items_by_year": "Item counts grouped by edm:year",
     "geolocated_places": "Places with coordinates",
@@ -1265,6 +1266,27 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
+    def items_by_type_and_language(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"edm", "ore"})
+        proxy = self._provider_proxy()
+        eagg = self._europeana_aggregation()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?type ?language (COUNT(?item) AS ?count)
+            WHERE {{
+              {proxy}
+              ?proxy edm:type ?type .
+              {eagg}
+              ?eAgg edm:language ?language .
+            }}
+            GROUP BY ?type ?language
+            ORDER BY ?type DESC(?count)
+            {limit_block}
+        """).strip()
+
     def mime_type_distribution(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ebucore"})
@@ -1444,6 +1466,7 @@ class QueryBuilder:
                 ("items_by_type_and_country", self.items_by_type_and_country),
                 ("items_by_provider", self.items_by_provider),
                 ("items_by_language", self.items_by_language),
+                ("items_by_type_and_language", self.items_by_type_and_language),
                 ("mime_type_distribution", self.mime_type_distribution),
                 ("items_by_year", self.items_by_year),
                 ("geolocated_places", self.geolocated_places),

@@ -375,6 +375,7 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
         ("items_by_provider", builder.items_by_provider()),
         ("items_by_type", builder.items_by_type()),
         ("items_by_type_and_country", builder.items_by_type_and_country()),
+        ("items_by_type_and_language", builder.items_by_type_and_language()),
         ("items_by_year", builder.items_by_year()),
         ("mime_type_distribution", builder.mime_type_distribution()),
         ("text_genre_distribution", builder.text_genre_distribution()),
