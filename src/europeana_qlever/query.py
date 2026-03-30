@@ -694,7 +694,7 @@ class QueryBuilder:
         """
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
+        eproxy = self._europeana_proxy()
         agg = self._aggregation()
         eagg = self._europeana_aggregation()
         filter_block = self._build_filters(f)
@@ -709,8 +709,8 @@ class QueryBuilder:
               {{
                 SELECT ?item ?agg ?eAgg ?type ?rights ?dataProvider ?country
                 WHERE {{
-                  {proxy}
-                  ?proxy edm:type ?type .
+                  {eproxy}
+                  ?eProxy edm:type ?type .
                   {agg}
                   ?agg edm:rights ?rights ;
                        edm:dataProvider ?dataProvider .
@@ -1139,7 +1139,7 @@ class QueryBuilder:
     def temporal_coverage(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
+        eproxy = self._europeana_proxy()
         agg = self._aggregation()
         eagg = self._europeana_aggregation()
         filter_block = self._build_filters(f, year_var="?year")
@@ -1149,10 +1149,8 @@ class QueryBuilder:
             {prefixes}
             SELECT ?item ?year ?type ?rights ?country ?dataProvider
             WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              ?eProxy ore:proxyFor ?item .
-              ?eProxy edm:europeanaProxy "true" .
+              {eproxy}
+              ?eProxy edm:type ?type .
               ?eProxy edm:year ?year .
               {agg}
               ?agg edm:rights ?rights ;
@@ -1171,15 +1169,15 @@ class QueryBuilder:
     def items_by_type(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore"})
-        proxy = self._provider_proxy()
+        eproxy = self._europeana_proxy()
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
             SELECT ?type (COUNT(?item) AS ?count)
             WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
+              {eproxy}
+              ?eProxy edm:type ?type .
             }}
             GROUP BY ?type
             ORDER BY DESC(?count)
