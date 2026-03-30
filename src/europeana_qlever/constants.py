@@ -14,6 +14,7 @@ from __future__ import annotations
 MERGED_SUBDIR = "ttl-merged"
 INDEX_SUBDIR = "index"
 EXPORTS_SUBDIR = "exports"
+ANALYSIS_SUBDIR = "analysis"
 
 # ---------------------------------------------------------------------------
 # QLever defaults

@@ -52,6 +52,7 @@ All output lives under a single work directory specified via `-d` / `--work-dir`
 | `ttl-merged/` | `MERGED_SUBDIR` | Merged chunk TTL files (~5 GB each) |
 | `index/` | `INDEX_SUBDIR` | Qleverfile, settings.json, QLever index files |
 | `exports/` | `EXPORTS_SUBDIR` | Parquet output files (TSV intermediates are deleted) |
+| `analysis/` | `ANALYSIS_SUBDIR` | Query performance analysis Markdown reports |
 | `monitor.log` | — | CSV resource monitor log (RSS, available memory, disk free) |
 
 The source TTL ZIP directory is user-managed and passed as a positional argument to `merge` and `scan-prefixes`.

@@ -26,6 +26,7 @@ import click
 
 from . import display
 from .constants import (
+    ANALYSIS_SUBDIR,
     EDM_PREFIXES,
     EXPORTS_SUBDIR,
     INDEX_SUBDIR,
@@ -63,7 +64,7 @@ def cli(ctx: click.Context, work_dir: Path, width: int | None):
     run analytical queries, and export the results as Parquet files.
 
     All output is written to subdirectories of WORK_DIR: ttl-merged/,
-    index/, and exports/.
+    index/, exports/, and analysis/.
     """
     from .resources import ResourceBudget
     from .state import setup_logging
@@ -76,6 +77,7 @@ def cli(ctx: click.Context, work_dir: Path, width: int | None):
     ctx.obj["merged_dir"] = work_dir / MERGED_SUBDIR
     ctx.obj["index_dir"] = work_dir / INDEX_SUBDIR
     ctx.obj["exports_dir"] = work_dir / EXPORTS_SUBDIR
+    ctx.obj["analysis_dir"] = work_dir / ANALYSIS_SUBDIR
 
     budget = ResourceBudget.detect(work_dir)
     ctx.obj["budget"] = budget
@@ -638,7 +640,7 @@ def list_queries_cmd(ctx: click.Context):
 @click.option("--send", type=int, default=0, show_default=True,
               help="Result rows for QLever to return (0 = metadata only).")
 @click.option("-o", "--output", "output_path", type=click.Path(path_type=Path),
-              default=None, help="Output Markdown file (default: exports/analysis.md).")
+              default=None, help="Output Markdown file (default: analysis/<name>.md).")
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
               show_default=True, help="QLever HTTP endpoint.")
 @click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
@@ -739,8 +741,24 @@ def analyze(
             else:
                 queries[name] = method(filters)
 
-    exports_dir: Path = ctx.obj["exports_dir"]
-    out = output_path or (exports_dir / "analysis.md")
+    analysis_dir: Path = ctx.obj["analysis_dir"]
+
+    if output_path:
+        out = output_path
+    else:
+        # Name the report after the query name, query set, or "custom"
+        if query_names and len(query_names) == 1:
+            stem = query_names[0]
+        elif query_set:
+            stem = query_set
+        elif run_all:
+            stem = "base"
+        elif sparql_files:
+            stem = "_".join(p.stem for p in sparql_files)
+        else:
+            stem = "_".join(sorted(queries))
+        out = analysis_dir / f"{stem}.md"
+
     out.parent.mkdir(parents=True, exist_ok=True)
 
     results = analyze_all(
