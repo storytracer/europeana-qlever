@@ -8,12 +8,11 @@ to compose final exports from multiple Parquet base tables.
 from __future__ import annotations
 
 import logging
-import time
-from pathlib import Path
-
 import os
+import time
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
+from pathlib import Path
 
 import duckdb
 import httpx
@@ -237,19 +236,6 @@ def _parse_batch(raw_lines: list[str], num_cols: int) -> list[list[str]]:
     return rows
 
 
-def _write_batch(
-    writer: pq.ParquetWriter,
-    col_names: list[str],
-    rows: list[list[str]],
-) -> None:
-    """Convert a batch of parsed rows to a RecordBatch and write to Parquet."""
-    # Transpose rows→columns
-    columns = list(zip(*rows)) if rows else []
-    arrays = [pa.array(col, type=pa.string()) for col in columns]
-    batch = pa.RecordBatch.from_arrays(arrays, names=col_names)
-    writer.write_batch(batch)
-
-
 def _read_raw_batches(
     fh, batch_size: int
 ) -> list[str]:
@@ -262,6 +248,59 @@ def _read_raw_batches(
             batch = []
     if batch:
         yield batch
+
+
+def _infer_schema(col_names: list[str], sample_rows: list[list[str]]) -> pa.Schema:
+    """Infer a PyArrow schema from parsed sample rows.
+
+    Columns where every non-empty value is integer-like get ``pa.int64()``,
+    float-like get ``pa.float64()``, boolean get ``pa.bool_()``.
+    Everything else gets ``pa.string()``.
+    """
+    fields = []
+    for i, name in enumerate(col_names):
+        vals = [row[i] for row in sample_rows if i < len(row) and row[i]]
+        if vals and all(v.lstrip("-").isdigit() for v in vals):
+            fields.append(pa.field(name, pa.int64()))
+        elif vals and all(_is_float(v) for v in vals):
+            fields.append(pa.field(name, pa.float64()))
+        elif vals and all(v in ("true", "false") for v in vals):
+            fields.append(pa.field(name, pa.bool_()))
+        else:
+            fields.append(pa.field(name, pa.string()))
+    return pa.schema(fields)
+
+
+def _is_float(v: str) -> bool:
+    """Return True if *v* looks like a float (has a decimal point)."""
+    try:
+        float(v)
+        return "." in v
+    except ValueError:
+        return False
+
+
+def _make_array(values: tuple, field: pa.Field) -> pa.Array:
+    """Convert a tuple of string values to a typed PyArrow array."""
+    if field.type == pa.int64():
+        return pa.array([int(v) if v else None for v in values], type=pa.int64())
+    if field.type == pa.float64():
+        return pa.array([float(v) if v else None for v in values], type=pa.float64())
+    if field.type == pa.bool_():
+        return pa.array([v == "true" if v else None for v in values], type=pa.bool_())
+    return pa.array(values, type=pa.string())
+
+
+def _write_batch(
+    writer: pq.ParquetWriter,
+    schema: pa.Schema,
+    rows: list[list[str]],
+) -> None:
+    """Convert a batch of parsed rows to a RecordBatch and write to Parquet."""
+    columns = list(zip(*rows)) if rows else []
+    arrays = [_make_array(columns[i], field) for i, field in enumerate(schema)]
+    batch = pa.RecordBatch.from_arrays(arrays, schema=schema)
+    writer.write_batch(batch)
 
 
 def tsv_to_parquet(
@@ -277,7 +316,11 @@ def tsv_to_parquet(
 
     Reads raw TSV lines into batches, parses each batch in parallel
     using :class:`~concurrent.futures.ProcessPoolExecutor`, and streams
-    parsed results to Parquet via :class:`pyarrow.parquet.ParquetWriter`.
+    parsed results directly to Parquet via :class:`pyarrow.parquet.ParquetWriter`.
+
+    The Parquet schema is inferred from the first batch: columns with
+    all-integer values become ``int64``, all-float become ``float64``,
+    all-boolean become ``bool``, and everything else is ``string``.
 
     Parameters
     ----------
@@ -286,7 +329,7 @@ def tsv_to_parquet(
     parquet_path : Path
         Output Parquet file path.
     batch_size : int
-        Rows per parse/write batch (~200 MB memory per batch).
+        Rows per parse/write batch.
     row_group_size : int
         Parquet row group size.
     workers : int or None
@@ -304,48 +347,54 @@ def tsv_to_parquet(
         workers = max(1, (os.cpu_count() or 4) // 2)
 
     with open(tsv_path, "r", encoding="utf-8") as fh:
-        # Read and clean header (strip ?-prefixes)
         header = fh.readline().strip()
         if not header:
             return 0
         col_names = [c.lstrip("?") for c in header.split("\t")]
-        schema = pa.schema([(name, pa.string()) for name in col_names])
         num_cols = len(col_names)
-
-        writer = pq.ParquetWriter(
-            str(parquet_path),
-            schema,
-            compression="zstd",
-            write_statistics=True,
-            use_dictionary=True,
-        )
 
         total_rows = 0
         parse = partial(_parse_batch, num_cols=num_cols)
+        writer: pq.ParquetWriter | None = None
+        schema: pa.Schema | None = None
 
         desc = tsv_path.stem
         if display.is_narrow() and len(desc) > 15:
             desc = desc[:14] + "…"
 
-        columns = [SpinnerColumn(), TextColumn("[progress.description]{task.description}")]
+        prog_cols = [SpinnerColumn(), TextColumn("[progress.description]{task.description}")]
         if total_hint is not None:
-            columns.append(BarColumn())
-            columns.append(MofNCompleteColumn())
-        columns.append(_RowSpeedColumn())
+            prog_cols.append(BarColumn())
+            prog_cols.append(MofNCompleteColumn())
+        prog_cols.append(_RowSpeedColumn())
         if total_hint is not None:
-            columns.append(TimeRemainingColumn())
-        columns.append(TimeElapsedColumn())
+            prog_cols.append(TimeRemainingColumn())
+        prog_cols.append(TimeElapsedColumn())
 
-        with Progress(*columns, console=display.console) as progress:
+        with Progress(*prog_cols, console=display.console) as progress:
             task = progress.add_task(f"→ {desc}", total=total_hint)
 
             with ProcessPoolExecutor(max_workers=workers) as executor:
-                for parsed_rows in executor.map(parse, _read_raw_batches(fh, batch_size)):
-                    _write_batch(writer, col_names, parsed_rows)
+                for parsed_rows in executor.map(
+                    parse, _read_raw_batches(fh, batch_size)
+                ):
+                    if writer is None:
+                        # Infer schema from first batch
+                        schema = _infer_schema(col_names, parsed_rows)
+                        writer = pq.ParquetWriter(
+                            str(parquet_path),
+                            schema,
+                            compression="zstd",
+                            write_statistics=True,
+                            use_dictionary=True,
+                        )
+
+                    _write_batch(writer, schema, parsed_rows)
                     total_rows += len(parsed_rows)
                     progress.update(task, advance=len(parsed_rows))
 
-        writer.close()
+        if writer is not None:
+            writer.close()
 
     return total_rows
 

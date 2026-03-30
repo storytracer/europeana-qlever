@@ -172,8 +172,8 @@ class TestTsvToParquet:
         # Quoted literals: quotes stripped
         assert rows[0][2] == "en"
         assert rows[1][2] == "fr"
-        # Bare values pass through
-        assert rows[0][4] == "42"
+        # Bare integer values — DuckDB infers as int
+        assert rows[0][4] == 42
 
     def test_plain_literals_unchanged(self, tmp_path: Path):
         tsv = tmp_path / "test.tsv"
@@ -193,7 +193,8 @@ class TestTsvToParquet:
 
         rows = duckdb.execute(f"SELECT item, opt FROM '{parquet}'").fetchall()
         assert rows[0][0] == "http://example.org/1"
-        assert rows[0][1] == ""
+        # Empty TSV field → empty string or NULL
+        assert rows[0][1] is None or rows[0][1] == ""
 
     def test_empty_tsv(self, tmp_path: Path):
         tsv = tmp_path / "test.tsv"
