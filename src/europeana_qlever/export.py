@@ -25,11 +25,15 @@ from rich.progress import (
     DownloadColumn,
     MofNCompleteColumn,
     Progress,
+    ProgressColumn,
     SpinnerColumn,
+    Task,
     TextColumn,
     TimeElapsedColumn,
+    TimeRemainingColumn,
     TransferSpeedColumn,
 )
+from rich.text import Text
 
 from . import display
 from .constants import (
@@ -48,6 +52,16 @@ logger = logging.getLogger(__name__)
 logging.getLogger("rdflib.term").setLevel(logging.ERROR)
 
 _TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
+
+
+class _RowSpeedColumn(ProgressColumn):
+    """Displays processing speed as rows/s."""
+
+    def render(self, task: Task) -> Text:
+        speed = task.speed
+        if speed is None:
+            return Text("? rows/s", style="progress.data.speed")
+        return Text(f"{speed:,.0f} rows/s", style="progress.data.speed")
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +331,9 @@ def tsv_to_parquet(
         if total_hint is not None:
             columns.append(BarColumn())
             columns.append(MofNCompleteColumn())
+        columns.append(_RowSpeedColumn())
+        if total_hint is not None:
+            columns.append(TimeRemainingColumn())
         columns.append(TimeElapsedColumn())
 
         with Progress(*columns, console=display.console) as progress:
