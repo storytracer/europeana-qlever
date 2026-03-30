@@ -331,6 +331,8 @@ This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
 | `src/europeana_qlever/state.py` | Pipeline state tracking & validation results |
 | `tests/` | Unit tests |
 | `EDM.md` | Europeana Data Model reference — entity relationships, RDF namespaces, rights framework, and domain context |
+| `docs/qlever/docs/` | QLever documentation (upstream MkDocs source) — Qleverfile format, SPARQL compliance, text/geo/path search, materialized views, troubleshooting |
+| `docs/europeana/` | Europeana Knowledge Base — EDM mapping guidelines (per-class properties), publishing guides (content/metadata tiers, rights statements), semantic enrichments, API docs |
 
 **Work directory** (specified via `-d`):
 
