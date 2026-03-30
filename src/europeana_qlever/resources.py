@@ -23,6 +23,8 @@ from pathlib import Path
 import psutil
 from rich.table import Table
 
+from .constants import QLEVER_QUERY_TIMEOUT
+
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     """Clamp *value* to [lo, hi]."""
@@ -187,8 +189,8 @@ class ResourceBudget:
         return int(_clamp(triples, 1_000_000, 10_000_000))
 
     def qlever_timeout(self) -> int:
-        """Query timeout for Qleverfile in seconds. Default 3600."""
-        return 3600
+        """Query timeout for Qleverfile in seconds."""
+        return QLEVER_QUERY_TIMEOUT
 
     def qlever_threads(self) -> int:
         """QLever worker threads: half of CPU count, min 2."""
@@ -224,8 +226,8 @@ class ResourceBudget:
         return 30
 
     def export_timeout(self) -> int:
-        """Per-query export timeout in seconds. Default 3600."""
-        return 3600
+        """Per-query export timeout in seconds."""
+        return QLEVER_QUERY_TIMEOUT
 
     def export_max_retries(self) -> int:
         """Max export retry attempts. Default 2."""

@@ -32,6 +32,7 @@ from .constants import (
     MERGED_SUBDIR,
     QLEVER_INDEX_SETTINGS,
     QLEVER_PORT,
+    QLEVER_QUERY_TIMEOUT,
     STATE_FILENAME,
 )
 
@@ -640,7 +641,7 @@ def list_queries_cmd(ctx: click.Context):
               default=None, help="Output Markdown file (default: exports/analysis.md).")
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
               show_default=True, help="QLever HTTP endpoint.")
-@click.option("--timeout", default=600, show_default=True,
+@click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
               help="Per-query timeout in seconds.")
 @click.pass_context
 def analyze(
@@ -796,7 +797,7 @@ def analyze(
 @click.option("--limit", type=int, help="LIMIT clause for all queries.")
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
               show_default=True, help="QLever HTTP endpoint.")
-@click.option("--timeout", default=3600, show_default=True,
+@click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
               help="Per-query timeout in seconds.")
 @click.option("--skip-existing", is_flag=True, default=False,
               help="Skip queries whose .parquet already exists.")
@@ -946,7 +947,7 @@ def export(
               help="Query result cache size (or 'auto').")
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget for export (e.g. '4GB' or 'auto').")
-@click.option("--timeout", default=3600, show_default=True,
+@click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
               help="Per-query timeout in seconds for export.")
 @click.option("--skip-merge", is_flag=True, help="Skip merge if chunks already exist.")
 @click.option("--skip-index", is_flag=True, help="Skip indexing if index already exists.")

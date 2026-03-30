@@ -20,6 +20,7 @@ EXPORTS_SUBDIR = "exports"
 # ---------------------------------------------------------------------------
 QLEVER_PORT = 7001
 QLEVER_UI_PORT = 7000
+QLEVER_QUERY_TIMEOUT = 3600  # Per-query timeout in seconds (1 hour)
 
 # ---------------------------------------------------------------------------
 # EDM namespaces — canonical set from the Europeana bulk dumps

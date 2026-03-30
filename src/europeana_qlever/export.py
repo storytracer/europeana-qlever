@@ -27,6 +27,7 @@ from .constants import (
     DEFAULT_EXPORT_MAX_RETRIES,
     DEFAULT_EXPORT_RETRY_DELAYS,
     QLEVER_PORT,
+    QLEVER_QUERY_TIMEOUT,
 )
 from .state import ExportResult
 
@@ -122,7 +123,7 @@ def run_query_to_tsv(
     query: str,
     output_path: Path,
     qlever_url: str = f"http://localhost:{QLEVER_PORT}",
-    timeout: int = 3600,
+    timeout: int = QLEVER_QUERY_TIMEOUT,
     *,
     max_retries: int = DEFAULT_EXPORT_MAX_RETRIES,
     retry_delays: tuple[int, ...] = DEFAULT_EXPORT_RETRY_DELAYS,
@@ -225,7 +226,7 @@ def export_all(
     output_dir: Path,
     queries: dict[str, str],
     qlever_url: str = f"http://localhost:{QLEVER_PORT}",
-    timeout: int = 3600,
+    timeout: int = QLEVER_QUERY_TIMEOUT,
     skip_existing: bool = False,
     memory_limit: str = "4GB",
     temp_directory: Path | None = None,
