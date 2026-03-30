@@ -106,31 +106,22 @@ _DESCRIPTIONS: dict[str, str] = {
     "image_metadata": "Computer vision training: IMAGE items with technical metadata from web resources",
     "entity_links": "owl:sameAs cross-reference table for contextual entities",
     "temporal_coverage": "Items with normalised edm:year from the Europeana proxy",
-    # Analytics queries
-    "open_reusable_inventory": "Rights category × type × country cross-tab with item counts",
-    "media_availability": "Items with/without edm:isShownBy by type and rights category",
-    "mime_type_distribution": "MIME type counts by edm:type and rights category",
-    "image_resolution_profile": "Width, height, bytes, and colour depth for open IMAGE items",
-    "language_distribution": "Language × type × rights category distribution with counts",
-    "language_coverage_by_country": "Fraction of items with dc:language per country",
-    "multilingual_metadata": "Items with titles in more than one language",
-    "temporal_distribution": "Item counts by edm:year × type × rights category",
-    "date_metadata_quality": "Completeness of edm:year vs dc:date vs missing",
-    "provider_landscape": "Provider-level stats: item count, average completeness, by type and rights",
-    "entity_linked_providers": "Data providers whose items have Wikidata-linked creators",
+    # Analytics queries — designed for fast interactive execution in QLever UI
+    "items_by_type": "Item counts grouped by edm:type",
+    "items_by_country": "Item counts grouped by country",
+    "items_by_type_and_country": "Item counts grouped by edm:type and country",
+    "items_by_provider": "Item counts grouped by data provider",
+    "language_distribution": "Item counts grouped by dc:language and edm:type",
+    "mime_type_distribution": "Item counts grouped by MIME type and edm:type",
+    "items_by_year": "Item counts grouped by edm:year",
+    "provider_landscape": "Provider-level stats: item count and average completeness by country",
+    "quality_tier_distribution": "Item counts grouped by completeness score, edm:type, and country",
     "entity_graph_summary": "Counts of agents, places, concepts, and timespans with Wikidata links",
     "vocabulary_sources": "Concept distribution across skos:inScheme vocabularies",
-    "geolocated_places": "Places with coordinates and linked item counts",
-    "text_items_by_country_language": "TEXT items with open rights by country and language",
+    "geolocated_places": "Places with coordinates",
     "text_genre_distribution": "dc:type value distribution for TEXT items (books, newspapers, etc.)",
     "iiif_availability": "Items with IIIF manifests (svcs:has_service) by provider",
-    "image_subject_domains": "Subject and dc:type distribution for open IMAGE items",
-    "audiovisual_inventory": "SOUND and VIDEO items with technical metadata",
-    "text_richness": "Items with both title and description (minimum text training viability)",
-    "provenance_completeness": "Coverage of dataProvider, provider, and datasetName per country",
-    "entity_sameAs_sources": "owl:sameAs link distribution by authority (Wikidata, VIAF, GND, etc.)",
-    "three_d_inventory": "All 3D items with metadata",
-    "quality_tier_distribution": "Completeness score × type × country × rights category",
+    "entity_linked_providers": "Data providers whose items have Wikidata-linked creators",
 }
 
 
@@ -1182,276 +1173,185 @@ class QueryBuilder:
     # Analytics queries
     # -----------------------------------------------------------------------
 
-    def open_reusable_inventory(self, filters: QueryFilters | None = None) -> str:
+    def items_by_type(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "ore", "xsd"})
+        prefixes = self._prefix_block({"edm", "ore"})
         proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        rights_bind = self._rights_category_bind()
-        filter_block = self._build_filters(f)
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?rights_category ?type ?country (COUNT(?item) AS ?count)
+            SELECT ?type (COUNT(?item) AS ?count)
             WHERE {{
               {proxy}
               ?proxy edm:type ?type .
-              {agg}
-              ?agg edm:rights ?rights .
-              {eagg}
-              ?eAgg edm:country ?country .
-              {rights_bind}
-              {filter_block}
             }}
-            GROUP BY ?rights_category ?type ?country
-            ORDER BY ?rights_category ?type ?country
-            {limit_block}
-        """).strip()
-
-    def media_availability(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        rights_bind = self._rights_category_bind()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?type ?rights_category
-                   (COUNT(?item) AS ?total)
-                   (SUM(IF(BOUND(?media), 1, 0)) AS ?with_media)
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              {agg}
-              ?agg edm:rights ?rights .
-              OPTIONAL {{ ?agg edm:isShownBy ?media }}
-              {rights_bind}
-            }}
-            GROUP BY ?type ?rights_category
-            ORDER BY ?type ?rights_category
-            {limit_block}
-        """).strip()
-
-    def mime_type_distribution(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "ebucore", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        rights_bind = self._rights_category_bind()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?type ?rights_category ?mime (COUNT(?item) AS ?count)
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:isShownBy ?url .
-              ?url ebucore:hasMimeType ?mime .
-              {rights_bind}
-            }}
-            GROUP BY ?type ?rights_category ?mime
+            GROUP BY ?type
             ORDER BY DESC(?count)
             {limit_block}
         """).strip()
 
-    def image_resolution_profile(self, filters: QueryFilters | None = None) -> str:
+    def items_by_country(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "ebucore", "ore"})
+        prefixes = self._prefix_block({"edm"})
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?country (COUNT(?item) AS ?count)
+            WHERE {{
+              ?eAgg edm:aggregatedCHO ?item .
+              ?eAgg a edm:EuropeanaAggregation .
+              ?eAgg edm:country ?country .
+            }}
+            GROUP BY ?country
+            ORDER BY DESC(?count)
+            {limit_block}
+        """).strip()
+
+    def items_by_type_and_country(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"edm", "ore"})
         proxy = self._provider_proxy()
+        eagg = self._europeana_aggregation()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?type ?country (COUNT(?item) AS ?count)
+            WHERE {{
+              {proxy}
+              ?proxy edm:type ?type .
+              {eagg}
+              ?eAgg edm:country ?country .
+            }}
+            GROUP BY ?type ?country
+            ORDER BY ?type DESC(?count)
+            {limit_block}
+        """).strip()
+
+    def items_by_provider(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"edm", "skos"})
         agg = self._aggregation()
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?item ?url ?width ?height ?bytes
+            SELECT ?dataProvider
+                   (SAMPLE(?enName) AS ?providerName_en)
+                   (SAMPLE(?anyName) AS ?providerName)
+                   (COUNT(?item) AS ?count)
             WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              FILTER(?type = "IMAGE")
               {agg}
-              ?agg edm:rights ?rights ;
-                   edm:isShownBy ?url .
-              FILTER(STRSTARTS(STR(?rights), "http://creativecommons.org/publicdomain/") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/4") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/3") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/2") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/1") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by-sa/"))
-              OPTIONAL {{ ?url ebucore:width ?width }}
-              OPTIONAL {{ ?url ebucore:height ?height }}
-              OPTIONAL {{ ?url ebucore:fileByteSize ?bytes }}
+              ?agg edm:dataProvider ?dataProvider .
+              OPTIONAL {{ ?dataProvider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }}
+              OPTIONAL {{ ?dataProvider skos:prefLabel ?anyName }}
             }}
+            GROUP BY ?dataProvider
+            ORDER BY DESC(?count)
             {limit_block}
         """).strip()
 
     def language_distribution(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore", "xsd"})
+        prefixes = self._prefix_block({"dc", "edm", "ore"})
         proxy = self._provider_proxy()
-        agg = self._aggregation()
-        rights_bind = self._rights_category_bind()
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?language ?type ?rights_category (COUNT(?item) AS ?count)
+            SELECT ?language ?type (COUNT(?item) AS ?count)
             WHERE {{
               {proxy}
               ?proxy edm:type ?type ;
                      dc:language ?language .
-              {agg}
-              ?agg edm:rights ?rights .
-              {rights_bind}
             }}
-            GROUP BY ?language ?type ?rights_category
+            GROUP BY ?language ?type
             ORDER BY DESC(?count)
             {limit_block}
         """).strip()
 
-    def language_coverage_by_country(self, filters: QueryFilters | None = None) -> str:
+    def mime_type_distribution(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore"})
-        proxy = self._provider_proxy()
+        prefixes = self._prefix_block({"edm", "ebucore"})
         agg = self._aggregation()
-        eagg = self._europeana_aggregation()
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?country
-                   (COUNT(?item) AS ?total)
-                   (SUM(IF(BOUND(?lang), 1, 0)) AS ?with_language)
+            SELECT ?mime (COUNT(?item) AS ?count)
             WHERE {{
-              {proxy}
-              OPTIONAL {{ ?proxy dc:language ?lang }}
               {agg}
-              {eagg}
-              ?eAgg edm:country ?country .
+              ?agg edm:isShownBy ?url .
+              ?url ebucore:hasMimeType ?mime .
             }}
-            GROUP BY ?country
-            ORDER BY ?country
+            GROUP BY ?mime
+            ORDER BY DESC(?count)
             {limit_block}
         """).strip()
 
-    def multilingual_metadata(self, filters: QueryFilters | None = None) -> str:
+    def items_by_year(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(f)
+        prefixes = self._prefix_block({"edm", "ore"})
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?item ?country ?type (COUNT(DISTINCT LANG(?title)) AS ?title_languages)
+            SELECT ?year (COUNT(?item) AS ?count)
             WHERE {{
-              {proxy}
-              ?proxy dc:title ?title ;
-                     edm:type ?type .
-              {agg}
-              {eagg}
-              ?eAgg edm:country ?country .
-              {filter_block}
-            }}
-            GROUP BY ?item ?country ?type
-            HAVING (COUNT(DISTINCT LANG(?title)) > 1)
-            ORDER BY DESC(?title_languages)
-            {limit_block}
-        """).strip()
-
-    def temporal_distribution(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        rights_bind = self._rights_category_bind()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?year ?type ?rights_category (COUNT(?item) AS ?count)
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
               ?eProxy ore:proxyFor ?item .
               ?eProxy edm:europeanaProxy "true" .
               ?eProxy edm:year ?year .
-              {agg}
-              ?agg edm:rights ?rights .
-              {rights_bind}
             }}
-            GROUP BY ?year ?type ?rights_category
-            ORDER BY ?year ?type
-            {limit_block}
-        """).strip()
-
-    def date_metadata_quality(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?country ?type
-                   (COUNT(?item) AS ?total)
-                   (SUM(IF(BOUND(?dcDate), 1, 0)) AS ?has_dc_date)
-                   (SUM(IF(BOUND(?year), 1, 0)) AS ?has_edm_year)
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              OPTIONAL {{ ?proxy dc:date ?dcDate }}
-              OPTIONAL {{
-                ?eProxy ore:proxyFor ?item .
-                ?eProxy edm:europeanaProxy "true" .
-                ?eProxy edm:year ?year .
-              }}
-              {agg}
-              {eagg}
-              ?eAgg edm:country ?country .
-            }}
-            GROUP BY ?country ?type
-            ORDER BY ?country ?type
+            GROUP BY ?year
+            ORDER BY DESC(?count)
             {limit_block}
         """).strip()
 
     def provider_landscape(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
+        prefixes = self._prefix_block({"edm", "xsd"})
         agg = self._aggregation()
         eagg = self._europeana_aggregation()
-        rights_bind = self._rights_category_bind()
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?dataProvider ?type ?rights_category ?country
+            SELECT ?dataProvider ?country
                    (COUNT(?item) AS ?count)
                    (AVG(xsd:integer(?completeness)) AS ?avg_completeness)
             WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
               {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?dataProvider .
+              ?agg edm:dataProvider ?dataProvider .
               {eagg}
               ?eAgg edm:country ?country ;
                     edm:completeness ?completeness .
-              {rights_bind}
             }}
-            GROUP BY ?dataProvider ?type ?rights_category ?country
+            GROUP BY ?dataProvider ?country
             ORDER BY DESC(?count)
+            {limit_block}
+        """).strip()
+
+    def quality_tier_distribution(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"edm", "ore"})
+        proxy = self._provider_proxy()
+        eagg = self._europeana_aggregation()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?completeness ?type ?country (COUNT(?item) AS ?count)
+            WHERE {{
+              {proxy}
+              ?proxy edm:type ?type .
+              {eagg}
+              ?eAgg edm:country ?country ;
+                    edm:completeness ?completeness .
+            }}
+            GROUP BY ?completeness ?type ?country
+            ORDER BY ?completeness ?type ?country
             {limit_block}
         """).strip()
 
@@ -1526,59 +1426,19 @@ class QueryBuilder:
 
     def geolocated_places(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "skos", "wgs84_pos", "owl"})
+        prefixes = self._prefix_block({"edm", "skos", "wgs84_pos"})
         limit_block = self._limit_offset(f)
-        extras = self._extra_langs(f)
-
-        name_resolve = self._lang_resolve_entity(
-            "skos:prefLabel", "?place", "?name", extra_langs=extras,
-        )
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?place ?name ?lat ?lon ?wikidata
+            SELECT ?place ?name ?lat ?lon
             WHERE {{
               ?place a edm:Place ;
                      wgs84_pos:lat ?lat ;
-                     wgs84_pos:long ?lon .
-              {name_resolve}
-              OPTIONAL {{
-                ?place owl:sameAs ?wikidata .
-                FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))
-              }}
+                     wgs84_pos:long ?lon ;
+                     skos:prefLabel ?name .
+              FILTER(LANG(?name) = "en")
             }}
-            {limit_block}
-        """).strip()
-
-    def text_items_by_country_language(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?country ?language (COUNT(?item) AS ?count)
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type ;
-                     dc:language ?language .
-              FILTER(?type = "TEXT")
-              {agg}
-              ?agg edm:rights ?rights .
-              FILTER(STRSTARTS(STR(?rights), "http://creativecommons.org/publicdomain/") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/4") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/3") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/2") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/1") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by-sa/"))
-              {eagg}
-              ?eAgg edm:country ?country .
-            }}
-            GROUP BY ?country ?language
-            ORDER BY ?country DESC(?count)
             {limit_block}
         """).strip()
 
@@ -1618,213 +1478,6 @@ class QueryBuilder:
             }}
             GROUP BY ?dataProvider
             ORDER BY DESC(?iiif_items)
-            {limit_block}
-        """).strip()
-
-    def image_subject_domains(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?subject (COUNT(?item) AS ?count)
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              FILTER(?type = "IMAGE")
-              ?proxy dc:subject ?subject .
-              {agg}
-              ?agg edm:rights ?rights .
-              FILTER(STRSTARTS(STR(?rights), "http://creativecommons.org/publicdomain/") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/4") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/3") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/2") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/1") ||
-                     STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by-sa/"))
-            }}
-            GROUP BY ?subject
-            ORDER BY DESC(?count)
-            {limit_block}
-        """).strip()
-
-    def audiovisual_inventory(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ebucore", "ore"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item ?title ?type ?rights ?country ?dataProvider
-                   ?url ?mime ?bytes
-            WHERE {{
-              {proxy}
-              ?proxy dc:title ?title ;
-                     edm:type ?type .
-              FILTER(?type = "SOUND" || ?type = "VIDEO")
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?dataProvider .
-              OPTIONAL {{
-                ?agg edm:isShownBy ?url .
-                OPTIONAL {{ ?url ebucore:hasMimeType ?mime }}
-                OPTIONAL {{ ?url ebucore:fileByteSize ?bytes }}
-              }}
-              {eagg}
-              ?eAgg edm:country ?country .
-            }}
-            {limit_block}
-        """).strip()
-
-    def text_richness(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?country ?type
-                   (COUNT(?item) AS ?total)
-                   (SUM(IF(BOUND(?desc), 1, 0)) AS ?with_description)
-            WHERE {{
-              {proxy}
-              ?proxy dc:title ?title ;
-                     edm:type ?type .
-              OPTIONAL {{ ?proxy dc:description ?desc }}
-              {agg}
-              {eagg}
-              ?eAgg edm:country ?country .
-            }}
-            GROUP BY ?country ?type
-            ORDER BY ?country ?type
-            {limit_block}
-        """).strip()
-
-    def provenance_completeness(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm"})
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?country
-                   (COUNT(?item) AS ?total)
-                   (SUM(IF(BOUND(?dataProvider), 1, 0)) AS ?has_data_provider)
-                   (SUM(IF(BOUND(?provider), 1, 0)) AS ?has_provider)
-                   (SUM(IF(BOUND(?datasetName), 1, 0)) AS ?has_dataset_name)
-            WHERE {{
-              {agg}
-              OPTIONAL {{ ?agg edm:dataProvider ?dataProvider }}
-              OPTIONAL {{ ?agg edm:provider ?provider }}
-              {eagg}
-              ?eAgg edm:country ?country .
-              OPTIONAL {{ ?eAgg edm:datasetName ?datasetName }}
-            }}
-            GROUP BY ?country
-            ORDER BY ?country
-            {limit_block}
-        """).strip()
-
-    def entity_sameAs_sources(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "skos", "owl"})
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?entity_type ?authority (COUNT(DISTINCT ?entity) AS ?count)
-            WHERE {{
-              VALUES (?cls ?entity_type) {{
-                (edm:Agent "agent")
-                (edm:Place "place")
-                (skos:Concept "concept")
-                (edm:TimeSpan "timespan")
-              }}
-              ?entity a ?cls ;
-                      owl:sameAs ?sameAs .
-              BIND(
-                IF(STRSTARTS(STR(?sameAs), "http://www.wikidata.org/"), "wikidata",
-                IF(STRSTARTS(STR(?sameAs), "http://viaf.org/"), "viaf",
-                IF(STRSTARTS(STR(?sameAs), "http://d-nb.info/"), "gnd",
-                IF(STRSTARTS(STR(?sameAs), "http://dbpedia.org/"), "dbpedia",
-                IF(STRSTARTS(STR(?sameAs), "http://id.loc.gov/"), "loc",
-                IF(STRSTARTS(STR(?sameAs), "http://data.bnf.fr/"), "bnf",
-                   "other"))))))
-                AS ?authority
-              )
-            }}
-            GROUP BY ?entity_type ?authority
-            ORDER BY ?entity_type DESC(?count)
-            {limit_block}
-        """).strip()
-
-    def three_d_inventory(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ebucore", "ore"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(f)
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item ?title ?rights ?country ?dataProvider
-                   ?url ?mime
-            WHERE {{
-              {proxy}
-              ?proxy dc:title ?title ;
-                     edm:type ?type .
-              FILTER(?type = "3D")
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?dataProvider .
-              OPTIONAL {{
-                ?agg edm:isShownBy ?url .
-                OPTIONAL {{ ?url ebucore:hasMimeType ?mime }}
-              }}
-              {eagg}
-              ?eAgg edm:country ?country .
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
-
-    def quality_tier_distribution(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        rights_bind = self._rights_category_bind()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?completeness ?type ?country ?rights_category
-                   (COUNT(?item) AS ?count)
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              {agg}
-              ?agg edm:rights ?rights .
-              {eagg}
-              ?eAgg edm:country ?country ;
-                    edm:completeness ?completeness .
-              {rights_bind}
-            }}
-            GROUP BY ?completeness ?type ?country ?rights_category
-            ORDER BY ?completeness ?type ?country
             {limit_block}
         """).strip()
 
@@ -1904,30 +1557,21 @@ class QueryBuilder:
         return {
             n: self._spec(n, m(filters))
             for n, m in [
-                ("open_reusable_inventory", self.open_reusable_inventory),
-                ("media_availability", self.media_availability),
-                ("mime_type_distribution", self.mime_type_distribution),
-                ("image_resolution_profile", self.image_resolution_profile),
+                ("items_by_type", self.items_by_type),
+                ("items_by_country", self.items_by_country),
+                ("items_by_type_and_country", self.items_by_type_and_country),
+                ("items_by_provider", self.items_by_provider),
                 ("language_distribution", self.language_distribution),
-                ("language_coverage_by_country", self.language_coverage_by_country),
-                ("multilingual_metadata", self.multilingual_metadata),
-                ("temporal_distribution", self.temporal_distribution),
-                ("date_metadata_quality", self.date_metadata_quality),
+                ("mime_type_distribution", self.mime_type_distribution),
+                ("items_by_year", self.items_by_year),
                 ("provider_landscape", self.provider_landscape),
-                ("entity_linked_providers", self.entity_linked_providers),
+                ("quality_tier_distribution", self.quality_tier_distribution),
                 ("entity_graph_summary", self.entity_graph_summary),
                 ("vocabulary_sources", self.vocabulary_sources),
                 ("geolocated_places", self.geolocated_places),
-                ("text_items_by_country_language", self.text_items_by_country_language),
                 ("text_genre_distribution", self.text_genre_distribution),
                 ("iiif_availability", self.iiif_availability),
-                ("image_subject_domains", self.image_subject_domains),
-                ("audiovisual_inventory", self.audiovisual_inventory),
-                ("text_richness", self.text_richness),
-                ("provenance_completeness", self.provenance_completeness),
-                ("entity_sameAs_sources", self.entity_sameAs_sources),
-                ("three_d_inventory", self.three_d_inventory),
-                ("quality_tier_distribution", self.quality_tier_distribution),
+                ("entity_linked_providers", self.entity_linked_providers),
             ]
         }
 

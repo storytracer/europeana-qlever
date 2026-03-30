@@ -368,14 +368,21 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
 
     builder = QueryBuilder()
     examples = [
+        ("Items by type", builder.items_by_type()),
+        ("Items by country", builder.items_by_country()),
+        ("Items by type and country", builder.items_by_type_and_country()),
+        ("Items by provider", builder.items_by_provider()),
+        ("Language distribution", builder.language_distribution()),
+        ("MIME type distribution", builder.mime_type_distribution()),
+        ("Items by year", builder.items_by_year()),
+        ("Text genre distribution", builder.text_genre_distribution()),
         ("Vocabulary sources", builder.vocabulary_sources()),
         ("Entity graph summary", builder.entity_graph_summary()),
-        ("Text genre distribution", builder.text_genre_distribution()),
-        ("Language distribution", builder.language_distribution()),
-        ("Media availability", builder.media_availability()),
-        ("MIME type distribution", builder.mime_type_distribution()),
+        ("Geolocated places", builder.geolocated_places()),
         ("IIIF availability", builder.iiif_availability()),
-        ("Open reusable inventory", builder.open_reusable_inventory()),
+        ("Provider landscape", builder.provider_landscape()),
+        ("Quality tier distribution", builder.quality_tier_distribution()),
+        ("Entity linked providers", builder.entity_linked_providers()),
     ]
 
     hostname = socket.gethostname()

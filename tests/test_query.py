@@ -62,10 +62,10 @@ class TestQueryBuilder:
         assert len(self.qb.all_ai_queries()) == 5
 
     def test_all_analytics_queries_count(self):
-        assert len(self.qb.all_analytics_queries()) == 24
+        assert len(self.qb.all_analytics_queries()) == 15
 
     def test_all_queries_count(self):
-        assert len(self.qb.all_queries()) == 36
+        assert len(self.qb.all_queries()) == 27
 
     def test_no_duplicate_names(self):
         queries = self.qb.all_queries()
@@ -142,13 +142,8 @@ class TestQueryBuilder:
         sparql = self.qb.entity_links(entity_type="place")
         assert "edm:Place" in sparql
 
-    def test_rights_category_bind_in_analytics(self):
-        sparql = self.qb.open_reusable_inventory()
-        assert "rights_category" in sparql
-        assert "open" in sparql
-
-    def test_temporal_distribution_uses_europeana_proxy(self):
-        sparql = self.qb.temporal_distribution()
+    def test_items_by_year_uses_europeana_proxy(self):
+        sparql = self.qb.items_by_year()
         assert "europeanaProxy" in sparql
         assert "edm:year" in sparql
 
@@ -388,9 +383,9 @@ class TestQueryBuilder:
         assert "title_en" in sparql
         assert "title_native" in sparql
 
-    # --- Geolocated places uses entity resolution ---
+    # --- Geolocated places ---
 
-    def test_geolocated_places_uses_entity_resolution(self):
+    def test_geolocated_places_has_coordinates(self):
         sparql = self.qb.geolocated_places()
-        assert "COALESCE" in sparql
-        assert "_any" in sparql
+        assert "wgs84_pos:lat" in sparql
+        assert "wgs84_pos:long" in sparql
