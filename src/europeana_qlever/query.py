@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 
 from .constants import (
     EDM_PREFIXES,
-    EUROPEANA_PROXY_URI_PREFIX,
     OPEN_RIGHTS_URIS,
     PERMISSION_RIGHTS_URIS,
     RESTRICTED_RIGHTS_URIS,
@@ -165,7 +164,7 @@ class QueryBuilder:
     def _provider_proxy(self, item: str = "?item", proxy: str = "?proxy") -> str:
         return (
             f"{proxy} ore:proxyFor {item} .\n"
-            f'  FILTER(!STRSTARTS(STR({proxy}), "{EUROPEANA_PROXY_URI_PREFIX}"))'
+            f'  FILTER NOT EXISTS {{ {proxy} edm:europeanaProxy "true" . }}'
         )
 
     def _europeana_proxy(self, item: str = "?item", eproxy: str = "?eProxy") -> str:
@@ -1453,8 +1452,7 @@ class QueryBuilder:
             SELECT ?dcType (COUNT(?item) AS ?count)
             WHERE {{
               {proxy}
-              ?proxy edm:type ?type .
-              FILTER(?type = "TEXT")
+              ?proxy edm:type "TEXT" .
               ?proxy dc:type ?dcType .
             }}
             GROUP BY ?dcType
