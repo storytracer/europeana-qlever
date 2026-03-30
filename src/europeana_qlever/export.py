@@ -37,6 +37,10 @@ from .state import ExportResult
 
 logger = logging.getLogger(__name__)
 
+# Suppress rdflib.term warnings about technically-invalid IRIs (e.g. spaces
+# in URLs) that are common in real-world Europeana provider data.
+logging.getLogger("rdflib.term").setLevel(logging.ERROR)
+
 _TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
 
 
