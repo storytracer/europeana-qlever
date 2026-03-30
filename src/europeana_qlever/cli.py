@@ -18,8 +18,10 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import click
@@ -354,7 +356,69 @@ UI_PORT = 7000
     settings_path = index_dir / "settings.json"
     settings_path.write_text(json.dumps(settings, indent=2))
 
+    # Write UI configuration with example queries
+    _write_ui_config(index_dir, port)
+
     return qleverfile_path
+
+
+def _write_ui_config(index_dir: Path, port: int) -> Path:
+    """Generate a Qleverfile-ui.yml with lightweight analytics example queries."""
+    from .query import QueryBuilder
+
+    builder = QueryBuilder()
+    examples = [
+        ("Vocabulary sources", builder.vocabulary_sources()),
+        ("Entity graph summary", builder.entity_graph_summary()),
+        ("Text genre distribution", builder.text_genre_distribution()),
+        ("Language distribution", builder.language_distribution()),
+        ("Media availability", builder.media_availability()),
+        ("MIME type distribution", builder.mime_type_distribution()),
+        ("IIIF availability", builder.iiif_availability()),
+        ("Open reusable inventory", builder.open_reusable_inventory()),
+    ]
+
+    hostname = socket.gethostname()
+
+    # Build YAML manually to avoid PyYAML dependency
+    lines = [
+        "config:",
+        "  backend:",
+        '    slug: "default"',
+        '    name: "Europeana"',
+        f'    baseUrl: "http://{hostname}:{port}"',
+        "    isDefault: true",
+        "    sortKey: 1",
+        "    maxDefault: 100",
+        '    filteredLanguage: "en"',
+        "    dynamicSuggestions: 2",
+        "  examples:",
+    ]
+
+    for i, (name, sparql) in enumerate(examples, 1):
+        lines.append(f'    - name: "{name}"')
+        lines.append(f"      sort_key: {i}")
+        lines.append("      query: |")
+        # Normalize indentation: QueryBuilder output has PREFIX lines at col 0
+        # but body lines indented from the f-string template. Find the indent
+        # of the first non-PREFIX, non-empty line (typically SELECT) and strip
+        # that amount from all lines.
+        raw_lines = sparql.splitlines()
+        body_indent = 0
+        for rl in raw_lines:
+            if rl.strip() and not rl.startswith("PREFIX"):
+                body_indent = len(rl) - len(rl.lstrip())
+                break
+        for sparql_line in raw_lines:
+            if body_indent and sparql_line[:body_indent].isspace():
+                stripped = sparql_line[body_indent:]
+            else:
+                stripped = sparql_line
+            lines.append(f"        {stripped}" if stripped.strip() else "")
+
+    ui_config_path = index_dir / "Qleverfile-ui.yml"
+    ui_config_path.write_text("\n".join(lines) + "\n")
+    return ui_config_path
 
 
 @cli.command("write-qleverfile")
@@ -396,13 +460,16 @@ def write_qleverfile_cmd(
         cache_size=cache_size,
     )
     settings_path = index_dir / "settings.json"
+    ui_config_path = index_dir / "Qleverfile-ui.yml"
 
     display.console.print(f"[green]Qleverfile written to {display.short_path(qleverfile_path)}[/green]")
     display.console.print(f"[green]settings.json written to {display.short_path(settings_path)}[/green]")
+    display.console.print(f"[green]Qleverfile-ui.yml written to {display.short_path(ui_config_path)}[/green]")
     display.console.print(f"\nNext steps:")
     display.console.print(f"  cd {index_dir}")
     display.console.print(f"  qlever index   # build index")
     display.console.print(f"  qlever start   # serve on :{port}")
+    display.console.print(f"  qlever ui      # launch UI with example queries")
 
 
 # ---------------------------------------------------------------------------
