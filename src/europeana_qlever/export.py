@@ -83,7 +83,7 @@ def _stream_query(
         with httpx.stream(
             "POST",
             qlever_url,
-            data={"query": query, "action": "tsv_export", "timeout": str(timeout)},
+            data={"query": query, "action": "tsv_export", "timeout": f"{timeout}s"},
             timeout=httpx.Timeout(timeout + 120, connect=http_connect_timeout),
         ) as response:
             if response.status_code != 200:

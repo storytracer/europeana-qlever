@@ -187,8 +187,8 @@ class ResourceBudget:
         return int(_clamp(triples, 1_000_000, 10_000_000))
 
     def qlever_timeout(self) -> int:
-        """Query timeout for Qleverfile in seconds. Default 600."""
-        return 600
+        """Query timeout for Qleverfile in seconds. Default 3600."""
+        return 3600
 
     def qlever_threads(self) -> int:
         """QLever worker threads: half of CPU count, min 2."""
