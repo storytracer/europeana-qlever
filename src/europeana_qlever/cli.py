@@ -355,6 +355,7 @@ MEMORY_FOR_QUERIES = {query_memory}
 CACHE_MAX_SIZE = {cache_size}
 CACHE_MAX_SIZE_SINGLE_ENTRY = {budget.qlever_cache_single_entry()}
 TIMEOUT = {budget.qlever_timeout()}s
+NUM_THREADS = {budget.qlever_threads()}
 ACCESS_TOKEN =
 
 {system_block}
@@ -439,6 +440,24 @@ def index(ctx: click.Context, qlever_args: tuple[str, ...]):
 # start / stop
 # ---------------------------------------------------------------------------
 
+def _parse_qleverfile(path: Path) -> dict[str, dict[str, str]]:
+    """Parse a Qleverfile into ``{section: {key: value}}``."""
+    sections: dict[str, dict[str, str]] = {}
+    current: dict[str, str] | None = None
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section_name = line[1:-1]
+            current = {}
+            sections[section_name] = current
+        elif "=" in line and current is not None:
+            key, _, value = line.partition("=")
+            current[key.strip()] = value.strip()
+    return sections
+
+
 @cli.command()
 @click.pass_context
 def start(ctx: click.Context):
@@ -448,10 +467,41 @@ def start(ctx: click.Context):
     configured port, it is stopped first.
     """
     index_dir: Path = ctx.obj["index_dir"]
-    qleverfile = index_dir / "Qleverfile"
-    if not qleverfile.exists():
+    budget = ctx.obj["budget"]
+    qleverfile_path = index_dir / "Qleverfile"
+    if not qleverfile_path.exists():
         display.console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
         raise SystemExit(1)
+
+    # Display resource budget
+    display.console.print(budget.summary_table())
+    display.console.print()
+
+    # Parse Qleverfile and display the server command that will be used
+    sections = _parse_qleverfile(qleverfile_path)
+    data = sections.get("data", {})
+    server = sections.get("server", {})
+    name = data.get("NAME", "europeana")
+    port = server.get("PORT", "7001")
+    memory = server.get("MEMORY_FOR_QUERIES", "")
+    cache = server.get("CACHE_MAX_SIZE", "")
+    cache_entry = server.get("CACHE_MAX_SIZE_SINGLE_ENTRY", "")
+    timeout = server.get("TIMEOUT", "")
+    threads = server.get("NUM_THREADS", "")
+
+    cmd_parts = ["qlever-server", f"-i {name}", f"-p {port}"]
+    if threads:
+        cmd_parts.append(f"-j {threads}")
+    if memory:
+        cmd_parts.append(f"-m {memory}")
+    if cache:
+        cmd_parts.append(f"-c {cache}")
+    if cache_entry:
+        cmd_parts.append(f"-e {cache_entry}")
+    if timeout:
+        cmd_parts.append(f"-s {timeout}")
+    display.console.print(f"[bold]Server command:[/bold]  {' '.join(cmd_parts)}")
+    display.console.print()
 
     # Stop any existing server first
     subprocess.run(["qlever", "stop"], cwd=index_dir,

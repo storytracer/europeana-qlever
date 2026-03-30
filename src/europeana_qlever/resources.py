@@ -158,25 +158,24 @@ class ResourceBudget:
     # ==================================================================
 
     def qlever_stxxl(self) -> str:
-        """STXXL (external sort) memory: 25% of total, 2–16 GB."""
-        gb = self.total_memory_gb * 0.25
-        return f"{_round_gb(_clamp(gb, 2.0, 16.0))}G"
+        """STXXL (external sort) memory: 25% of available, min 2 GB."""
+        gb = self.available_memory_gb * 0.25
+        return f"{_round_gb(max(gb, 2.0))}G"
 
     def qlever_query_memory(self) -> str:
-        """Query execution memory: 20% of total, 2–12 GB."""
-        gb = self.total_memory_gb * 0.20
-        return f"{_round_gb(_clamp(gb, 2.0, 12.0))}G"
+        """Query execution memory: 45% of available, min 4 GB."""
+        gb = self.available_memory_gb * 0.45
+        return f"{_round_gb(max(gb, 4.0))}G"
 
     def qlever_cache(self) -> str:
-        """Query cache size: 10% of total, 1–8 GB."""
-        gb = self.total_memory_gb * 0.10
-        return f"{_round_gb(_clamp(gb, 1.0, 8.0))}G"
+        """Query cache size: 15% of available, min 2 GB."""
+        gb = self.available_memory_gb * 0.15
+        return f"{_round_gb(max(gb, 2.0))}G"
 
     def qlever_cache_single_entry(self) -> str:
-        """Max single cache entry: 50% of cache, 1–4 GB."""
-        cache_gb = self.total_memory_gb * 0.10
-        entry_gb = cache_gb * 0.5
-        return f"{_round_gb(_clamp(entry_gb, 1.0, 4.0))}G"
+        """Max single cache entry: 7.5% of available, min 1 GB."""
+        gb = self.available_memory_gb * 0.075
+        return f"{_round_gb(max(gb, 1.0))}G"
 
     def qlever_triples_per_batch(self) -> int:
         """Index batch size: ~200 bytes/triple, 2% of available RAM.
@@ -190,6 +189,10 @@ class ResourceBudget:
     def qlever_timeout(self) -> int:
         """Query timeout for Qleverfile in seconds. Default 600."""
         return 600
+
+    def qlever_threads(self) -> int:
+        """QLever worker threads: half of CPU count, min 2."""
+        return max(2, self.cpu_count // 2)
 
     # ==================================================================
     # Export / DuckDB
@@ -334,6 +337,7 @@ class ResourceBudget:
         tbl.add_row("QLever cache entry", self.qlever_cache_single_entry(), "auto")
         tbl.add_row("Triples/batch", f"{self.qlever_triples_per_batch():,}", "auto")
         tbl.add_row("QLever timeout", f"{self.qlever_timeout()}s", "default")
+        tbl.add_row("QLever threads", str(self.qlever_threads()), "auto")
 
         tbl.add_section()
 
