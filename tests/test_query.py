@@ -62,10 +62,10 @@ class TestQueryBuilder:
         assert len(self.qb.all_ai_queries()) == 5
 
     def test_all_analytics_queries_count(self):
-        assert len(self.qb.all_analytics_queries()) == 15
+        assert len(self.qb.all_analytics_queries()) == 10
 
     def test_all_queries_count(self):
-        assert len(self.qb.all_queries()) == 27
+        assert len(self.qb.all_queries()) == 22
 
     def test_no_duplicate_names(self):
         queries = self.qb.all_queries()

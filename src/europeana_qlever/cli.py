@@ -368,21 +368,16 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
 
     builder = QueryBuilder()
     examples = [
-        ("items_by_type", builder.items_by_type()),
-        ("items_by_country", builder.items_by_country()),
-        ("items_by_type_and_country", builder.items_by_type_and_country()),
-        ("items_by_provider", builder.items_by_provider()),
-        ("language_distribution", builder.language_distribution()),
-        ("mime_type_distribution", builder.mime_type_distribution()),
-        ("items_by_year", builder.items_by_year()),
-        ("text_genre_distribution", builder.text_genre_distribution()),
-        ("vocabulary_sources", builder.vocabulary_sources()),
-        ("entity_graph_summary", builder.entity_graph_summary()),
         ("geolocated_places", builder.geolocated_places()),
         ("iiif_availability", builder.iiif_availability()),
-        ("provider_landscape", builder.provider_landscape()),
-        ("quality_tier_distribution", builder.quality_tier_distribution()),
-        ("entity_linked_providers", builder.entity_linked_providers()),
+        ("items_by_country", builder.items_by_country()),
+        ("items_by_language", builder.items_by_language()),
+        ("items_by_provider", builder.items_by_provider()),
+        ("items_by_type", builder.items_by_type()),
+        ("items_by_type_and_country", builder.items_by_type_and_country()),
+        ("items_by_year", builder.items_by_year()),
+        ("mime_type_distribution", builder.mime_type_distribution()),
+        ("text_genre_distribution", builder.text_genre_distribution()),
     ]
 
     hostname = socket.gethostname()

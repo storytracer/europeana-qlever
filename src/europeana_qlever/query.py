@@ -110,17 +110,12 @@ _DESCRIPTIONS: dict[str, str] = {
     "items_by_country": "Item counts grouped by country",
     "items_by_type_and_country": "Item counts grouped by edm:type and country",
     "items_by_provider": "Item counts grouped by data provider",
-    "language_distribution": "Item counts grouped by dc:language and edm:type",
+    "items_by_language": "Item counts grouped by edm:language",
     "mime_type_distribution": "Item counts grouped by MIME type and edm:type",
     "items_by_year": "Item counts grouped by edm:year",
-    "provider_landscape": "Provider-level stats: item count and average completeness by country",
-    "quality_tier_distribution": "Item counts grouped by completeness score, edm:type, and country",
-    "entity_graph_summary": "Counts of agents, places, concepts, and timespans with Wikidata links",
-    "vocabulary_sources": "Concept distribution across skos:inScheme vocabularies",
     "geolocated_places": "Places with coordinates",
     "text_genre_distribution": "dc:type value distribution for TEXT items (books, newspapers, etc.)",
     "iiif_availability": "Items with IIIF manifests (svcs:has_service) by provider",
-    "entity_linked_providers": "Data providers whose items have Wikidata-linked creators",
 }
 
 
@@ -1252,21 +1247,20 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def language_distribution(self, filters: QueryFilters | None = None) -> str:
+    def items_by_language(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore"})
-        proxy = self._provider_proxy()
+        prefixes = self._prefix_block({"edm"})
+        eagg = self._europeana_aggregation()
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?language ?type (COUNT(?item) AS ?count)
+            SELECT ?language (COUNT(?item) AS ?count)
             WHERE {{
-              {proxy}
-              ?proxy edm:type ?type ;
-                     dc:language ?language .
+              {eagg}
+              ?eAgg edm:language ?language .
             }}
-            GROUP BY ?language ?type
+            GROUP BY ?language
             ORDER BY DESC(?count)
             {limit_block}
         """).strip()
@@ -1304,121 +1298,6 @@ class QueryBuilder:
               ?eProxy edm:year ?year .
             }}
             GROUP BY ?year
-            ORDER BY DESC(?count)
-            {limit_block}
-        """).strip()
-
-    def provider_landscape(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "xsd"})
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?dataProvider ?country
-                   (COUNT(?item) AS ?count)
-                   (AVG(xsd:integer(?completeness)) AS ?avg_completeness)
-            WHERE {{
-              {agg}
-              ?agg edm:dataProvider ?dataProvider .
-              {eagg}
-              ?eAgg edm:country ?country ;
-                    edm:completeness ?completeness .
-            }}
-            GROUP BY ?dataProvider ?country
-            ORDER BY DESC(?count)
-            {limit_block}
-        """).strip()
-
-    def quality_tier_distribution(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "ore"})
-        proxy = self._provider_proxy()
-        eagg = self._europeana_aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?completeness ?type ?country (COUNT(?item) AS ?count)
-            WHERE {{
-              {proxy}
-              ?proxy edm:type ?type .
-              {eagg}
-              ?eAgg edm:country ?country ;
-                    edm:completeness ?completeness .
-            }}
-            GROUP BY ?completeness ?type ?country
-            ORDER BY ?completeness ?type ?country
-            {limit_block}
-        """).strip()
-
-    def entity_linked_providers(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore", "owl", "skos"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?dataProvider (COUNT(DISTINCT ?item) AS ?items)
-                   (COUNT(DISTINCT ?wd) AS ?wikidata_creators)
-            WHERE {{
-              {proxy}
-              ?proxy dc:creator ?creator . FILTER(isIRI(?creator))
-              ?creator owl:sameAs ?wd .
-              FILTER(STRSTARTS(STR(?wd), "http://www.wikidata.org/entity/"))
-              {agg}
-              ?agg edm:dataProvider ?dataProvider .
-            }}
-            GROUP BY ?dataProvider
-            ORDER BY DESC(?items)
-            {limit_block}
-        """).strip()
-
-    def entity_graph_summary(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "skos", "owl"})
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?entity_type
-                   (COUNT(DISTINCT ?entity) AS ?total)
-                   (COUNT(DISTINCT ?wd_entity) AS ?with_wikidata)
-            WHERE {{
-              VALUES (?cls ?entity_type) {{
-                (edm:Agent "agent")
-                (edm:Place "place")
-                (skos:Concept "concept")
-                (edm:TimeSpan "timespan")
-              }}
-              ?entity a ?cls .
-              OPTIONAL {{
-                ?entity owl:sameAs ?wd .
-                FILTER(STRSTARTS(STR(?wd), "http://www.wikidata.org/entity/"))
-                BIND(?entity AS ?wd_entity)
-              }}
-            }}
-            GROUP BY ?entity_type
-            {limit_block}
-        """).strip()
-
-    def vocabulary_sources(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"skos"})
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?scheme (COUNT(DISTINCT ?concept) AS ?count)
-            WHERE {{
-              ?concept a skos:Concept ;
-                       skos:inScheme ?scheme .
-            }}
-            GROUP BY ?scheme
             ORDER BY DESC(?count)
             {limit_block}
         """).strip()
@@ -1462,17 +1341,22 @@ class QueryBuilder:
 
     def iiif_availability(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "svcs"})
+        prefixes = self._prefix_block({"edm", "skos", "svcs"})
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?dataProvider (COUNT(DISTINCT ?item) AS ?iiif_items)
+            SELECT ?dataProvider
+                   (SAMPLE(?enName) AS ?providerName_en)
+                   (SAMPLE(?anyName) AS ?providerName)
+                   (COUNT(DISTINCT ?item) AS ?iiif_items)
             WHERE {{
               ?agg edm:aggregatedCHO ?item ;
                    edm:dataProvider ?dataProvider ;
                    edm:isShownBy ?url .
               ?url svcs:has_service ?service .
+              OPTIONAL {{ ?dataProvider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }}
+              OPTIONAL {{ ?dataProvider skos:prefLabel ?anyName }}
             }}
             GROUP BY ?dataProvider
             ORDER BY DESC(?iiif_items)
@@ -1559,17 +1443,12 @@ class QueryBuilder:
                 ("items_by_country", self.items_by_country),
                 ("items_by_type_and_country", self.items_by_type_and_country),
                 ("items_by_provider", self.items_by_provider),
-                ("language_distribution", self.language_distribution),
+                ("items_by_language", self.items_by_language),
                 ("mime_type_distribution", self.mime_type_distribution),
                 ("items_by_year", self.items_by_year),
-                ("provider_landscape", self.provider_landscape),
-                ("quality_tier_distribution", self.quality_tier_distribution),
-                ("entity_graph_summary", self.entity_graph_summary),
-                ("vocabulary_sources", self.vocabulary_sources),
                 ("geolocated_places", self.geolocated_places),
                 ("text_genre_distribution", self.text_genre_distribution),
                 ("iiif_availability", self.iiif_availability),
-                ("entity_linked_providers", self.entity_linked_providers),
             ]
         }
 
