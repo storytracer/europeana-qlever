@@ -607,47 +607,10 @@ def list_queries_cmd(ctx: click.Context):
 
 
 # ---------------------------------------------------------------------------
-# analyze
+# Shared query resolution helper
 # ---------------------------------------------------------------------------
 
-@cli.command()
-@click.argument("sparql_files", nargs=-1,
-                type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option("--all", "run_all", is_flag=True, default=False,
-              help="Analyze all base queries.")
-@click.option("-q", "--query", "query_names", multiple=True,
-              help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(["base", "ai", "analytics", "all"]),
-              help="Analyze a predefined set of queries.")
-@click.option("--country", "countries", multiple=True,
-              help="Filter by country (repeatable).")
-@click.option("--type", "types", multiple=True,
-              help="Filter by edm:type (repeatable).")
-@click.option("--rights-category", type=click.Choice(["open", "restricted", "permission"]),
-              help="Filter by rights category.")
-@click.option("--provider", "providers", multiple=True,
-              help="Filter by dataProvider (repeatable).")
-@click.option("--min-completeness", type=int,
-              help="Minimum completeness score (1-10).")
-@click.option("--year-from", type=int, help="Minimum edm:year.")
-@click.option("--year-to", type=int, help="Maximum edm:year.")
-@click.option("--language", "filter_languages", multiple=True,
-              help="Additional language(s) for label resolution. Repeatable.")
-@click.option("--dataset-name", "dataset_names", multiple=True,
-              help="Filter by datasetName (repeatable).")
-@click.option("--limit", type=int, default=1000, show_default=True,
-              help="LIMIT to inject into queries for test runs.")
-@click.option("--send", type=int, default=0, show_default=True,
-              help="Result rows for QLever to return (0 = metadata only).")
-@click.option("-o", "--output", "output_path", type=click.Path(path_type=Path),
-              default=None, help="Output Markdown file (default: analysis/<name>.md).")
-@click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
-              show_default=True, help="QLever HTTP endpoint.")
-@click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
-              help="Per-query timeout in seconds.")
-@click.pass_context
-def analyze(
-    ctx: click.Context,
+def _resolve_queries(
     sparql_files: tuple[Path, ...],
     run_all: bool,
     query_names: tuple[str, ...],
@@ -661,26 +624,15 @@ def analyze(
     year_to: int | None,
     filter_languages: tuple[str, ...],
     dataset_names: tuple[str, ...],
-    limit: int,
-    send: int,
-    output_path: Path | None,
-    qlever_url: str,
-    timeout: int,
+    limit: int | None = None,
 ):
-    """Analyze SPARQL query performance against QLever.
+    """Build a QueryBuilder and resolve the queries dict from CLI args.
 
-    Runs queries with a LIMIT, collects runtime information from the
-    QLever execution tree, and writes a Markdown report identifying
-    bottlenecks.  The report is designed to be pasted into a Claude Code
-    prompt for further diagnosis.
-
-    Use --all for base queries, --query-set for a category, -q for
-    specific named queries, or pass .sparql file paths directly.
+    Returns ``(qb, queries)`` where *qb* is a :class:`QueryBuilder` and
+    *queries* is ``dict[str, str]`` mapping names to SPARQL strings.
     """
-    from .analysis import analyze_all, render_markdown
     from .query import QueryBuilder, QueryFilters
 
-    # Validate mutually-exclusive modes
     modes = sum([
         bool(run_all),
         bool(query_names),
@@ -697,7 +649,6 @@ def analyze(
                 "Cannot combine --all, -q, --query-set, and .sparql files."
             )
 
-    # Build filters
     filters = QueryFilters(
         countries=list(countries) or None,
         types=list(types) or None,
@@ -708,7 +659,7 @@ def analyze(
         year_to=year_to,
         languages=list(filter_languages) or None,
         dataset_names=list(dataset_names) or None,
-        limit=None,  # LIMIT is handled by inject_limit, not QueryFilters
+        limit=limit,
     )
 
     qb = QueryBuilder()
@@ -741,33 +692,137 @@ def analyze(
             else:
                 queries[name] = method(filters)
 
-    analysis_dir: Path = ctx.obj["analysis_dir"]
+    return qb, queries
 
+
+def _analysis_output_path(
+    analysis_dir: Path,
+    suffix: str,
+    output_path: Path | None,
+    query_names: tuple[str, ...],
+    query_set: str | None,
+    run_all: bool,
+    sparql_files: tuple[Path, ...],
+    queries: dict[str, str],
+) -> Path:
+    """Derive the output path for an analysis report."""
     if output_path:
-        out = output_path
+        return output_path
+    if query_names and len(query_names) == 1:
+        stem = query_names[0]
+    elif query_set:
+        stem = query_set
+    elif run_all:
+        stem = "base"
+    elif sparql_files:
+        stem = "_".join(p.stem for p in sparql_files)
     else:
-        # Name the report after the query name, query set, or "custom"
-        if query_names and len(query_names) == 1:
-            stem = query_names[0]
-        elif query_set:
-            stem = query_set
-        elif run_all:
-            stem = "base"
-        elif sparql_files:
-            stem = "_".join(p.stem for p in sparql_files)
-        else:
-            stem = "_".join(sorted(queries))
-        out = analysis_dir / f"{stem}.md"
+        stem = "_".join(sorted(queries))
+    return analysis_dir / f"{stem}.{suffix}.md"
 
+
+# ---------------------------------------------------------------------------
+# analyze (group)
+# ---------------------------------------------------------------------------
+
+@cli.group()
+@click.pass_context
+def analyze(ctx: click.Context):
+    """Analyze SPARQL query performance.
+
+    Use 'analyze qlever' to profile queries against a running QLever
+    server, or 'analyze static' for offline structural analysis using
+    the SPARQL algebra.
+    """
+
+
+# ---------------------------------------------------------------------------
+# analyze qlever
+# ---------------------------------------------------------------------------
+
+@analyze.command("qlever")
+@click.argument("sparql_files", nargs=-1,
+                type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--all", "run_all", is_flag=True, default=False,
+              help="Analyze all base queries.")
+@click.option("-q", "--query", "query_names", multiple=True,
+              help="Named query from QueryBuilder (repeatable).")
+@click.option("--query-set", type=click.Choice(["base", "ai", "analytics", "all"]),
+              help="Analyze a predefined set of queries.")
+@click.option("--country", "countries", multiple=True,
+              help="Filter by country (repeatable).")
+@click.option("--type", "types", multiple=True,
+              help="Filter by edm:type (repeatable).")
+@click.option("--rights-category", type=click.Choice(["open", "restricted", "permission"]),
+              help="Filter by rights category.")
+@click.option("--provider", "providers", multiple=True,
+              help="Filter by dataProvider (repeatable).")
+@click.option("--min-completeness", type=int,
+              help="Minimum completeness score (1-10).")
+@click.option("--year-from", type=int, help="Minimum edm:year.")
+@click.option("--year-to", type=int, help="Maximum edm:year.")
+@click.option("--language", "filter_languages", multiple=True,
+              help="Additional language(s) for label resolution. Repeatable.")
+@click.option("--dataset-name", "dataset_names", multiple=True,
+              help="Filter by datasetName (repeatable).")
+@click.option("--limit", type=int, default=1000, show_default=True,
+              help="LIMIT to inject into queries for test runs.")
+@click.option("--send", type=int, default=0, show_default=True,
+              help="Result rows for QLever to return (0 = metadata only).")
+@click.option("-o", "--output", "output_path", type=click.Path(path_type=Path),
+              default=None, help="Output Markdown file (default: analysis/<name>.qlever.md).")
+@click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
+              show_default=True, help="QLever HTTP endpoint.")
+@click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
+              help="Per-query timeout in seconds.")
+@click.pass_context
+def analyze_qlever(
+    ctx: click.Context,
+    sparql_files: tuple[Path, ...],
+    run_all: bool,
+    query_names: tuple[str, ...],
+    query_set: str | None,
+    countries: tuple[str, ...],
+    types: tuple[str, ...],
+    rights_category: str | None,
+    providers: tuple[str, ...],
+    min_completeness: int | None,
+    year_from: int | None,
+    year_to: int | None,
+    filter_languages: tuple[str, ...],
+    dataset_names: tuple[str, ...],
+    limit: int,
+    send: int,
+    output_path: Path | None,
+    qlever_url: str,
+    timeout: int,
+):
+    """Profile queries against a running QLever server.
+
+    Runs queries with a LIMIT, collects runtime information from the
+    QLever execution tree, and writes a Markdown report identifying
+    bottlenecks.  The report is designed to be pasted into a Claude Code
+    prompt for further diagnosis.
+    """
+    from .analysis import analyze_all, render_markdown
+
+    qb, queries = _resolve_queries(
+        sparql_files, run_all, query_names, query_set,
+        countries, types, rights_category, providers,
+        min_completeness, year_from, year_to, filter_languages,
+        dataset_names,
+    )
+
+    analysis_dir: Path = ctx.obj["analysis_dir"]
+    out = _analysis_output_path(
+        analysis_dir, "qlever", output_path,
+        query_names, query_set, run_all, sparql_files, queries,
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
 
     results = analyze_all(
-        queries,
-        qlever_url,
-        timeout,
-        send=send,
-        limit=limit,
-        describe_fn=qb.describe,
+        queries, qlever_url, timeout,
+        send=send, limit=limit, describe_fn=qb.describe,
     )
 
     md = render_markdown(results, qlever_url, limit)
@@ -776,6 +831,91 @@ def analyze(
     succeeded = sum(1 for r in results if r.error is None)
     failed = sum(1 for r in results if r.error is not None)
     display.console.print(f"[green]Analysis complete:[/green] {succeeded} ok, {failed} failed")
+    display.console.print(f"Report: {out}")
+
+    if failed:
+        raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
+# analyze static
+# ---------------------------------------------------------------------------
+
+@analyze.command("static")
+@click.argument("sparql_files", nargs=-1,
+                type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--all", "run_all", is_flag=True, default=False,
+              help="Analyze all base queries.")
+@click.option("-q", "--query", "query_names", multiple=True,
+              help="Named query from QueryBuilder (repeatable).")
+@click.option("--query-set", type=click.Choice(["base", "ai", "analytics", "all"]),
+              help="Analyze a predefined set of queries.")
+@click.option("--country", "countries", multiple=True,
+              help="Filter by country (repeatable).")
+@click.option("--type", "types", multiple=True,
+              help="Filter by edm:type (repeatable).")
+@click.option("--rights-category", type=click.Choice(["open", "restricted", "permission"]),
+              help="Filter by rights category.")
+@click.option("--provider", "providers", multiple=True,
+              help="Filter by dataProvider (repeatable).")
+@click.option("--min-completeness", type=int,
+              help="Minimum completeness score (1-10).")
+@click.option("--year-from", type=int, help="Minimum edm:year.")
+@click.option("--year-to", type=int, help="Maximum edm:year.")
+@click.option("--language", "filter_languages", multiple=True,
+              help="Additional language(s) for label resolution. Repeatable.")
+@click.option("--dataset-name", "dataset_names", multiple=True,
+              help="Filter by datasetName (repeatable).")
+@click.option("-o", "--output", "output_path", type=click.Path(path_type=Path),
+              default=None, help="Output Markdown file (default: analysis/<name>.static.md).")
+@click.pass_context
+def analyze_static(
+    ctx: click.Context,
+    sparql_files: tuple[Path, ...],
+    run_all: bool,
+    query_names: tuple[str, ...],
+    query_set: str | None,
+    countries: tuple[str, ...],
+    types: tuple[str, ...],
+    rights_category: str | None,
+    providers: tuple[str, ...],
+    min_completeness: int | None,
+    year_from: int | None,
+    year_to: int | None,
+    filter_languages: tuple[str, ...],
+    dataset_names: tuple[str, ...],
+    output_path: Path | None,
+):
+    """Offline structural analysis of SPARQL query complexity.
+
+    Parses queries into SPARQL algebra and identifies structural
+    bottlenecks (deep OPTIONAL nesting, high variable count, expensive
+    aggregations) without requiring a running QLever server.
+    """
+    from .analysis import render_static_markdown, static_analyze_all
+
+    qb, queries = _resolve_queries(
+        sparql_files, run_all, query_names, query_set,
+        countries, types, rights_category, providers,
+        min_completeness, year_from, year_to, filter_languages,
+        dataset_names,
+    )
+
+    analysis_dir: Path = ctx.obj["analysis_dir"]
+    out = _analysis_output_path(
+        analysis_dir, "static", output_path,
+        query_names, query_set, run_all, sparql_files, queries,
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    results = static_analyze_all(queries, describe_fn=qb.describe)
+
+    md = render_static_markdown(results)
+    out.write_text(md)
+
+    succeeded = sum(1 for r in results if r.error is None)
+    failed = sum(1 for r in results if r.error is not None)
+    display.console.print(f"[green]Static analysis complete:[/green] {succeeded} ok, {failed} failed")
     display.console.print(f"Report: {out}")
 
     if failed:
@@ -850,70 +990,13 @@ def export(
     Filter options (--country, --type, etc.) apply to named queries.
     """
     from .export import export_all
-    from .query import QueryBuilder, QueryFilters
 
-    # Validate mutually-exclusive modes
-    modes = sum([
-        bool(run_all),
-        bool(query_names),
-        bool(query_set),
-        bool(sparql_files),
-    ])
-    if modes == 0:
-        raise click.UsageError(
-            "Provide one of: --all, -q QUERY, --query-set SET, or .sparql files."
-        )
-    if modes > 1 and not (bool(query_names) and not run_all and not query_set and not sparql_files):
-        # Allow multiple -q flags, but not mixing modes
-        if not (modes == 1 or (bool(query_names) and modes == 1)):
-            raise click.UsageError(
-                "Cannot combine --all, -q, --query-set, and .sparql files."
-            )
-
-    # Build filters
-    filters = QueryFilters(
-        countries=list(countries) or None,
-        types=list(types) or None,
-        rights_category=rights_category,
-        providers=list(providers) or None,
-        min_completeness=min_completeness,
-        year_from=year_from,
-        year_to=year_to,
-        languages=list(filter_languages) or None,
-        dataset_names=list(dataset_names) or None,
-        limit=limit,
+    _qb, queries = _resolve_queries(
+        sparql_files, run_all, query_names, query_set,
+        countries, types, rights_category, providers,
+        min_completeness, year_from, year_to, filter_languages,
+        dataset_names, limit=limit,
     )
-
-    qb = QueryBuilder()
-    queries: dict[str, str] = {}
-
-    if sparql_files:
-        # Legacy mode: read .sparql files directly
-        for p in sparql_files:
-            stem = p.stem
-            name = re.sub(r"^\d+_", "", stem)
-            queries[name] = p.read_text()
-    elif run_all:
-        queries = qb.all_base_queries(filters)
-    elif query_set:
-        registry = {
-            "base": qb.all_base_queries,
-            "ai": qb.all_ai_queries,
-            "analytics": qb.all_analytics_queries,
-            "all": qb.all_queries,
-        }
-        queries = registry[query_set](filters)
-    elif query_names:
-        for name in query_names:
-            method = getattr(qb, name, None)
-            if method is None or name.startswith("_") or name.startswith("all_"):
-                raise click.UsageError(
-                    f"Unknown query: '{name}'. Use `list-queries` to see available queries."
-                )
-            if name == "entity_links":
-                queries[name] = method(filters=filters)
-            else:
-                queries[name] = method(filters)
 
     exports_dir: Path = ctx.obj["exports_dir"]
 

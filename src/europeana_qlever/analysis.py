@@ -1,16 +1,19 @@
-"""Query performance analysis via QLever runtime information.
+"""Query performance analysis — runtime (QLever) and static (SPARQL algebra).
 
-Sends SPARQL queries to QLever requesting JSON responses with execution
-tree metadata, then renders a Markdown report identifying bottlenecks.
-The report is designed to be pasted into a Claude Code prompt for
-further diagnosis.
+*Runtime analysis* sends queries to QLever requesting JSON responses with
+execution tree metadata.  *Static analysis* uses rdflib to parse SPARQL
+into algebra trees and identify structural complexity without executing
+queries.  Both modes render Markdown reports designed to be pasted into a
+Claude Code prompt for bottleneck diagnosis.
 """
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Iterator
 
 import httpx
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
@@ -52,6 +55,29 @@ class QueryAnalysis:
     result_size: int
     columns: list[str]
     tree: OperationNode | None
+    warnings: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+@dataclass
+class StaticAnalysis:
+    """Structural complexity metrics from SPARQL algebra parsing."""
+
+    name: str
+    sparql: str
+    description: str
+    triple_patterns: int
+    optional_count: int
+    optional_max_depth: int
+    filter_count: int
+    bind_count: int
+    union_count: int
+    subquery_count: int
+    group_by_vars: list[str]
+    aggregates: list[str]
+    select_columns: int
+    variables: int
+    not_exists_count: int
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -369,6 +395,292 @@ def render_markdown(
         lines.append("### SPARQL")
         lines.append("```sparql")
         lines.append(qa.sparql)
+        lines.append("```")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+# ===========================================================================
+# Static SPARQL analysis (rdflib algebra)
+# ===========================================================================
+
+def parse_algebra(sparql: str):
+    """Parse a SPARQL query string into an rdflib algebra tree.
+
+    Returns the root ``CompValue`` node.  Raises ``ValueError`` on parse
+    failure.
+    """
+    from rdflib.plugins.sparql.algebra import translateQuery
+    from rdflib.plugins.sparql.parser import parseQuery
+
+    parsed = parseQuery(sparql)
+    return translateQuery(parsed)
+
+
+def _walk_algebra(node, depth: int = 0) -> Iterator[tuple[int, object]]:
+    """Depth-first walk of an rdflib algebra tree.
+
+    Yields ``(depth, node)`` for every ``CompValue`` node (i.e. objects
+    with a ``.name`` attribute).
+    """
+    if not hasattr(node, "name"):
+        return
+    yield depth, node
+    for key in list(node.keys()):
+        val = node[key]
+        if hasattr(val, "name"):
+            yield from _walk_algebra(val, depth + 1)
+        elif isinstance(val, (list, tuple)):
+            for item in val:
+                if hasattr(item, "name"):
+                    yield from _walk_algebra(item, depth + 1)
+
+
+def _optional_depth(node, current: int = 0) -> int:
+    """Return the maximum OPTIONAL nesting depth in the algebra tree.
+
+    Depth counts how many LeftJoin p2 (optional) branches are nested.
+    ``A OPTIONAL B OPTIONAL C`` is depth 1 (sibling OPTIONALs).
+    ``A OPTIONAL { B OPTIONAL C }`` is depth 2 (nested OPTIONAL).
+    """
+    if not hasattr(node, "name"):
+        return 0
+    best = current
+    for key in list(node.keys()):
+        val = node[key]
+        # Only increment depth when entering the optional (p2) side
+        # of a LeftJoin, not the required (p1) side.
+        child_depth = current
+        if node.name == "LeftJoin" and key == "p2":
+            child_depth = current + 1
+            best = max(best, child_depth)
+        if hasattr(val, "name"):
+            best = max(best, _optional_depth(val, child_depth))
+        elif isinstance(val, (list, tuple)):
+            for item in val:
+                if hasattr(item, "name"):
+                    best = max(best, _optional_depth(item, child_depth))
+    return best
+
+
+def static_analyze_query(
+    name: str, sparql: str, description: str,
+) -> StaticAnalysis:
+    """Analyze a SPARQL query's structural complexity without executing it."""
+    try:
+        translated = parse_algebra(sparql)
+    except Exception as exc:
+        return StaticAnalysis(
+            name=name, sparql=sparql, description=description,
+            triple_patterns=0, optional_count=0, optional_max_depth=0,
+            filter_count=0, bind_count=0, union_count=0, subquery_count=0,
+            group_by_vars=[], aggregates=[], select_columns=0,
+            variables=0, not_exists_count=0,
+            error=f"Parse error: {exc}",
+        )
+
+    algebra = translated.algebra
+
+    triple_patterns = 0
+    optional_count = 0
+    filter_count = 0
+    bind_count = 0
+    union_count = 0
+    subquery_count = 0
+    not_exists_count = 0
+    group_by_vars: list[str] = []
+    aggregates: list[str] = []
+    select_columns = 0
+    variables = 0
+
+    for depth, node in _walk_algebra(algebra):
+        ntype = node.name
+
+        if ntype in ("BGP", "TriplesBlock"):
+            triples = node.get("triples", [])
+            triple_patterns += len(triples)
+
+        elif ntype == "LeftJoin":
+            optional_count += 1
+
+        elif ntype == "Filter":
+            filter_count += 1
+
+        elif ntype == "Extend":
+            bind_count += 1
+
+        elif ntype == "Union":
+            union_count += 1
+
+        elif ntype == "SelectQuery" and depth > 0:
+            subquery_count += 1
+
+        elif ntype == "Builtin_NOTEXISTS":
+            not_exists_count += 1
+
+        elif ntype == "Group":
+            expr = node.get("expr", [])
+            group_by_vars = [
+                f"?{v}" if hasattr(v, "n3") else str(v)
+                for v in expr
+            ]
+
+        elif ntype.startswith("Aggregate_"):
+            agg_name = ntype.replace("Aggregate_", "").upper()
+            aggregates.append(agg_name)
+
+        elif ntype == "Project":
+            pv = node.get("PV", [])
+            select_columns = len(pv)
+
+    # Total unique variables from the root _vars set
+    root_vars = algebra.get("_vars", set())
+    variables = len(root_vars)
+
+    optional_max_depth = _optional_depth(algebra)
+
+    # Check for LIMIT in the query
+    has_limit = bool(_LIMIT_RE.search(sparql))
+
+    # Generate warnings
+    warnings: list[str] = []
+    if optional_max_depth >= 3:
+        warnings.append(
+            f"Deep OPTIONAL nesting (depth {optional_max_depth}) "
+            "-- may cause exponential intermediate results"
+        )
+    if optional_count >= 8:
+        warnings.append(
+            f"High OPTIONAL count ({optional_count}) "
+            "-- each OPTIONAL adds a left join"
+        )
+    if triple_patterns >= 15:
+        warnings.append(
+            f"Many triple patterns ({triple_patterns}) "
+            "-- complex join order"
+        )
+    gc_count = sum(1 for a in aggregates if a == "GROUPCONCAT")
+    if gc_count >= 4:
+        warnings.append(
+            f"Multiple GROUP_CONCAT aggregates ({gc_count}) "
+            "-- expensive string concatenation over all groups"
+        )
+    if not_exists_count >= 1 and not has_limit:
+        warnings.append(
+            "FILTER NOT EXISTS without LIMIT "
+            "-- full scan required"
+        )
+    if variables > 20:
+        warnings.append(
+            f"High variable count ({variables}) "
+            "-- wide intermediate tables"
+        )
+
+    return StaticAnalysis(
+        name=name,
+        sparql=sparql,
+        description=description,
+        triple_patterns=triple_patterns,
+        optional_count=optional_count,
+        optional_max_depth=optional_max_depth,
+        filter_count=filter_count,
+        bind_count=bind_count,
+        union_count=union_count,
+        subquery_count=subquery_count,
+        group_by_vars=group_by_vars,
+        aggregates=aggregates,
+        select_columns=select_columns,
+        variables=variables,
+        not_exists_count=not_exists_count,
+        warnings=warnings,
+    )
+
+
+def static_analyze_all(
+    queries: dict[str, str],
+    *,
+    describe_fn=None,
+) -> list[StaticAnalysis]:
+    """Statically analyze multiple queries. No server needed."""
+    results: list[StaticAnalysis] = []
+    for name, sparql in queries.items():
+        desc = describe_fn(name) if describe_fn else ""
+        results.append(static_analyze_query(name, sparql, desc))
+    return results
+
+
+def render_static_markdown(analyses: list[StaticAnalysis]) -> str:
+    """Render a Markdown report from static analysis results."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines: list[str] = [
+        "# Static SPARQL Query Analysis",
+        "",
+        f"Generated: {now}",
+        "",
+    ]
+
+    for sa in analyses:
+        lines.append("---")
+        lines.append("")
+        lines.append(f"## {sa.name}")
+        if sa.description:
+            lines.append(f"> {sa.description}")
+        lines.append("")
+
+        if sa.error:
+            lines.append(f"**Error:** {sa.error}")
+            lines.append("")
+            lines.append("### SPARQL")
+            lines.append("```sparql")
+            lines.append(sa.sparql)
+            lines.append("```")
+            lines.append("")
+            continue
+
+        # Complexity metrics table
+        lines.append("### Complexity Metrics")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        lines.append(f"| Triple patterns | {sa.triple_patterns} |")
+        lines.append(f"| OPTIONALs | {sa.optional_count} |")
+        lines.append(f"| Max OPTIONAL depth | {sa.optional_max_depth} |")
+        lines.append(f"| FILTERs | {sa.filter_count} |")
+        lines.append(f"| BINDs | {sa.bind_count} |")
+        lines.append(f"| FILTER NOT EXISTS | {sa.not_exists_count} |")
+        lines.append(f"| UNIONs | {sa.union_count} |")
+        lines.append(f"| Subqueries | {sa.subquery_count} |")
+
+        if sa.group_by_vars:
+            gv = ", ".join(sa.group_by_vars)
+            lines.append(f"| GROUP BY variables | {len(sa.group_by_vars)} ({gv}) |")
+        else:
+            lines.append("| GROUP BY variables | 0 |")
+
+        if sa.aggregates:
+            counts = Counter(sa.aggregates)
+            agg_str = ", ".join(
+                f"{n}x {name}" for name, n in counts.most_common()
+            )
+            lines.append(f"| Aggregates | {agg_str} |")
+        else:
+            lines.append("| Aggregates | 0 |")
+
+        lines.append(f"| SELECT columns | {sa.select_columns} |")
+        lines.append(f"| Total variables | {sa.variables} |")
+        lines.append("")
+
+        # Warnings
+        if sa.warnings:
+            lines.append("### Structural Warnings")
+            for w in sa.warnings:
+                lines.append(f"- {w}")
+            lines.append("")
+
+        # SPARQL
+        lines.append("### SPARQL")
+        lines.append("```sparql")
+        lines.append(sa.sparql)
         lines.append("```")
         lines.append("")
 

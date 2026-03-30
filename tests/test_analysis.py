@@ -11,11 +11,15 @@ import pytest
 from europeana_qlever.analysis import (
     OperationNode,
     QueryAnalysis,
+    _walk_algebra,
     analyze_query,
     flatten_tree,
     inject_limit,
+    parse_algebra,
     parse_tree,
     render_markdown,
+    render_static_markdown,
+    static_analyze_query,
 )
 
 
@@ -331,3 +335,177 @@ class TestAnalyzeQuery:
         assert len(join_warnings) == 1
         assert "200" in join_warnings[0]
         assert "5000" in join_warnings[0]
+
+
+# ---------------------------------------------------------------------------
+# Static analysis
+# ---------------------------------------------------------------------------
+
+SIMPLE_SPARQL = """\
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+SELECT ?s ?title WHERE {
+  ?s a <http://example.org/Item> .
+  ?s dc:title ?title .
+}
+"""
+
+OPTIONAL_SPARQL = """\
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+SELECT ?s ?title ?creator WHERE {
+  ?s a <http://example.org/Item> .
+  OPTIONAL { ?s dc:title ?title }
+  OPTIONAL { ?s dc:creator ?creator }
+}
+"""
+
+NESTED_OPTIONAL_SPARQL = """\
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?s ?label WHERE {
+  ?s a <http://example.org/Item> .
+  OPTIONAL {
+    ?s dc:creator ?creator .
+    OPTIONAL {
+      ?creator skos:prefLabel ?label .
+      OPTIONAL {
+        ?label <http://example.org/script> ?script
+      }
+    }
+  }
+}
+"""
+
+AGGREGATE_SPARQL = """\
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+SELECT ?s
+  (SAMPLE(?_title) AS ?title)
+  (GROUP_CONCAT(DISTINCT ?_subject; SEPARATOR="|") AS ?subjects)
+  (GROUP_CONCAT(DISTINCT ?_date; SEPARATOR="|") AS ?dates)
+  (GROUP_CONCAT(DISTINCT ?_lang; SEPARATOR="|") AS ?languages)
+  (GROUP_CONCAT(DISTINCT ?_creator; SEPARATOR="|") AS ?creators)
+WHERE {
+  ?s dc:title ?_title .
+  OPTIONAL { ?s dc:subject ?_subject }
+  OPTIONAL { ?s dc:date ?_date }
+  OPTIONAL { ?s dc:language ?_lang }
+  OPTIONAL { ?s dc:creator ?_creator }
+}
+GROUP BY ?s
+"""
+
+NOT_EXISTS_SPARQL = """\
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+SELECT ?proxy WHERE {
+  ?proxy a edm:ProvidedCHO .
+  FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" }
+}
+"""
+
+
+class TestWalkAlgebra:
+    def test_depth_tracking(self):
+        translated = parse_algebra(SIMPLE_SPARQL)
+        nodes = list(_walk_algebra(translated.algebra))
+        depths = [d for d, _ in nodes]
+        assert depths[0] == 0  # root
+        assert max(depths) > 0  # has children
+
+
+class TestStaticAnalyzeQuery:
+    def test_simple_query(self):
+        sa = static_analyze_query("simple", SIMPLE_SPARQL, "A simple query")
+        assert sa.error is None
+        assert sa.triple_patterns == 2
+        assert sa.optional_count == 0
+        assert sa.optional_max_depth == 0
+        assert sa.warnings == []
+
+    def test_optional_counting(self):
+        sa = static_analyze_query("opt", OPTIONAL_SPARQL, "")
+        assert sa.optional_count == 2
+        assert sa.optional_max_depth == 1
+
+    def test_nested_optional_warning(self):
+        sa = static_analyze_query("nested", NESTED_OPTIONAL_SPARQL, "")
+        assert sa.optional_max_depth >= 3
+        depth_warnings = [w for w in sa.warnings if "Deep OPTIONAL" in w]
+        assert len(depth_warnings) == 1
+
+    def test_filter_and_bind_counting(self):
+        sparql = """\
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+SELECT ?s ?label WHERE {
+  ?s dc:title ?title .
+  FILTER(LANG(?title) = "en")
+  BIND(STR(?title) AS ?label)
+}
+"""
+        sa = static_analyze_query("fb", sparql, "")
+        assert sa.filter_count >= 1
+        assert sa.bind_count >= 1
+
+    def test_aggregates(self):
+        sa = static_analyze_query("agg", AGGREGATE_SPARQL, "")
+        assert "SAMPLE" in sa.aggregates
+        assert "GROUPCONCAT" in sa.aggregates
+        assert len(sa.group_by_vars) == 1
+        assert "?s" in sa.group_by_vars
+        gc_count = sum(1 for a in sa.aggregates if a == "GROUPCONCAT")
+        assert gc_count == 4
+        gc_warnings = [w for w in sa.warnings if "GROUP_CONCAT" in w]
+        assert len(gc_warnings) == 1
+
+    def test_not_exists(self):
+        sa = static_analyze_query("ne", NOT_EXISTS_SPARQL, "")
+        assert sa.not_exists_count >= 1
+        ne_warnings = [w for w in sa.warnings if "NOT EXISTS" in w]
+        assert len(ne_warnings) == 1
+
+    def test_parse_error(self):
+        sa = static_analyze_query("bad", "NOT SPARQL AT ALL {{{", "")
+        assert sa.error is not None
+        assert "Parse error" in sa.error
+
+    def test_items_enriched_real_query(self):
+        """Parse the actual items_enriched query from QueryBuilder."""
+        from europeana_qlever.query import QueryBuilder
+
+        qb = QueryBuilder()
+        sparql = qb.items_enriched()
+        sa = static_analyze_query("items_enriched", sparql, "")
+        assert sa.error is None
+        assert sa.triple_patterns > 5
+        assert sa.optional_count > 5
+        assert sa.select_columns > 10
+        assert sa.variables > 15
+        assert len(sa.aggregates) > 3
+
+
+class TestRenderStaticMarkdown:
+    def _make_static(self, name="test_query"):
+        return static_analyze_query(name, AGGREGATE_SPARQL, "A test query")
+
+    def test_contains_header(self):
+        md = render_static_markdown([self._make_static()])
+        assert "# Static SPARQL Query Analysis" in md
+
+    def test_contains_metrics_table(self):
+        md = render_static_markdown([self._make_static()])
+        assert "### Complexity Metrics" in md
+        assert "Triple patterns" in md
+        assert "OPTIONALs" in md
+
+    def test_contains_sparql(self):
+        md = render_static_markdown([self._make_static()])
+        assert "```sparql" in md
+
+    def test_contains_warnings(self):
+        sa = static_analyze_query("nested", NESTED_OPTIONAL_SPARQL, "")
+        md = render_static_markdown([sa])
+        assert "### Structural Warnings" in md
+
+    def test_error_query(self):
+        sa = static_analyze_query("bad", "NOT SPARQL {{{", "")
+        md = render_static_markdown([sa])
+        assert "**Error:**" in md
