@@ -22,6 +22,7 @@ ANALYSIS_SUBDIR = "analysis"
 QLEVER_PORT = 7001
 QLEVER_UI_PORT = 7000
 QLEVER_QUERY_TIMEOUT = 3600  # Per-query timeout in seconds (1 hour)
+EUROPEANA_PROXY_URI_PREFIX = "http://data.europeana.eu/proxy/europeana/"
 
 # ---------------------------------------------------------------------------
 # EDM namespaces — canonical set from the Europeana bulk dumps

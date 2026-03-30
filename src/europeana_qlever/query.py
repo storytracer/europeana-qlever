@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from .constants import (
     EDM_PREFIXES,
+    EUROPEANA_PROXY_URI_PREFIX,
     OPEN_RIGHTS_URIS,
     PERMISSION_RIGHTS_URIS,
     RESTRICTED_RIGHTS_URIS,
@@ -136,7 +137,7 @@ class QueryBuilder:
     def _provider_proxy(self, item: str = "?item", proxy: str = "?proxy") -> str:
         return (
             f"{proxy} ore:proxyFor {item} .\n"
-            f'  FILTER NOT EXISTS {{ {proxy} edm:europeanaProxy "true" }}'
+            f'  FILTER(!STRSTARTS(STR({proxy}), "{EUROPEANA_PROXY_URI_PREFIX}"))'
         )
 
     def _europeana_proxy(self, item: str = "?item", eproxy: str = "?eProxy") -> str:
@@ -254,6 +255,67 @@ class QueryBuilder:
     def _bind_vernacular(self, proxy_var: str = "?proxy") -> str:
         """Bind the item's vernacular language from dc:language."""
         return f"OPTIONAL {{ {proxy_var} dc:language ?_vernacularLang }}"
+
+    def _core_subquery(
+        self,
+        filters: QueryFilters | None = None,
+        *,
+        extra_select: str = "",
+        extra_body: str = "",
+    ) -> str:
+        """Inner subquery: identify items with single-valued properties.
+
+        Materialises a compact result (one row per item) with mandatory
+        and single-valued optional properties.  The outer query can then
+        add language resolution and multi-valued properties on the
+        already-bound ``?item`` / ``?proxy`` without re-joining the full
+        graph.
+
+        *extra_select* and *extra_body* allow callers to inject additional
+        SELECT variables or WHERE patterns.
+        """
+        f = filters or QueryFilters()
+        proxy = self._provider_proxy()
+        agg = self._aggregation()
+        eagg = self._europeana_aggregation()
+        filter_block = self._build_filters(
+            f,
+            type_var="?_type",
+            rights_var="?_rights",
+            provider_var="?_dataProvider",
+            country_var="?_country",
+            completeness_var="?_completeness",
+            year_var="?_year",
+        )
+
+        return textwrap.dedent(f"""\
+            {{
+              SELECT ?item ?proxy ?_type ?_rights ?_dataProvider ?_country
+                     ?_completeness ?_isShownAt ?_isShownBy ?_preview
+                     ?_landingPage ?_datasetName ?_year{extra_select}
+              WHERE {{
+                {proxy}
+                ?proxy edm:type ?_type .
+                {agg}
+                ?agg edm:rights ?_rights ;
+                     edm:dataProvider ?_dataProvider .
+                OPTIONAL {{ ?agg edm:isShownAt ?_isShownAt }}
+                OPTIONAL {{ ?agg edm:isShownBy ?_isShownBy }}
+                {eagg}
+                ?eAgg edm:country ?_country .
+                OPTIONAL {{ ?eAgg edm:completeness ?_completeness }}
+                OPTIONAL {{ ?eAgg edm:preview ?_preview }}
+                OPTIONAL {{ ?eAgg edm:landingPage ?_landingPage }}
+                OPTIONAL {{ ?eAgg edm:datasetName ?_datasetName }}
+                OPTIONAL {{
+                  ?eProxy ore:proxyFor ?item .
+                  ?eProxy edm:europeanaProxy "true" .
+                  ?eProxy edm:year ?_year .
+                }}
+                {extra_body}
+                {filter_block}
+              }}
+            }}""")
 
     def _lang_resolve_item(
         self,
@@ -580,14 +642,14 @@ class QueryBuilder:
         prefixes = self._prefix_block({
             "dc", "dcterms", "edm", "ore", "skos", "owl", "xsd",
         })
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
         sep = self.separator
-        filter_block = self._build_filters(f, year_var="?_year")
         limit_block = self._limit_offset(f)
         extras = self._extra_langs(f)
 
+        # Phase 1: core subquery materialises items with single-valued props
+        core = self._core_subquery(f)
+
+        # Phase 2: language resolution on already-bound ?proxy
         vernacular = self._bind_vernacular()
         title_fragment, title_vars = self._lang_resolve_item(
             "dc:title", "?proxy", "title", extra_langs=extras,
@@ -649,9 +711,8 @@ class QueryBuilder:
               (SAMPLE(?_landingPage) AS ?landing_page)
               (SAMPLE(?_datasetName) AS ?dataset_name)
             WHERE {{
-              {proxy}
+              {core}
               {vernacular}
-              ?proxy edm:type ?_type .
               {title_fragment}
               {desc_fragment}
               OPTIONAL {{
@@ -664,23 +725,6 @@ class QueryBuilder:
               OPTIONAL {{ ?proxy dc:subject ?_subject }}
               OPTIONAL {{ ?proxy dc:date ?_date }}
               OPTIONAL {{ ?proxy dc:language ?_language }}
-              {agg}
-              ?agg edm:rights ?_rights ;
-                   edm:dataProvider ?_dataProvider .
-              OPTIONAL {{ ?agg edm:isShownAt ?_isShownAt }}
-              OPTIONAL {{ ?agg edm:isShownBy ?_isShownBy }}
-              {eagg}
-              ?eAgg edm:country ?_country .
-              OPTIONAL {{ ?eAgg edm:completeness ?_completeness }}
-              OPTIONAL {{ ?eAgg edm:preview ?_preview }}
-              OPTIONAL {{ ?eAgg edm:landingPage ?_landingPage }}
-              OPTIONAL {{ ?eAgg edm:datasetName ?_datasetName }}
-              OPTIONAL {{
-                ?eProxy ore:proxyFor ?item .
-                ?eProxy edm:europeanaProxy "true" .
-                ?eProxy edm:year ?_year .
-              }}
-              {filter_block}
             }}
             GROUP BY ?item
             {limit_block}
