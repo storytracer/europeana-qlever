@@ -4,6 +4,10 @@ Generates parameterised SPARQL queries for exporting Europeana data as
 Parquet files. Replaces the former static .sparql files with a programmatic
 ``QueryBuilder`` that supports filters, language priority, and reusable
 SPARQL fragments.
+
+The hybrid export pipeline uses ``QuerySpec`` to describe both simple
+SPARQL exports and composite DuckDB exports that join multiple base
+table Parquet files.
 """
 
 from __future__ import annotations
@@ -19,6 +23,30 @@ from .constants import (
     RESTRICTED_RIGHTS_URIS,
     SEPARATOR,
 )
+
+
+# ---------------------------------------------------------------------------
+# QuerySpec — unified descriptor for simple and composite exports
+# ---------------------------------------------------------------------------
+
+@dataclass
+class QuerySpec:
+    """Specification for a single export.
+
+    Simple SPARQL exports have *sparql* set and *compose_sql* ``None``.
+    Composite exports (e.g. ``items_enriched``) have *compose_sql* set,
+    *sparql* ``None``, and *depends_on* listing the required base tables.
+    """
+
+    name: str
+    sparql: str | None = None
+    compose_sql: str | None = None
+    depends_on: list[str] = field(default_factory=list)
+    description: str = ""
+
+    @property
+    def is_composite(self) -> bool:
+        return self.compose_sql is not None
 
 
 # ---------------------------------------------------------------------------
@@ -56,11 +84,20 @@ _DESCRIPTIONS: dict[str, str] = {
     "places": "Locations with multilingual labels, coordinates, and Wikidata links",
     "concepts": "SKOS concepts with hierarchy, scheme, and cross-scheme matches",
     "timespans": "Time periods with multilingual labels, begin/end dates, and Wikidata links",
+    # Component queries (building blocks for composite exports)
+    "items_core": "One row per item: type, rights, country, data provider, and single-valued aggregation properties",
+    "items_titles": "All title values with language tags (multi-row per item)",
+    "items_descriptions": "All description values with language tags (multi-row per item)",
+    "items_subjects": "Subject values per item (multi-row)",
+    "items_dates": "Date values per item (multi-row)",
+    "items_languages": "Language codes per item (multi-row)",
+    "items_years": "Normalised edm:year values from Europeana proxy (multi-row per item)",
+    "items_creators": "Creator URIs and literals per item with IRI flag (multi-row)",
     # AI dataset queries
     "items_enriched": (
         "Fully denormalized one-row-per-item export with parallel English and "
         "vernacular title/description columns, resolved entity labels, and "
-        "GROUP_CONCAT for multi-valued properties"
+        "multi-valued properties — composed via DuckDB from component tables"
     ),
     "text_corpus": (
         "NLP training corpus with parallel English and vernacular title/description "
@@ -647,6 +684,182 @@ class QueryBuilder:
                 ?timespan owl:sameAs ?wikidata .
                 FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))
               }}
+            }}
+            {limit_block}
+        """).strip()
+
+    # -----------------------------------------------------------------------
+    # Component queries — building blocks for composite exports
+    #
+    # Each is a flat, simple SPARQL scan with no GROUP BY and minimal
+    # OPTIONALs. QLever executes these in minutes over 66M items.
+    # DuckDB then joins the resulting Parquet files to produce the
+    # final denormalized exports.
+    # -----------------------------------------------------------------------
+
+    def items_core(self, filters: QueryFilters | None = None) -> str:
+        """One row per item with single-valued properties.
+
+        Uses subquery materialization: the mandatory joins (proxy ×
+        aggregation × europeana aggregation) are computed first in an
+        inner SELECT, then OPTIONALs are applied on the already-bound
+        ``?agg`` / ``?eAgg`` variables. This prevents QLever from
+        running out of query memory when processing 66M items.
+        """
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"edm", "ore", "xsd"})
+        proxy = self._provider_proxy()
+        agg = self._aggregation()
+        eagg = self._europeana_aggregation()
+        filter_block = self._build_filters(f)
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?type ?rights ?country ?dataProvider
+                   ?isShownAt ?isShownBy ?preview ?landingPage
+                   ?datasetName ?completeness
+            WHERE {{
+              {{
+                SELECT ?item ?agg ?eAgg ?type ?rights ?dataProvider ?country
+                WHERE {{
+                  {proxy}
+                  ?proxy edm:type ?type .
+                  {agg}
+                  ?agg edm:rights ?rights ;
+                       edm:dataProvider ?dataProvider .
+                  {eagg}
+                  ?eAgg edm:country ?country .
+                  {filter_block}
+                }}
+              }}
+              OPTIONAL {{ ?agg edm:isShownAt ?isShownAt }}
+              OPTIONAL {{ ?agg edm:isShownBy ?isShownBy }}
+              OPTIONAL {{ ?eAgg edm:completeness ?completeness }}
+              OPTIONAL {{ ?eAgg edm:preview ?preview }}
+              OPTIONAL {{ ?eAgg edm:landingPage ?landingPage }}
+              OPTIONAL {{ ?eAgg edm:datasetName ?datasetName }}
+            }}
+            {limit_block}
+        """).strip()
+
+    def items_titles(self, filters: QueryFilters | None = None) -> str:
+        """All title values with language tags — multi-row per item."""
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"dc", "edm", "ore"})
+        proxy = self._provider_proxy()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?title ?lang
+            WHERE {{
+              {proxy}
+              ?proxy dc:title ?title .
+              BIND(LANG(?title) AS ?lang)
+            }}
+            {limit_block}
+        """).strip()
+
+    def items_descriptions(self, filters: QueryFilters | None = None) -> str:
+        """All description values with language tags — multi-row per item."""
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"dc", "edm", "ore"})
+        proxy = self._provider_proxy()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?description ?lang
+            WHERE {{
+              {proxy}
+              ?proxy dc:description ?description .
+              BIND(LANG(?description) AS ?lang)
+            }}
+            {limit_block}
+        """).strip()
+
+    def items_subjects(self, filters: QueryFilters | None = None) -> str:
+        """Subject values per item — multi-row."""
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"dc", "edm", "ore"})
+        proxy = self._provider_proxy()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?subject
+            WHERE {{
+              {proxy}
+              ?proxy dc:subject ?subject .
+            }}
+            {limit_block}
+        """).strip()
+
+    def items_dates(self, filters: QueryFilters | None = None) -> str:
+        """Date values per item — multi-row."""
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"dc", "edm", "ore"})
+        proxy = self._provider_proxy()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?date
+            WHERE {{
+              {proxy}
+              ?proxy dc:date ?date .
+            }}
+            {limit_block}
+        """).strip()
+
+    def items_languages(self, filters: QueryFilters | None = None) -> str:
+        """Language codes per item — multi-row."""
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"dc", "edm", "ore"})
+        proxy = self._provider_proxy()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?language
+            WHERE {{
+              {proxy}
+              ?proxy dc:language ?language .
+            }}
+            {limit_block}
+        """).strip()
+
+    def items_years(self, filters: QueryFilters | None = None) -> str:
+        """Normalised edm:year from the Europeana proxy — multi-row per item."""
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"edm", "ore"})
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item ?year
+            WHERE {{
+              ?eProxy ore:proxyFor ?item .
+              ?eProxy edm:europeanaProxy "true" .
+              ?eProxy edm:year ?year .
+            }}
+            {limit_block}
+        """).strip()
+
+    def items_creators(self, filters: QueryFilters | None = None) -> str:
+        """Creator URIs and literals per item with IRI flag — multi-row."""
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"dc", "edm", "ore"})
+        proxy = self._provider_proxy()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?item (STR(?_cv) AS ?creator_value) (isIRI(?_cv) AS ?is_iri)
+            WHERE {{
+              {proxy}
+              ?proxy dc:creator ?_cv .
             }}
             {limit_block}
         """).strip()
@@ -1617,58 +1830,109 @@ class QueryBuilder:
 
     # -----------------------------------------------------------------------
     # Registry methods
+    #
+    # Return ``dict[str, QuerySpec]`` for unified handling of simple
+    # SPARQL exports and composite DuckDB exports.
     # -----------------------------------------------------------------------
 
-    def all_base_queries(self, filters: QueryFilters | None = None) -> dict[str, str]:
+    def _spec(self, name: str, sparql: str) -> QuerySpec:
+        """Wrap a simple SPARQL query as a QuerySpec."""
+        return QuerySpec(
+            name=name,
+            sparql=sparql,
+            description=_DESCRIPTIONS.get(name, ""),
+        )
+
+    def all_base_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
         return {
-            "core_metadata": self.core_metadata(filters),
-            "web_resources": self.web_resources(filters),
-            "rights_providers": self.rights_providers(filters),
-            "agents": self.agents(filters),
-            "places": self.places(filters),
-            "concepts": self.concepts(filters),
-            "timespans": self.timespans(filters),
+            n: self._spec(n, m(filters))
+            for n, m in [
+                ("core_metadata", self.core_metadata),
+                ("web_resources", self.web_resources),
+                ("rights_providers", self.rights_providers),
+                ("agents", self.agents),
+                ("places", self.places),
+                ("concepts", self.concepts),
+                ("timespans", self.timespans),
+            ]
         }
 
-    def all_ai_queries(self, filters: QueryFilters | None = None) -> dict[str, str]:
+    def all_component_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
+        """Component queries: building blocks for composite exports."""
         return {
-            "items_enriched": self.items_enriched(filters),
-            "text_corpus": self.text_corpus(filters),
-            "image_metadata": self.image_metadata(filters),
-            "entity_links": self.entity_links(filters=filters),
-            "temporal_coverage": self.temporal_coverage(filters),
+            n: self._spec(n, m(filters))
+            for n, m in [
+                ("items_core", self.items_core),
+                ("items_titles", self.items_titles),
+                ("items_descriptions", self.items_descriptions),
+                ("items_subjects", self.items_subjects),
+                ("items_dates", self.items_dates),
+                ("items_languages", self.items_languages),
+                ("items_years", self.items_years),
+                ("items_creators", self.items_creators),
+            ]
         }
 
-    def all_analytics_queries(self, filters: QueryFilters | None = None) -> dict[str, str]:
+    def all_ai_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
+        from .compose import items_enriched_sql
+
+        component_names = list(self.all_component_queries(filters))
+        # agents is needed for creator label resolution
+        depends = component_names + ["agents"]
+
+        specs: dict[str, QuerySpec] = {
+            "items_enriched": QuerySpec(
+                name="items_enriched",
+                compose_sql=items_enriched_sql(
+                    separator=self.separator,
+                    extra_languages=self.extra_languages,
+                ),
+                depends_on=depends,
+                description=_DESCRIPTIONS.get("items_enriched", ""),
+            ),
+        }
+        for n, m in [
+            ("text_corpus", self.text_corpus),
+            ("image_metadata", self.image_metadata),
+            ("entity_links", lambda f: self.entity_links(filters=f)),
+            ("temporal_coverage", self.temporal_coverage),
+        ]:
+            specs[n] = self._spec(n, m(filters))
+        return specs
+
+    def all_analytics_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
         return {
-            "open_reusable_inventory": self.open_reusable_inventory(filters),
-            "media_availability": self.media_availability(filters),
-            "mime_type_distribution": self.mime_type_distribution(filters),
-            "image_resolution_profile": self.image_resolution_profile(filters),
-            "language_distribution": self.language_distribution(filters),
-            "language_coverage_by_country": self.language_coverage_by_country(filters),
-            "multilingual_metadata": self.multilingual_metadata(filters),
-            "temporal_distribution": self.temporal_distribution(filters),
-            "date_metadata_quality": self.date_metadata_quality(filters),
-            "provider_landscape": self.provider_landscape(filters),
-            "entity_linked_providers": self.entity_linked_providers(filters),
-            "entity_graph_summary": self.entity_graph_summary(filters),
-            "vocabulary_sources": self.vocabulary_sources(filters),
-            "geolocated_places": self.geolocated_places(filters),
-            "text_items_by_country_language": self.text_items_by_country_language(filters),
-            "text_genre_distribution": self.text_genre_distribution(filters),
-            "iiif_availability": self.iiif_availability(filters),
-            "image_subject_domains": self.image_subject_domains(filters),
-            "audiovisual_inventory": self.audiovisual_inventory(filters),
-            "text_richness": self.text_richness(filters),
-            "provenance_completeness": self.provenance_completeness(filters),
-            "entity_sameAs_sources": self.entity_sameAs_sources(filters),
-            "three_d_inventory": self.three_d_inventory(filters),
-            "quality_tier_distribution": self.quality_tier_distribution(filters),
+            n: self._spec(n, m(filters))
+            for n, m in [
+                ("open_reusable_inventory", self.open_reusable_inventory),
+                ("media_availability", self.media_availability),
+                ("mime_type_distribution", self.mime_type_distribution),
+                ("image_resolution_profile", self.image_resolution_profile),
+                ("language_distribution", self.language_distribution),
+                ("language_coverage_by_country", self.language_coverage_by_country),
+                ("multilingual_metadata", self.multilingual_metadata),
+                ("temporal_distribution", self.temporal_distribution),
+                ("date_metadata_quality", self.date_metadata_quality),
+                ("provider_landscape", self.provider_landscape),
+                ("entity_linked_providers", self.entity_linked_providers),
+                ("entity_graph_summary", self.entity_graph_summary),
+                ("vocabulary_sources", self.vocabulary_sources),
+                ("geolocated_places", self.geolocated_places),
+                ("text_items_by_country_language", self.text_items_by_country_language),
+                ("text_genre_distribution", self.text_genre_distribution),
+                ("iiif_availability", self.iiif_availability),
+                ("image_subject_domains", self.image_subject_domains),
+                ("audiovisual_inventory", self.audiovisual_inventory),
+                ("text_richness", self.text_richness),
+                ("provenance_completeness", self.provenance_completeness),
+                ("entity_sameAs_sources", self.entity_sameAs_sources),
+                ("three_d_inventory", self.three_d_inventory),
+                ("quality_tier_distribution", self.quality_tier_distribution),
+            ]
         }
 
-    def all_queries(self, filters: QueryFilters | None = None) -> dict[str, str]:
-        result: dict[str, str] = {}
+    def all_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
+        result: dict[str, QuerySpec] = {}
         result.update(self.all_base_queries(filters))
         result.update(self.all_ai_queries(filters))
         result.update(self.all_analytics_queries(filters))

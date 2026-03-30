@@ -1,4 +1,4 @@
-"""Unit tests for export resilience: retry logic and continue-on-failure."""
+"""Unit tests for export resilience: retry logic, continue-on-failure, and ?-stripping."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,9 +9,12 @@ import pytest
 from europeana_qlever.export import (
     _cleanup_partial,
     _is_transient,
+    _read_tsv_header,
+    _strip_question_mark_aliases,
     export_all,
     run_query_to_tsv,
 )
+from europeana_qlever.query import QuerySpec
 
 
 class TestIsTransient:
@@ -68,6 +71,36 @@ class TestCleanupPartial:
         _cleanup_partial(f1, f2)
         assert not f1.exists()
         assert not f2.exists()
+
+
+class TestQuestionMarkStripping:
+    def test_read_tsv_header(self, tmp_path: Path):
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text("?item\t?title\t?type\nval1\tval2\tval3\n")
+        headers = _read_tsv_header(tsv)
+        assert headers == ["?item", "?title", "?type"]
+
+    def test_read_tsv_header_no_prefix(self, tmp_path: Path):
+        tsv = tmp_path / "test.tsv"
+        tsv.write_text("item\ttitle\ttype\n")
+        headers = _read_tsv_header(tsv)
+        assert headers == ["item", "title", "type"]
+
+    def test_strip_aliases_with_prefix(self):
+        result = _strip_question_mark_aliases(["?item", "?title", "?type"])
+        assert result is not None
+        assert '"?item" AS "item"' in result
+        assert '"?title" AS "title"' in result
+
+    def test_strip_aliases_no_prefix(self):
+        result = _strip_question_mark_aliases(["item", "title", "type"])
+        assert result is None
+
+    def test_strip_aliases_mixed(self):
+        result = _strip_question_mark_aliases(["?item", "count"])
+        assert result is not None
+        assert '"?item" AS "item"' in result
+        assert '"count"' in result
 
 
 class TestRunQueryToTsvRetry:
@@ -134,8 +167,8 @@ class TestExportAllContinueOnFailure:
         mock_parquet.side_effect = parquet_side_effect
 
         queries = {
-            "bad_query": "SELECT fail",
-            "good_query": "SELECT 1",
+            "bad_query": QuerySpec(name="bad_query", sparql="SELECT fail"),
+            "good_query": QuerySpec(name="good_query", sparql="SELECT 1"),
         }
 
         result = export_all(
@@ -160,7 +193,7 @@ class TestExportAllContinueOnFailure:
 
         result = export_all(
             output_dir=output_dir,
-            queries={"q1": "SELECT 1"},
+            queries={"q1": QuerySpec(name="q1", sparql="SELECT 1")},
             skip_existing=True,
         )
 

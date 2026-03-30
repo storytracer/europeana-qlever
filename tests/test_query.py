@@ -2,7 +2,27 @@
 
 import pytest
 
-from europeana_qlever.query import QueryBuilder, QueryFilters
+from europeana_qlever.query import QueryBuilder, QueryFilters, QuerySpec
+
+
+class TestQuerySpec:
+    def test_simple_spec(self):
+        spec = QuerySpec(name="test", sparql="SELECT 1")
+        assert not spec.is_composite
+        assert spec.sparql == "SELECT 1"
+        assert spec.compose_sql is None
+        assert spec.depends_on == []
+
+    def test_composite_spec(self):
+        spec = QuerySpec(
+            name="composed",
+            compose_sql="SELECT * FROM t",
+            depends_on=["dep1", "dep2"],
+        )
+        assert spec.is_composite
+        assert spec.sparql is None
+        assert spec.compose_sql == "SELECT * FROM t"
+        assert spec.depends_on == ["dep1", "dep2"]
 
 
 class TestQueryBuilder:
@@ -19,19 +39,24 @@ class TestQueryBuilder:
         ]:
             assert col in sparql
 
-    def test_all_queries_have_select_and_where(self):
-        for name, sparql in self.qb.all_queries().items():
-            assert "SELECT" in sparql, f"{name} missing SELECT"
-            assert "WHERE" in sparql, f"{name} missing WHERE"
+    def test_all_sparql_queries_have_select_and_where(self):
+        for name, spec in self.qb.all_queries().items():
+            if spec.sparql:
+                assert "SELECT" in spec.sparql, f"{name} missing SELECT"
+                assert "WHERE" in spec.sparql, f"{name} missing WHERE"
 
-    def test_all_queries_have_prefixes(self):
-        for name, sparql in self.qb.all_queries().items():
-            assert "PREFIX" in sparql, f"{name} missing PREFIX"
+    def test_all_sparql_queries_have_prefixes(self):
+        for name, spec in self.qb.all_queries().items():
+            if spec.sparql:
+                assert "PREFIX" in spec.sparql, f"{name} missing PREFIX"
 
     # --- Registry tests ---
 
     def test_all_base_queries_count(self):
         assert len(self.qb.all_base_queries()) == 7
+
+    def test_all_component_queries_count(self):
+        assert len(self.qb.all_component_queries()) == 8
 
     def test_all_ai_queries_count(self):
         assert len(self.qb.all_ai_queries()) == 5
@@ -45,6 +70,11 @@ class TestQueryBuilder:
     def test_no_duplicate_names(self):
         queries = self.qb.all_queries()
         assert len(queries) == len(set(queries.keys()))
+
+    def test_registry_returns_query_specs(self):
+        for name, spec in self.qb.all_queries().items():
+            assert isinstance(spec, QuerySpec), f"{name} is not a QuerySpec"
+            assert spec.name == name
 
     # --- Filter tests ---
 
@@ -76,14 +106,33 @@ class TestQueryBuilder:
 
     # --- Specific query tests ---
 
-    def test_items_enriched_uses_group_concat(self):
-        sparql = self.qb.items_enriched()
-        assert "GROUP_CONCAT" in sparql
-        assert "GROUP BY" in sparql
+    def test_items_enriched_is_composite(self):
+        specs = self.qb.all_ai_queries()
+        spec = specs["items_enriched"]
+        assert spec.is_composite
+        assert spec.compose_sql is not None
+        assert spec.sparql is None
+        assert len(spec.depends_on) > 0
 
-    def test_items_enriched_uses_separator(self):
-        sparql = self.qb.items_enriched()
-        assert " ||| " in sparql
+    def test_items_enriched_depends_on_component_tables(self):
+        specs = self.qb.all_ai_queries()
+        spec = specs["items_enriched"]
+        for dep in [
+            "items_core", "items_titles", "items_descriptions",
+            "items_subjects", "items_dates", "items_languages",
+            "items_years", "items_creators", "agents",
+        ]:
+            assert dep in spec.depends_on, f"Missing dependency: {dep}"
+
+    def test_items_enriched_compose_sql_has_placeholders(self):
+        specs = self.qb.all_ai_queries()
+        sql = specs["items_enriched"].compose_sql
+        assert "{exports_dir}" in sql
+
+    def test_items_enriched_compose_sql_uses_separator(self):
+        specs = self.qb.all_ai_queries()
+        sql = specs["items_enriched"].compose_sql
+        assert " ||| " in sql
 
     def test_entity_links_agent(self):
         sparql = self.qb.entity_links(entity_type="agent")
@@ -114,21 +163,21 @@ class TestQueryBuilder:
     def test_default_produces_en_native_any(self):
         """Default config: title_en, title_native, title (resolved), no extra lang columns."""
         qb = QueryBuilder()
-        sparql = qb.items_enriched()
-        assert "title_en" in sparql
-        assert "title_native" in sparql
-        assert "title_native_lang" in sparql
+        sparql = qb.core_metadata()
+        assert "title" in sparql
         # No French/German/etc. unless user specifies
         assert "title_fr" not in sparql
         assert "title_de" not in sparql
 
-    def test_parallel_columns_in_items_enriched(self):
-        """items_enriched exposes en, native, and resolved columns."""
-        qb = QueryBuilder()
-        sparql = qb.items_enriched()
-        assert "SAMPLE(" in sparql
-        for col in ["title_en", "title_native", "title_native_lang"]:
-            assert col in sparql
+    def test_items_enriched_compose_sql_has_language_columns(self):
+        """Composite items_enriched has en/native/resolved columns."""
+        specs = self.qb.all_ai_queries()
+        sql = specs["items_enriched"].compose_sql
+        assert "title_en" in sql
+        assert "title_native" in sql
+        assert "title_native_lang" in sql
+        assert "description_en" in sql
+        assert "description_native" in sql
 
     def test_base_query_single_resolved_column(self):
         """core_metadata produces a single ?title column, not parallel columns."""
@@ -140,21 +189,15 @@ class TestQueryBuilder:
         assert "title_en" not in select_clause
         assert "title_native" not in select_clause
 
-    def test_extra_languages_add_columns(self):
-        """Extra languages produce additional columns."""
+    def test_extra_languages_in_compose_sql(self):
+        """Extra languages produce additional columns in composition SQL."""
         qb = QueryBuilder(languages=["fr", "de"])
-        sparql = qb.items_enriched()
-        assert "title_fr" in sparql
-        assert "title_de" in sparql
-
-    def test_filter_languages_override_constructor(self):
-        """QueryFilters.languages overrides constructor."""
-        qb = QueryBuilder(languages=["fr"])
-        f = QueryFilters(languages=["nl", "pl"])
-        sparql = qb.items_enriched(f)
-        assert "title_nl" in sparql
-        assert "title_pl" in sparql
-        assert "title_fr" not in sparql
+        specs = qb.all_ai_queries()
+        sql = specs["items_enriched"].compose_sql
+        assert "title_fr" in sql
+        assert "title_de" in sql
+        assert "description_fr" in sql
+        assert "description_de" in sql
 
     def test_entity_resolution_no_vernacular(self):
         """Entity labels resolve via en → extras → any, no vernacular."""
@@ -169,16 +212,82 @@ class TestQueryBuilder:
         assert "_any" in sparql
 
     def test_vernacular_bound_from_dc_language(self):
-        """The vernacular language is bound from dc:language."""
+        """The vernacular language is bound from dc:language in core_metadata."""
         qb = QueryBuilder()
-        sparql = qb.items_enriched()
+        sparql = qb.core_metadata()
         assert "dc:language" in sparql
         assert "vernacularLang" in sparql
 
     def test_coalesce_in_resolved_title(self):
-        """The resolved title uses COALESCE."""
-        sparql = self.qb.items_enriched()
+        """The resolved title in core_metadata uses COALESCE."""
+        sparql = self.qb.core_metadata()
         assert "COALESCE" in sparql
+
+    # --- Component query tests ---
+
+    def test_items_core_columns(self):
+        sparql = self.qb.items_core()
+        for col in ["?item", "?type", "?rights", "?country", "?dataProvider",
+                     "?isShownAt", "?isShownBy", "?preview", "?landingPage",
+                     "?datasetName", "?completeness"]:
+            assert col in sparql
+
+    def test_items_core_no_group_by(self):
+        sparql = self.qb.items_core()
+        assert "GROUP BY" not in sparql
+        assert "GROUP_CONCAT" not in sparql
+
+    def test_items_titles_columns(self):
+        sparql = self.qb.items_titles()
+        for col in ["?item", "?title", "?lang"]:
+            assert col in sparql
+        assert "GROUP BY" not in sparql
+
+    def test_items_descriptions_columns(self):
+        sparql = self.qb.items_descriptions()
+        for col in ["?item", "?description", "?lang"]:
+            assert col in sparql
+
+    def test_items_subjects_columns(self):
+        sparql = self.qb.items_subjects()
+        for col in ["?item", "?subject"]:
+            assert col in sparql
+
+    def test_items_dates_columns(self):
+        sparql = self.qb.items_dates()
+        for col in ["?item", "?date"]:
+            assert col in sparql
+
+    def test_items_languages_columns(self):
+        sparql = self.qb.items_languages()
+        for col in ["?item", "?language"]:
+            assert col in sparql
+
+    def test_items_years_uses_europeana_proxy(self):
+        sparql = self.qb.items_years()
+        assert "europeanaProxy" in sparql
+        assert "edm:year" in sparql
+        assert "?item" in sparql
+        assert "?year" in sparql
+
+    def test_items_creators_columns(self):
+        sparql = self.qb.items_creators()
+        for col in ["?item", "?creator_value", "?is_iri"]:
+            assert col in sparql
+
+    def test_component_queries_use_provider_proxy(self):
+        """Component queries that access proxy properties use the provider proxy filter."""
+        for method in [self.qb.items_titles, self.qb.items_descriptions,
+                       self.qb.items_subjects, self.qb.items_dates,
+                       self.qb.items_languages, self.qb.items_creators]:
+            sparql = method()
+            assert "ore:proxyFor" in sparql
+
+    def test_component_queries_all_have_select_where(self):
+        for name, spec in self.qb.all_component_queries().items():
+            assert spec.sparql is not None
+            assert "SELECT" in spec.sparql, f"{name} missing SELECT"
+            assert "WHERE" in spec.sparql, f"{name} missing WHERE"
 
     # --- Web resources query tests ---
 
@@ -259,19 +368,14 @@ class TestQueryBuilder:
 
     # --- Separator customisation ---
 
-    def test_custom_separator(self):
+    def test_custom_separator_in_compose_sql(self):
         qb = QueryBuilder(separator=" ; ")
-        sparql = qb.items_enriched()
-        assert " ; " in sparql
-        assert " ||| " not in sparql
+        specs = qb.all_ai_queries()
+        sql = specs["items_enriched"].compose_sql
+        assert " ; " in sql
+        assert " ||| " not in sql
 
     # --- Description columns in AI queries ---
-
-    def test_items_enriched_has_description_columns(self):
-        sparql = self.qb.items_enriched()
-        assert "description_en" in sparql
-        assert "description_native" in sparql
-        assert "description_native_lang" in sparql
 
     def test_text_corpus_has_parallel_columns(self):
         sparql = self.qb.text_corpus()

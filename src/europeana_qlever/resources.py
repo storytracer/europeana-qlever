@@ -201,9 +201,14 @@ class ResourceBudget:
     # ==================================================================
 
     def duckdb_memory(self) -> str:
-        """DuckDB memory budget: 15% of available, 1–8 GB."""
-        gb = self.available_memory_gb * 0.15
-        return f"{_round_gb(_clamp(gb, 1.0, 8.0))}G"
+        """DuckDB memory budget: 30% of available, 4–16 GB.
+
+        The hybrid pipeline's composition step (joining multiple multi-GB
+        Parquet base tables in DuckDB) benefits from a generous memory
+        budget. DuckDB spills to disk when exceeded.
+        """
+        gb = self.available_memory_gb * 0.30
+        return f"{_round_gb(_clamp(gb, 4.0, 16.0))}G"
 
     def duckdb_sample_size(self) -> int:
         """DuckDB type inference sample size. Default 100K."""

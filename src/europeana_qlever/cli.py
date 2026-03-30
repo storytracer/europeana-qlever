@@ -594,14 +594,17 @@ def list_queries_cmd(ctx: click.Context):
 
     for category, queries in [
         ("Base queries", qb.all_base_queries()),
+        ("Component queries (base tables for composite exports)", qb.all_component_queries()),
         ("AI dataset queries", qb.all_ai_queries()),
         ("Analytics queries", qb.all_analytics_queries()),
     ]:
         table = Table(title=category)
         table.add_column("Name", style="cyan")
+        table.add_column("Type", style="dim")
         table.add_column("Description")
-        for name in queries:
-            table.add_row(name, qb.describe(name))
+        for name, spec in queries.items():
+            qtype = "composite" if spec.is_composite else "SPARQL"
+            table.add_row(name, qtype, qb.describe(name))
         display.console.print(table)
         display.console.print()
 
@@ -629,9 +632,9 @@ def _resolve_queries(
     """Build a QueryBuilder and resolve the queries dict from CLI args.
 
     Returns ``(qb, queries)`` where *qb* is a :class:`QueryBuilder` and
-    *queries* is ``dict[str, str]`` mapping names to SPARQL strings.
+    *queries* is ``dict[str, QuerySpec]`` mapping names to query specs.
     """
-    from .query import QueryBuilder, QueryFilters
+    from .query import QueryBuilder, QueryFilters, QuerySpec
 
     modes = sum([
         bool(run_all),
@@ -663,13 +666,13 @@ def _resolve_queries(
     )
 
     qb = QueryBuilder()
-    queries: dict[str, str] = {}
+    queries: dict[str, QuerySpec] = {}
 
     if sparql_files:
         for p in sparql_files:
             stem = p.stem
             name = re.sub(r"^\d+_", "", stem)
-            queries[name] = p.read_text()
+            queries[name] = QuerySpec(name=name, sparql=p.read_text())
     elif run_all:
         queries = qb.all_base_queries(filters)
     elif query_set:
@@ -681,16 +684,22 @@ def _resolve_queries(
         }
         queries = registry[query_set](filters)
     elif query_names:
+        # Check if any requested name is in the registry (handles composites)
+        all_specs = qb.all_queries(filters)
         for name in query_names:
-            method = getattr(qb, name, None)
-            if method is None or name.startswith("_") or name.startswith("all_"):
-                raise click.UsageError(
-                    f"Unknown query: '{name}'. Use `list-queries` to see available queries."
-                )
-            if name == "entity_links":
-                queries[name] = method(filters=filters)
+            if name in all_specs:
+                queries[name] = all_specs[name]
             else:
-                queries[name] = method(filters)
+                method = getattr(qb, name, None)
+                if method is None or name.startswith("_") or name.startswith("all_"):
+                    raise click.UsageError(
+                        f"Unknown query: '{name}'. Use `list-queries` to see available queries."
+                    )
+                if name == "entity_links":
+                    sparql = method(filters=filters)
+                else:
+                    sparql = method(filters)
+                queries[name] = QuerySpec(name=name, sparql=sparql)
 
     return qb, queries
 
@@ -806,12 +815,20 @@ def analyze_qlever(
     """
     from .analysis import analyze_all, render_markdown
 
-    qb, queries = _resolve_queries(
+    qb, specs = _resolve_queries(
         sparql_files, run_all, query_names, query_set,
         countries, types, rights_category, providers,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names,
     )
+
+    # Extract SPARQL strings, skipping composite queries
+    queries = {n: s.sparql for n, s in specs.items() if s.sparql is not None}
+    skipped = [n for n, s in specs.items() if s.is_composite]
+    if skipped:
+        display.console.print(
+            f"[dim]Skipping composite queries (no SPARQL): {', '.join(skipped)}[/dim]"
+        )
 
     analysis_dir: Path = ctx.obj["analysis_dir"]
     out = _analysis_output_path(
@@ -894,12 +911,20 @@ def analyze_static(
     """
     from .analysis import render_static_markdown, static_analyze_all
 
-    qb, queries = _resolve_queries(
+    qb, specs = _resolve_queries(
         sparql_files, run_all, query_names, query_set,
         countries, types, rights_category, providers,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names,
     )
+
+    # Extract SPARQL strings, skipping composite queries
+    queries = {n: s.sparql for n, s in specs.items() if s.sparql is not None}
+    skipped = [n for n, s in specs.items() if s.is_composite]
+    if skipped:
+        display.console.print(
+            f"[dim]Skipping composite queries (no SPARQL): {', '.join(skipped)}[/dim]"
+        )
 
     analysis_dir: Path = ctx.obj["analysis_dir"]
     out = _analysis_output_path(
@@ -961,6 +986,9 @@ def analyze_static(
               help="Skip queries whose .parquet already exists.")
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget (e.g. '4GB' or 'auto').")
+@click.option("--keep-base/--no-keep-base", default=True, show_default=True,
+              help="Keep intermediate base table Parquet files after composition. "
+                   "Use --no-keep-base to clean them up.")
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -982,12 +1010,17 @@ def export(
     timeout: int,
     skip_existing: bool,
     duckdb_memory: str,
+    keep_base: bool,
 ):
     """Export SPARQL query results from QLever as Parquet files.
 
     Use --all for base queries, --query-set for a category, -q for
     specific named queries, or pass .sparql file paths directly.
     Filter options (--country, --type, etc.) apply to named queries.
+
+    Composite queries (like items_enriched) automatically export their
+    dependencies first, then compose the final Parquet via DuckDB.
+    Use --no-keep-base to clean up intermediate base table files.
     """
     from .export import export_all
 
@@ -1014,6 +1047,7 @@ def export(
         skip_existing=skip_existing,
         memory_limit=duckdb_memory,
         temp_directory=exports_dir / ".duckdb_tmp",
+        keep_base=keep_base,
         http_chunk_size=budget.http_chunk_size(),
         http_connect_timeout=budget.http_connect_timeout(),
         duckdb_sample_size=budget.duckdb_sample_size(),
@@ -1246,6 +1280,8 @@ def pipeline(
                 # --- Stage 5: Export ---
                 qb = QueryBuilder()
                 queries = qb.all_base_queries()
+                # Total for dashboard: count SPARQL queries only
+                # (composite dependencies are handled automatically)
                 dash.set_stage("Export", total=len(queries))
 
                 export_result = export_all(
