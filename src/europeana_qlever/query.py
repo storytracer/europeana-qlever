@@ -105,18 +105,18 @@ _DESCRIPTIONS: dict[str, str] = {
     "image_metadata": "Computer vision training: IMAGE items with technical metadata from web resources",
     "entity_links": "owl:sameAs cross-reference table for contextual entities",
     "temporal_coverage": "Items with normalised edm:year from the Europeana proxy",
-    # Analytics queries — designed for fast interactive execution in QLever UI
-    "items_by_type": "Item counts grouped by edm:type",
-    "items_by_country": "Item counts grouped by country",
-    "items_by_type_and_country": "Item counts grouped by edm:type and country",
-    "items_by_provider": "Item counts grouped by data provider",
-    "items_by_language": "Item counts grouped by edm:language",
-    "items_by_type_and_language": "Item counts grouped by edm:type and edm:language",
-    "mime_type_distribution": "Item counts grouped by MIME type and edm:type",
-    "items_by_year": "Item counts grouped by edm:year",
+    # Example queries — designed for fast interactive execution in QLever UI
     "geolocated_places": "Places with coordinates",
-    "text_genre_distribution": "dc:type value distribution for TEXT items (books, newspapers, etc.)",
     "iiif_availability": "Items with IIIF manifests (svcs:has_service) by provider",
+    "items_by_country": "Item counts grouped by country",
+    "items_by_language": "Item counts grouped by edm:language",
+    "items_by_provider": "Item counts grouped by data provider",
+    "items_by_type": "Item counts grouped by edm:type",
+    "items_by_type_and_country": "Item counts grouped by edm:type and country",
+    "items_by_type_and_language": "Item counts grouped by edm:type and edm:language",
+    "items_by_year": "Item counts grouped by edm:year",
+    "mime_type_distribution": "Item counts grouped by MIME type and edm:type",
+    "texts_by_type": "dc:type value distribution for TEXT items (books, newspapers, etc.)",
 }
 
 
@@ -1163,7 +1163,7 @@ class QueryBuilder:
         """).strip()
 
     # -----------------------------------------------------------------------
-    # Analytics queries
+    # Example queries
     # -----------------------------------------------------------------------
 
     def items_by_type(self, filters: QueryFilters | None = None) -> str:
@@ -1340,7 +1340,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def text_genre_distribution(self, filters: QueryFilters | None = None) -> str:
+    def texts_by_type(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore"})
         proxy = self._provider_proxy()
@@ -1455,21 +1455,21 @@ class QueryBuilder:
             specs[n] = self._spec(n, m(filters))
         return specs
 
-    def all_analytics_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
+    def all_example_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
         return {
             n: self._spec(n, m(filters))
             for n, m in [
-                ("items_by_type", self.items_by_type),
-                ("items_by_country", self.items_by_country),
-                ("items_by_type_and_country", self.items_by_type_and_country),
-                ("items_by_provider", self.items_by_provider),
-                ("items_by_language", self.items_by_language),
-                ("items_by_type_and_language", self.items_by_type_and_language),
-                ("mime_type_distribution", self.mime_type_distribution),
-                ("items_by_year", self.items_by_year),
                 ("geolocated_places", self.geolocated_places),
-                ("text_genre_distribution", self.text_genre_distribution),
                 ("iiif_availability", self.iiif_availability),
+                ("items_by_country", self.items_by_country),
+                ("items_by_language", self.items_by_language),
+                ("items_by_provider", self.items_by_provider),
+                ("items_by_type", self.items_by_type),
+                ("items_by_type_and_country", self.items_by_type_and_country),
+                ("items_by_type_and_language", self.items_by_type_and_language),
+                ("items_by_year", self.items_by_year),
+                ("mime_type_distribution", self.mime_type_distribution),
+                ("texts_by_type", self.texts_by_type),
             ]
         }
 
@@ -1477,7 +1477,7 @@ class QueryBuilder:
         result: dict[str, QuerySpec] = {}
         result.update(self.all_base_queries(filters))
         result.update(self.all_ai_queries(filters))
-        result.update(self.all_analytics_queries(filters))
+        result.update(self.all_example_queries(filters))
         return result
 
     def describe(self, query_name: str) -> str:

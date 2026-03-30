@@ -61,8 +61,8 @@ class TestQueryBuilder:
     def test_all_ai_queries_count(self):
         assert len(self.qb.all_ai_queries()) == 5
 
-    def test_all_analytics_queries_count(self):
-        assert len(self.qb.all_analytics_queries()) == 11
+    def test_all_example_queries_count(self):
+        assert len(self.qb.all_example_queries()) == 11
 
     def test_all_queries_count(self):
         assert len(self.qb.all_queries()) == 23

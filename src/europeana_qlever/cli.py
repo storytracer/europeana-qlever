@@ -378,8 +378,9 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
         ("items_by_type_and_language", builder.items_by_type_and_language()),
         ("items_by_year", builder.items_by_year()),
         ("mime_type_distribution", builder.mime_type_distribution()),
-        ("text_genre_distribution", builder.text_genre_distribution()),
+        ("texts_by_type", builder.texts_by_type()),
     ]
+    examples.sort(key=lambda e: e[0])
 
     hostname = socket.gethostname()
 
@@ -666,7 +667,7 @@ def list_queries_cmd(ctx: click.Context):
         ("Base queries", qb.all_base_queries()),
         ("Component queries (base tables for composite exports)", qb.all_component_queries()),
         ("AI dataset queries", qb.all_ai_queries()),
-        ("Analytics queries", qb.all_analytics_queries()),
+        ("Example queries", qb.all_example_queries()),
     ]:
         table = Table(title=category)
         table.add_column("Name", style="cyan")
@@ -749,7 +750,7 @@ def _resolve_queries(
         registry = {
             "base": qb.all_base_queries,
             "ai": qb.all_ai_queries,
-            "analytics": qb.all_analytics_queries,
+            "examples": qb.all_example_queries,
             "all": qb.all_queries,
         }
         queries = registry[query_set](filters)
@@ -826,7 +827,7 @@ def analyze(ctx: click.Context):
               help="Analyze all base queries.")
 @click.option("-q", "--query", "query_names", multiple=True,
               help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(["base", "ai", "analytics", "all"]),
+@click.option("--query-set", type=click.Choice(["base", "ai", "examples", "all"]),
               help="Analyze a predefined set of queries.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
@@ -935,7 +936,7 @@ def analyze_qlever(
               help="Analyze all base queries.")
 @click.option("-q", "--query", "query_names", multiple=True,
               help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(["base", "ai", "analytics", "all"]),
+@click.option("--query-set", type=click.Choice(["base", "ai", "examples", "all"]),
               help="Analyze a predefined set of queries.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
@@ -1028,7 +1029,7 @@ def analyze_static(
               help="Run all base queries (backward-compatible).")
 @click.option("-q", "--query", "query_names", multiple=True,
               help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(["base", "ai", "analytics", "all"]),
+@click.option("--query-set", type=click.Choice(["base", "ai", "examples", "all"]),
               help="Run a predefined set of queries.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
