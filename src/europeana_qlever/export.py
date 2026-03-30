@@ -21,7 +21,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from rdflib.util import from_n3
 from rich.progress import (
+    BarColumn,
     DownloadColumn,
+    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
     TextColumn,
@@ -255,6 +257,7 @@ def tsv_to_parquet(
     batch_size: int = PARQUET_BATCH_SIZE,
     row_group_size: int = 100_000,
     workers: int | None = None,
+    total_hint: int | None = None,
 ) -> int:
     """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow.
 
@@ -274,6 +277,9 @@ def tsv_to_parquet(
         Parquet row group size.
     workers : int or None
         Number of parallel parse workers.  Defaults to half the CPU count.
+    total_hint : int or None
+        Approximate row count for progress display (from the TSV streaming
+        step).  When ``None`` a spinner is shown instead of a progress bar.
 
     Returns
     -------
@@ -303,11 +309,24 @@ def tsv_to_parquet(
         total_rows = 0
         parse = partial(_parse_batch, num_cols=num_cols)
 
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            # executor.map preserves order and pre-fetches batches
-            for parsed_rows in executor.map(parse, _read_raw_batches(fh, batch_size)):
-                _write_batch(writer, col_names, parsed_rows)
-                total_rows += len(parsed_rows)
+        desc = tsv_path.stem
+        if display.is_narrow() and len(desc) > 15:
+            desc = desc[:14] + "…"
+
+        columns = [SpinnerColumn(), TextColumn("[progress.description]{task.description}")]
+        if total_hint is not None:
+            columns.append(BarColumn())
+            columns.append(MofNCompleteColumn())
+        columns.append(TimeElapsedColumn())
+
+        with Progress(*columns, console=display.console) as progress:
+            task = progress.add_task(f"→ {desc}", total=total_hint)
+
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                for parsed_rows in executor.map(parse, _read_raw_batches(fh, batch_size)):
+                    _write_batch(writer, col_names, parsed_rows)
+                    total_rows += len(parsed_rows)
+                    progress.update(task, advance=len(parsed_rows))
 
         writer.close()
 
@@ -547,6 +566,7 @@ def export_all(
                 count = tsv_to_parquet(
                     tsv_path, parquet_path,
                     row_group_size=duckdb_row_group_size,
+                    total_hint=rows,
                 )
                 pq_mb = parquet_path.stat().st_size / 1e6
                 display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
