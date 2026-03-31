@@ -262,13 +262,13 @@ uv run europeana-qlever -d /data/europeana list-queries
 # Backward compatible — runs all 6 base queries
 uv run europeana-qlever -d /data/europeana export --all
 
-# Run specific queries by name
-uv run europeana-qlever -d /data/europeana export -q items_enriched -q open_reusable_inventory
+# Run a specific query by name
+uv run europeana-qlever -d /data/europeana export -q items_enriched
 
-# Run all analytics queries
-uv run europeana-qlever -d /data/europeana export --query-set analytics
+# Run all example queries
+uv run europeana-qlever -d /data/europeana export --query-set examples
 
-# Run every query (base + AI + analytics = 36)
+# Run every query (examples + base + enriched = 18)
 uv run europeana-qlever -d /data/europeana export --query-set all
 
 # Filtered export: openly-licensed images from the Netherlands
