@@ -7,10 +7,12 @@ to compose final exports from multiple Parquet base tables.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor
+from collections import deque
+from concurrent.futures import Future, ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
 
@@ -380,9 +382,23 @@ def tsv_to_parquet(
             task = progress.add_task(f"→ {desc}", total=total_hint)
 
             with ProcessPoolExecutor(max_workers=workers) as executor:
-                for parsed_rows in executor.map(
-                    parse, _read_raw_batches(fh, batch_size)
-                ):
+                # Bounded submission: limit in-flight futures to avoid
+                # OOM on large files (executor.map eagerly consumes the
+                # entire generator, queuing all batches in memory).
+                max_inflight = workers * 2
+                batches = _read_raw_batches(fh, batch_size)
+                futures: deque[Future] = deque()
+
+                for batch in itertools.islice(batches, max_inflight):
+                    futures.append(executor.submit(parse, batch))
+
+                while futures:
+                    parsed_rows = futures.popleft().result()
+
+                    next_batch = next(batches, None)
+                    if next_batch is not None:
+                        futures.append(executor.submit(parse, next_batch))
+
                     if writer is None:
                         # Infer schema from first batch
                         schema = _infer_schema(col_names, parsed_rows)
