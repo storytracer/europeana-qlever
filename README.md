@@ -1,17 +1,17 @@
 # europeana-qlever
 
-CLI for ingesting the full Europeana EDM metadata dump (~66 million records, 2–5 billion triples in Turtle format) into a [QLever](https://github.com/ad-freiburg/qlever) SPARQL engine and exporting query results as Parquet files.
+CLI for ingesting the full Europeana EDM metadata dump (~66 million records, 2-5 billion triples in Turtle format) into a [QLever](https://github.com/ad-freiburg/qlever) SPARQL engine and exporting query results as Parquet files.
 
 ## Overview
 
-The pipeline downloads Europeana's bulk TTL dump, merges thousands of small ZIP archives into chunked TTL files with unified prefixes, builds a QLever index, serves a SPARQL endpoint, and exports structured query results to Parquet via DuckDB.
+The pipeline downloads Europeana's bulk TTL dump, merges thousands of small ZIP archives into chunked TTL files with unified prefixes, builds a QLever index, serves a SPARQL endpoint, and exports structured query results to Parquet via a hybrid SPARQL + DuckDB architecture.
 
 ```
 Europeana FTP (15,000+ ZIPs)
-  → merge (parallel extraction, prefix unification)
-  → QLever index (~2–5 hours)
+  → merge (parallel extraction, inline validation, prefix unification)
+  → QLever index (~2-5 hours)
   → SPARQL endpoint (localhost:7001)
-  → Parquet export (DuckDB + zstd compression)
+  → Parquet export (Phase 1: SPARQL → TSV → Parquet, Phase 2: DuckDB composition)
 ```
 
 ## Dataset sizing
@@ -19,36 +19,39 @@ Europeana FTP (15,000+ ZIPs)
 | Metric | Estimate |
 |--------|----------|
 | Records | ~66 million |
-| Triples per record | ~30–80 |
-| Total triples | ~2–5 billion |
-| Compressed TTL on FTP | ~50–120 GB |
-| Uncompressed TTL | ~200–500 GB |
-| QLever index size | ~100–250 GB |
-| RAM for indexing | ~8–15 GB (configurable via `--stxxl-memory`) |
-| RAM for query serving | ~10–15 GB (configurable via `--query-memory`) |
+| Triples per record | ~30-80 |
+| Total triples | ~2-5 billion |
+| Compressed TTL on FTP | ~50-120 GB |
+| Uncompressed TTL | ~200-500 GB |
+| QLever index size | ~100-250 GB |
+| RAM for indexing | ~8-15 GB (configurable via `--stxxl-memory`) |
+| RAM for query serving | ~10-15 GB (configurable via `--query-memory`) |
 
-Total disk footprint is approximately 600–800 GB (ZIPs + merged TTL + index + working space).
+Total disk footprint is approximately 600-800 GB (ZIPs + merged TTL + index + working space).
 
 ### Memory management
 
-The pipeline is designed to run within bounded memory. Each stage has explicit memory controls:
+Each pipeline stage has explicit memory controls:
 
 | Stage | Default | How memory is bounded |
 |-------|---------|----------------------|
 | **Merge** | adaptive | Workers stream line-by-line to temp files; `AdaptiveThrottle` dynamically adjusts concurrency based on CPU and memory pressure (starts at `workers // 2`, scales between 2 and `workers`). Invalid TTL entries are validated inline via rdflib and skipped |
 | **Index** | 8 GB stxxl | Configurable via `--stxxl-memory` |
 | **Query serving** | 10 GB query / 5 GB cache | Configurable via `--query-memory` / `--cache-size` |
-| **Parquet export (Phase 1)** | bounded | TSV→Parquet conversion uses parallel rdflib parsing with bounded submission (at most `workers * 2` batches in-flight), keeping memory constant regardless of file size |
-| **Parquet export (Phase 2)** | 4 GB DuckDB | DuckDB composition spills to disk when memory limit is exceeded |
+| **Parquet export (Phase 1)** | bounded | TSV-to-Parquet conversion uses parallel rdflib parsing with bounded submission (at most `workers * 2` batches in-flight), keeping memory constant regardless of file size |
+| **Parquet export (Phase 2)** | 75% available RAM | DuckDB composition uses 75% of available RAM (min 4 GB). Spills to disk when memory limit is exceeded. Configurable via `--duckdb-memory` |
 
-A background **resource monitor** (`psutil`) runs throughout the pipeline, sampling RSS, available memory, disk space, and CPU usage (system-wide and per-process) every 1–2 seconds. Samples are logged to `<work-dir>/monitor.log` (CSV). Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, an **adaptive throttle** dynamically adjusts worker concurrency based on CPU and memory pressure, using hysteresis to avoid jitter.
+A background **resource monitor** runs throughout the pipeline, sampling RSS, available memory, disk space, and CPU usage every 1-2 seconds. Samples are logged to `<work-dir>/monitor.log` (CSV). Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, an **adaptive throttle** dynamically adjusts worker concurrency based on CPU and memory pressure, using hysteresis to avoid jitter.
+
+A **live dashboard** (Rich-based terminal UI) displays real-time system resources (CPU, memory, disk), pipeline stage progress, and a scrolling log tail during the full `pipeline` command.
 
 ## Prerequisites
 
 - **Python 3.11+**
-- **[uv](https://docs.astral.sh/uv/)** — Python project manager
-- **[QLever](https://github.com/ad-freiburg/qlever)** — either compiled from source or installed via package. The `qlever` CLI tool should also be installed (`uv tool install qlever`).
-- **[rclone](https://rclone.org/)** — for downloading the Europeana FTP dump
+- **[uv](https://docs.astral.sh/uv/)** -- Python project manager
+- **[QLever](https://github.com/ad-freiburg/qlever)** -- either compiled from source or installed via package
+- **qlever CLI** -- install with `uv tool install qlever` or `pip install qlever`
+- **[rclone](https://rclone.org/)** -- for downloading the Europeana FTP dump
 
 ### Building QLever from source
 
@@ -81,22 +84,36 @@ Verify:
 uv run europeana-qlever --help
 ```
 
-## Usage
+## Quick start
 
-Every command requires a **work directory** (`-d` / `--work-dir`), where all output is written. You can also set the `EUROPEANA_QLEVER_WORK_DIR` environment variable instead of passing `-d` each time.
+Run the full pipeline end-to-end with a single command:
 
-The work directory contains these subdirectories (created automatically as needed):
-
+```bash
+uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL
 ```
-<work-dir>/
-├── ttl-merged/    # Merged chunk TTL files
-├── index/         # Qleverfile, settings.json, QLever index files
-└── exports/       # Parquet output files
+
+This runs: merge -> write-qleverfile -> index -> start -> export -> stop.
+
+Progress is checkpointed to `pipeline_state.json` so a failed or interrupted run resumes automatically when you re-run the same command. Use `--force` to clear the checkpoint and start fresh.
+
+```bash
+# Resume after interruption (automatic)
+uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL
+
+# Skip stages whose output already exists
+uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL --skip-merge --skip-index
+
+# Start fresh, ignoring checkpoint
+uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL --force
 ```
+
+## Step-by-step usage
+
+Every command requires a **work directory** (`-d` / `--work-dir`), where all output is written. You can also set the `EUROPEANA_QLEVER_WORK_DIR` environment variable.
 
 #### 1. Download the Europeana TTL dump
 
-The full dump lives at `ftp://download.europeana.eu/dataset/TTL/` (anonymous FTP, ~15,000+ ZIP files). Configure rclone with the Europeana remote, then download to a directory of your choice:
+The full dump lives at `ftp://download.europeana.eu/dataset/TTL/` (anonymous FTP, ~15,000+ ZIP files). Configure rclone with the Europeana remote, then download:
 
 ```bash
 rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10 --checkers=8
@@ -104,7 +121,7 @@ rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10 --che
 
 #### 2. Merge TTL files
 
-Merging discovers all RDF prefixes (via rdflib sampling) and extracts ZIPs in parallel into chunked TTL files (~5 GB each) with a unified prefix header. Each TTL entry is validated inline via rdflib — invalid entries are skipped and logged. Concurrency is managed by an adaptive throttle that scales based on CPU and memory pressure. Pass the source TTL directory as an argument:
+Merging discovers RDF prefixes (via rdflib sampling), extracts ZIPs in parallel into chunked TTL files (~5 GB each) with a unified prefix header, and validates each TTL entry inline via rdflib -- invalid entries are skipped and logged.
 
 ```bash
 uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL
@@ -119,22 +136,13 @@ uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL \
   --sample-size 100
 ```
 
-Resource usage is logged to `<work-dir>/monitor.log` during merge.
-
 ##### MD5 checksum verification
 
-Europeana's FTP server provides `.md5sum` companion files for each ZIP. However,
-these files are **unreliable** — as of March 2026, only 159 of 2,272 md5sum files
-(7%) match their companion ZIPs. Two issues exist on the FTP server:
+Europeana's FTP server provides `.md5sum` companion files for each ZIP. However, these files are **unreliable** -- as of March 2026, only 159 of 2,272 md5sum files (7%) match their companion ZIPs. Two issues exist on the FTP server:
 
-1. **Stale checksums** (2,104 files): md5sum files are periodically regenerated
-   from freshly built ZIPs that are never published to the FTP, while the actual
-   ZIP files retain older content. The md5sum server modification times are months
-   newer than the ZIP modification times.
+1. **Stale checksums** (2,104 files): md5sum files are periodically regenerated from freshly built ZIPs that are never published to the FTP, while the actual ZIP files retain older content.
 
-2. **Leading-zero stripping** (126 files): md5sum files contain 31 or 30
-   hex characters instead of the expected 32 — leading zeros are stripped from
-   the hash.
+2. **Leading-zero stripping** (126 files): md5sum files contain 31 or 30 hex characters instead of the expected 32 -- leading zeros are stripped from the hash.
 
 MD5 verification is therefore **skipped by default**. To opt in:
 
@@ -161,7 +169,7 @@ uv run europeana-qlever -d /data/europeana validate ~/data/europeana/TTL
 uv run europeana-qlever -d /data/europeana validate ~/data/europeana/TTL --no-checksums=false
 ```
 
-Note: validation is also performed inline during merge — invalid entries are automatically skipped.
+Note: validation is also performed inline during merge -- invalid entries are automatically skipped.
 
 #### 3. Generate the Qleverfile
 
@@ -169,7 +177,7 @@ Note: validation is also performed inline during merge — invalid entries are a
 uv run europeana-qlever -d /data/europeana write-qleverfile --qlever-bin /path/to/qlever/build
 ```
 
-This writes a `Qleverfile` and `settings.json` into `<work-dir>/index/` with EDM-optimised settings (all languages kept, external prefixes for long URIs, Unicode support, etc.).
+This writes a `Qleverfile`, `settings.json`, and `Qleverfile-ui.yml` into `<work-dir>/index/` with EDM-optimised settings (all languages kept, external prefixes for long URIs, Unicode support). Memory settings are computed dynamically from available RAM.
 
 #### 4. Build the index
 
@@ -177,7 +185,7 @@ This writes a `Qleverfile` and `settings.json` into `<work-dir>/index/` with EDM
 uv run europeana-qlever -d /data/europeana index
 ```
 
-This takes approximately 2–5 hours depending on hardware. Run in tmux or screen for long sessions.
+This takes approximately 2-5 hours depending on hardware. Run in tmux or screen for long sessions. Extra arguments are forwarded to `qlever index` (e.g. `--overwrite-existing`).
 
 #### 5. Start the SPARQL server
 
@@ -185,7 +193,7 @@ This takes approximately 2–5 hours depending on hardware. Run in tmux or scree
 uv run europeana-qlever -d /data/europeana start
 ```
 
-Verify with a basic query:
+The `start` command regenerates the Qleverfile with current resource budgets before launching. Verify with a basic query:
 
 ```bash
 curl -Gs http://localhost:7001 \
@@ -195,34 +203,26 @@ curl -Gs http://localhost:7001 \
 
 #### 6. Export to Parquet
 
-Export runs SPARQL queries against the server and writes Parquet files to `<work-dir>/exports/` (intermediate TSV files are deleted automatically):
+Export runs SPARQL queries against the server and writes Parquet files to `<work-dir>/exports/`:
 
 ```bash
-# Export all bundled queries
+# Export all base queries (6 queries)
 uv run europeana-qlever -d /data/europeana export --all
 
-# Export specific query files
-uv run europeana-qlever -d /data/europeana export path/to/custom_query.sparql
+# Export a specific named query
+uv run europeana-qlever -d /data/europeana export -q items_enriched
 
-# Skip already-exported queries
-uv run europeana-qlever -d /data/europeana export --all --skip-existing --timeout 7200
+# Export all 18 user-facing queries
+uv run europeana-qlever -d /data/europeana export --query-set all
+
+# Custom .sparql file
+uv run europeana-qlever -d /data/europeana export path/to/custom_query.sparql
 ```
 
 #### 7. Stop the server
 
 ```bash
 uv run europeana-qlever -d /data/europeana stop
-```
-
-#### Full pipeline
-
-Run everything end-to-end (merge → write-qleverfile → index → start → export → stop):
-
-```bash
-uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL
-
-# Skip stages whose output already exists
-uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL --skip-merge --skip-index
 ```
 
 ## CLI commands
@@ -238,38 +238,55 @@ europeana-qlever -d WORK_DIR
 ├── index                      Build the QLever index from merged TTL chunks
 ├── start                      Start the QLever SPARQL server
 ├── stop                       Stop the QLever SPARQL server
+├── list-queries               List all available named queries by category
+├── analyze
+│   ├── qlever                 Profile queries against a running QLever server
+│   └── static                 Offline structural analysis via SPARQL algebra
 ├── export                     Export SPARQL query results as Parquet files
-├── list-queries               List all available named queries
 └── pipeline TTL_DIR           Run the full pipeline: merge → index → start → export → stop
 ```
 
-## Export queries
+## Query system
 
-SPARQL queries are generated dynamically by the `QueryBuilder` class in `query.py`. There are 18 named queries in three categories:
+SPARQL queries are generated dynamically by the `QueryBuilder` class. Queries are organized into four categories:
 
-- **Example queries** (11) — type/country/language/provider/year distributions, IIIF availability, and more
-- **Base queries** (6) — web resources, rights/providers, agents, places, concepts, timespans
-- **Enriched queries** (1) — items_enriched (denormalized, composed via DuckDB from component tables)
+| Category | Count | Description |
+|----------|-------|-------------|
+| **Example** | 11 | Analytical distributions: items by type, country, language, year, provider; MIME types, IIIF availability, etc. |
+| **Base** | 6 | Entity-level exports: web resources, rights/providers, agents, places, concepts, timespans |
+| **Component** | 8 | Flat SPARQL scans (no GROUP BY) that serve as building blocks for composite exports: items_core, items_titles, items_descriptions, items_subjects, items_dates, items_languages, items_years, items_creators |
+| **Enriched** | 1 | `items_enriched` -- denormalized composite export built from component tables via DuckDB |
 
-List all available queries:
+There are 18 user-facing queries (example + base + enriched). Component queries are also individually addressable via `-q items_core`, etc., but are primarily building blocks that `items_enriched` depends on and exports automatically.
+
+List all queries:
 
 ```bash
 uv run europeana-qlever -d /data/europeana list-queries
 ```
 
+### Hybrid export architecture
+
+Composite queries like `items_enriched` use a two-phase export:
+
+- **Phase 1 (QLever):** Simple, flat SPARQL scans export to Parquet "base tables" -- no GROUP BY, no GROUP_CONCAT, minimal OPTIONALs. QLever does what it's best at: index scans and triple pattern matching over billions of triples.
+- **Phase 2 (DuckDB):** SQL joins the base table Parquet files, resolves language priorities, aggregates multi-valued properties (using native `LIST` and `STRUCT` Parquet types), and produces the final denormalized export.
+
+Dependencies are resolved automatically -- exporting `items_enriched` transparently exports all 8 component tables first.
+
 ### Export examples
 
 ```bash
-# Backward compatible — runs all 6 base queries
+# All 6 base queries
 uv run europeana-qlever -d /data/europeana export --all
 
-# Run a specific query by name
+# A specific named query (composite dependencies auto-exported)
 uv run europeana-qlever -d /data/europeana export -q items_enriched
 
-# Run all example queries
+# All example queries
 uv run europeana-qlever -d /data/europeana export --query-set examples
 
-# Run every query (examples + base + enriched = 18)
+# Every query (examples + base + enriched = 18)
 uv run europeana-qlever -d /data/europeana export --query-set all
 
 # Filtered export: openly-licensed images from the Netherlands
@@ -279,7 +296,7 @@ uv run europeana-qlever -d /data/europeana export -q items_enriched \
 # Sample 10,000 items for development
 uv run europeana-qlever -d /data/europeana export -q items_enriched --limit 10000
 
-# Custom .sparql files still work
+# Custom .sparql files
 uv run europeana-qlever -d /data/europeana export path/to/custom_query.sparql
 ```
 
@@ -299,14 +316,22 @@ All filter options apply to named queries (`-q`, `--query-set`, `--all`):
 | `--dataset-name` | Filter by datasetName (repeatable) |
 | `--limit` | LIMIT clause for all queries |
 
+### Export control options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--skip-existing` | off | Skip queries whose `.parquet` already exists |
+| `--keep-base / --no-keep-base` | keep | Retain or delete intermediate component table Parquets after composition |
+| `--reuse-tsv` | off | Skip SPARQL download if the `.tsv` file already exists (useful for re-testing Parquet conversion) |
+| `--duckdb-memory` | auto (75% RAM) | DuckDB memory budget for Phase 2 composition (e.g. `4GB` or `auto`) |
+| `--timeout` | 3600 | Per-query timeout in seconds |
+
 ### Language resolution
 
 Queries resolve multilingual labels using a parallel English + vernacular model:
 
-- **`items_enriched`** produces parallel columns: `title_en` (English), `title_native`
-  (item's own language from `dc:language`), `title_native_lang` (ISO 639 code), and
-  `title` (resolved best-available) — composed via DuckDB from component tables.
-- **Entity labels** (creator names, subject terms) resolve via English → any available.
+- **`items_enriched`** produces parallel columns: `title_en` (English), `title_native` (item's own language from `dc:language`), `title_native_lang` (ISO 639 code), and `title` (resolved best-available) -- composed via DuckDB from component tables.
+- **Entity labels** (creator names, subject terms) resolve via English -> any available.
 
 Add more languages with `--language`:
 
@@ -316,31 +341,45 @@ uv run europeana-qlever -d /data/europeana export -q items_enriched --language f
 
 This adds `title_fr`, `title_de`, `description_fr`, `description_de` columns.
 
+### Query analysis
+
+The `analyze` command has two modes for diagnosing query performance:
+
+```bash
+# Runtime profiling against a running QLever server (collects execution tree metadata)
+uv run europeana-qlever -d /data/europeana analyze qlever -q items_core --limit 1000
+
+# Offline structural analysis (no server needed, uses SPARQL algebra)
+uv run europeana-qlever -d /data/europeana analyze static -q items_core
+
+# Analyze all enriched queries
+uv run europeana-qlever -d /data/europeana analyze static --query-set enriched
+```
+
+Both modes produce Markdown reports in `<work-dir>/analysis/`. The `qlever` mode identifies runtime bottlenecks from the execution tree; the `static` mode identifies structural complexity (OPTIONAL nesting depth, triple pattern count, aggregate cost).
+
 ## Directory layout
 
 **Repository:**
 
 | Directory / File | Purpose |
 |-----------|---------|
-| `src/europeana_qlever/` | Python CLI source code |
-| `src/europeana_qlever/throttle.py` | Adaptive CPU/memory-aware concurrency throttle |
-| `src/europeana_qlever/validate.py` | TTL validation (standalone + inline for merge) |
-| `src/europeana_qlever/dashboard.py` | Live Rich terminal dashboard |
-| `src/europeana_qlever/resources.py` | System resource detection & budget calculation |
-| `src/europeana_qlever/state.py` | Pipeline state tracking & validation results |
-| `tests/` | Unit tests |
-| `EDM.md` | Europeana Data Model reference — entity relationships, RDF namespaces, rights framework, and domain context |
-| `docs/qlever/docs/` | QLever documentation (upstream MkDocs source) — Qleverfile format, SPARQL compliance, text/geo/path search, materialized views, troubleshooting |
-| `docs/europeana/` | Europeana Knowledge Base — EDM mapping guidelines (per-class properties), publishing guides (content/metadata tiers, rights statements), semantic enrichments, API docs |
+| `src/europeana_qlever/` | Python CLI source code (14 modules, ~6,900 lines) |
+| `tests/` | Unit tests (query, export, compose, validate, throttle, state, analysis) |
+| `EDM.md` | Europeana Data Model reference -- entity relationships, RDF namespaces, rights framework |
+| `docs/qlever/docs/` | QLever documentation (upstream MkDocs source) -- Qleverfile format, SPARQL compliance, text/geo/path search, troubleshooting |
+| `docs/europeana/` | Europeana Knowledge Base -- EDM mapping guidelines, publishing guides, semantic enrichments, API docs |
 
 **Work directory** (specified via `-d`):
 
 | Path | Purpose |
 |------|---------|
-| `ttl-merged/` | Merged chunk TTL files |
-| `index/` | Qleverfile, settings.json, and QLever index files |
-| `exports/` | Parquet output files |
-| `monitor.log` | Resource monitor log (CSV: timestamp, RSS, available memory, disk free) |
+| `ttl-merged/` | Merged chunk TTL files (~5 GB each) |
+| `index/` | Qleverfile, settings.json, Qleverfile-ui.yml, and QLever index files |
+| `exports/` | Parquet output files (TSV intermediates are deleted) |
+| `analysis/` | Query performance analysis Markdown reports |
+| `monitor.log` | Resource monitor log (CSV: timestamp, RSS, available memory, disk free, CPU) |
+| `pipeline_state.json` | Pipeline checkpoint for resume-on-failure |
 
 ## Refreshing the data
 
