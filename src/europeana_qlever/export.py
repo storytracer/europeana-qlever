@@ -425,6 +425,7 @@ def _compose_to_parquet(
     output_dir: Path,
     *,
     memory_limit: str = "4GB",
+    threads: int | None = None,
     temp_directory: Path | None = None,
     row_group_size: int = 100_000,
 ) -> int:
@@ -433,28 +434,57 @@ def _compose_to_parquet(
     The SQL template uses ``{exports_dir}`` as a placeholder that is
     replaced with the actual *output_dir* path.
 
+    When *spec.compose_steps* is set, each step is executed individually
+    with per-step progress logging (row count and elapsed time).
+
     Returns the row count of the output Parquet file.
     """
     assert spec.compose_sql is not None
     parquet_path = output_dir / f"{spec.name}.parquet"
-
-    # Replace the exports_dir placeholder in the SQL template
-    sql = spec.compose_sql.replace("{exports_dir}", str(output_dir))
+    dir_str = str(output_dir)
 
     con = duckdb.connect()
     con.execute(f"SET memory_limit = '{memory_limit}'")
+    if threads is not None:
+        con.execute(f"SET threads = {threads}")
     if temp_directory is not None:
         temp_directory.mkdir(parents=True, exist_ok=True)
         con.execute(f"SET temp_directory = '{temp_directory}'")
 
-    con.execute(f"""
-        COPY (
-            {sql}
-        )
-        TO '{parquet_path}'
-        (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})
-    """)
-    count: int = con.execute(
+    if spec.compose_steps:
+        total = len(spec.compose_steps)
+        for i, step in enumerate(spec.compose_steps, 1):
+            step_sql = step.sql.replace("{exports_dir}", dir_str)
+            t0 = time.perf_counter()
+            if step.is_final:
+                con.execute(f"""
+                    COPY ({step_sql})
+                    TO '{parquet_path}'
+                    (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})
+                """)
+                elapsed = time.perf_counter() - t0
+                display.console.print(
+                    f"  [dim][{i}/{total}][/dim] {step.name} ({elapsed:.1f}s)"
+                )
+            else:
+                con.execute(step_sql)
+                elapsed = time.perf_counter() - t0
+                count: int = con.execute(
+                    f"SELECT COUNT(*) FROM {step.name}"
+                ).fetchone()[0]  # type: ignore[index]
+                display.console.print(
+                    f"  [dim][{i}/{total}][/dim] {step.name}: "
+                    f"{count:,} rows ({elapsed:.1f}s)"
+                )
+    else:
+        sql = spec.compose_sql.replace("{exports_dir}", dir_str)
+        con.execute(f"""
+            COPY ({sql})
+            TO '{parquet_path}'
+            (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})
+        """)
+
+    count = con.execute(
         f"SELECT COUNT(*) FROM '{parquet_path}'"
     ).fetchone()[0]  # type: ignore[index]
     con.close()
@@ -488,6 +518,7 @@ def export_all(
     timeout: int = QLEVER_QUERY_TIMEOUT,
     skip_existing: bool = False,
     memory_limit: str = "4GB",
+    duckdb_threads: int | None = None,
     temp_directory: Path | None = None,
     dashboard: object | None = None,
     *,
@@ -625,11 +656,16 @@ def export_all(
         try:
             if spec.is_composite:
                 # Phase 2: DuckDB composition
-                display.console.print("  Composing from base tables…")
+                threads_info = f", {duckdb_threads} threads" if duckdb_threads else ""
+                display.console.print(
+                    f"  Composing from base tables "
+                    f"[dim]({memory_limit} memory{threads_info})[/dim]"
+                )
                 duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
                 count = _compose_to_parquet(
                     spec, output_dir,
                     memory_limit=memory_limit,
+                    threads=duckdb_threads,
                     temp_directory=duckdb_tmp,
                     row_group_size=duckdb_row_group_size,
                 )

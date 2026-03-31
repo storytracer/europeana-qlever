@@ -35,11 +35,16 @@ class QuerySpec:
     Simple SPARQL exports have *sparql* set and *compose_sql* ``None``.
     Composite exports (e.g. ``items_enriched``) have *compose_sql* set,
     *sparql* ``None``, and *depends_on* listing the required base tables.
+
+    When *compose_steps* is provided, the export engine executes each
+    step individually with progress logging instead of running the
+    monolithic *compose_sql* in one shot.
     """
 
     name: str
     sparql: str | None = None
     compose_sql: str | None = None
+    compose_steps: list | None = None
     depends_on: list[str] = field(default_factory=list)
     description: str = ""
 
@@ -977,7 +982,7 @@ class QueryBuilder:
         }
 
     def all_enriched_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
-        from .compose import items_enriched_sql
+        from .compose import items_enriched_sql, items_enriched_steps
 
         component_names = list(self.all_component_queries(filters))
         # agents is needed for creator label resolution
@@ -987,6 +992,10 @@ class QueryBuilder:
             "items_enriched": QuerySpec(
                 name="items_enriched",
                 compose_sql=items_enriched_sql(
+                    separator=self.separator,
+                    extra_languages=self.extra_languages,
+                ),
+                compose_steps=items_enriched_steps(
                     separator=self.separator,
                     extra_languages=self.extra_languages,
                 ),

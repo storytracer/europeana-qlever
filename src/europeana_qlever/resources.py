@@ -200,15 +200,23 @@ class ResourceBudget:
     # Export / DuckDB
     # ==================================================================
 
-    def duckdb_memory(self) -> str:
-        """DuckDB memory budget: 30% of available, 4–16 GB.
+    def duckdb_threads(self) -> int:
+        """DuckDB worker threads: 2/3 of CPU count, min 2.
 
-        The hybrid pipeline's composition step (joining multiple multi-GB
-        Parquet base tables in DuckDB) benefits from a generous memory
-        budget. DuckDB spills to disk when exceeded.
+        Leaves headroom for the OS, QLever server, and other processes
+        to avoid saturating all cores during composition.
         """
-        gb = self.available_memory_gb * 0.30
-        return f"{_round_gb(_clamp(gb, 4.0, 16.0))}G"
+        return max(2, (self.cpu_count * 2) // 3)
+
+    def duckdb_memory(self) -> str:
+        """DuckDB memory budget: 60% of available, min 4 GB, no upper cap.
+
+        During composition, DuckDB is the only memory-heavy process
+        started by the script — QLever is idle (no queries in flight).
+        A generous budget avoids expensive spill-to-disk on large joins.
+        """
+        gb = self.available_memory_gb * 0.60
+        return f"{_round_gb(max(gb, 4.0))}G"
 
     def duckdb_sample_size(self) -> int:
         """DuckDB type inference sample size. Default 100K."""
@@ -350,6 +358,7 @@ class ResourceBudget:
 
         # --- Export ---
         tbl.add_row("DuckDB memory", self.duckdb_memory(), "auto")
+        tbl.add_row("DuckDB threads", str(self.duckdb_threads()), "auto")
         tbl.add_row("HTTP chunk", _fmt_bytes(self.http_chunk_size()), "auto")
         tbl.add_row("Row group size", f"{self.duckdb_row_group_size():,}", "default")
         tbl.add_row("Export timeout", f"{self.export_timeout()}s", "default")
