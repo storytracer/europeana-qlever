@@ -51,13 +51,13 @@ class TestQueryBuilder:
         assert len(self.qb.all_component_queries()) == 8
 
     def test_all_ai_queries_count(self):
-        assert len(self.qb.all_ai_queries()) == 5
+        assert len(self.qb.all_ai_queries()) == 1
 
     def test_all_example_queries_count(self):
         assert len(self.qb.all_example_queries()) == 11
 
     def test_all_queries_count(self):
-        assert len(self.qb.all_queries()) == 22
+        assert len(self.qb.all_queries()) == 18
 
     def test_no_duplicate_names(self):
         queries = self.qb.all_queries()
@@ -78,7 +78,7 @@ class TestQueryBuilder:
 
     def test_type_filter(self):
         f = QueryFilters(types=["IMAGE"])
-        sparql = self.qb.temporal_coverage(f)
+        sparql = self.qb.items_core(f)
         assert '"IMAGE"' in sparql
 
     def test_open_rights_filter(self):
@@ -126,14 +126,6 @@ class TestQueryBuilder:
         sql = specs["items_enriched"].compose_sql
         assert " ||| " in sql
 
-    def test_entity_links_agent(self):
-        sparql = self.qb.entity_links(entity_type="agent")
-        assert "edm:Agent" in sparql
-
-    def test_entity_links_place(self):
-        sparql = self.qb.entity_links(entity_type="place")
-        assert "edm:Place" in sparql
-
     def test_items_by_year_uses_europeana_proxy(self):
         sparql = self.qb.items_by_year()
         assert "europeanaProxy" in sparql
@@ -166,18 +158,6 @@ class TestQueryBuilder:
         assert "title_de" in sql
         assert "description_fr" in sql
         assert "description_de" in sql
-
-    def test_entity_resolution_no_vernacular(self):
-        """Entity labels resolve via en → extras → any, no vernacular."""
-        qb = QueryBuilder()
-        sparql = qb.entity_links(entity_type="agent")
-        assert "vernacular" not in sparql.lower()
-
-    def test_entity_resolution_has_wildcard(self):
-        """Entity label chain ends with a wildcard fallback."""
-        qb = QueryBuilder()
-        sparql = qb.entity_links(entity_type="agent")
-        assert "_any" in sparql
 
     # --- Component query tests ---
 
@@ -282,16 +262,6 @@ class TestQueryBuilder:
             assert col in sparql
         assert "edm:TimeSpan" in sparql
 
-    # --- Entity links for all entity types ---
-
-    def test_entity_links_concept(self):
-        sparql = self.qb.entity_links(entity_type="concept")
-        assert "skos:Concept" in sparql
-
-    def test_entity_links_timespan(self):
-        sparql = self.qb.entity_links(entity_type="timespan")
-        assert "edm:TimeSpan" in sparql
-
     # --- Multiple filters combined ---
 
     def test_combined_filters(self):
@@ -314,12 +284,6 @@ class TestQueryBuilder:
 
     # --- Year filters ---
 
-    def test_year_filters_in_temporal_coverage(self):
-        f = QueryFilters(year_from=1800, year_to=1900)
-        sparql = self.qb.temporal_coverage(f)
-        assert "1800" in sparql
-        assert "1900" in sparql
-
     # --- Separator customisation ---
 
     def test_custom_separator_in_compose_sql(self):
@@ -328,19 +292,6 @@ class TestQueryBuilder:
         sql = specs["items_enriched"].compose_sql
         assert " ; " in sql
         assert " ||| " not in sql
-
-    # --- Description columns in AI queries ---
-
-    def test_text_corpus_has_parallel_columns(self):
-        sparql = self.qb.text_corpus()
-        assert "title_en" in sparql
-        assert "title_native" in sparql
-        assert "description_en" in sparql
-
-    def test_image_metadata_has_parallel_title_columns(self):
-        sparql = self.qb.image_metadata()
-        assert "title_en" in sparql
-        assert "title_native" in sparql
 
     # --- Geolocated places ---
 

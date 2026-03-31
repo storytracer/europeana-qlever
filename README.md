@@ -244,11 +244,11 @@ europeana-qlever -d WORK_DIR
 
 ## Export queries
 
-SPARQL queries are generated dynamically by the `QueryBuilder` class in `query.py`. There are 36 named queries in three categories:
+SPARQL queries are generated dynamically by the `QueryBuilder` class in `query.py`. There are 18 named queries in three categories:
 
-- **Base queries** (7) — core metadata, web resources, rights/providers, agents, places, concepts, timespans
-- **AI dataset queries** (5) — items_enriched (denormalized), text_corpus, image_metadata, entity_links, temporal_coverage
-- **Analytics queries** (24) — rights/type/country cross-tabs, language distribution, provider landscape, entity graph stats, and more
+- **Base queries** (6) — web resources, rights/providers, agents, places, concepts, timespans
+- **AI dataset queries** (1) — items_enriched (denormalized, composed via DuckDB from component tables)
+- **Example queries** (11) — type/country/language/provider/year distributions, IIIF availability, and more
 
 List all available queries:
 
@@ -302,9 +302,9 @@ All filter options apply to named queries (`-q`, `--query-set`, `--all`):
 
 Queries resolve multilingual labels using a parallel English + vernacular model:
 
-- **AI queries** (`items_enriched`, `text_corpus`, `image_metadata`) produce parallel
-  columns: `title_en` (English), `title_native` (item's own language from `dc:language`),
-  `title_native_lang` (ISO 639 code), and `title` (resolved best-available).
+- **`items_enriched`** produces parallel columns: `title_en` (English), `title_native`
+  (item's own language from `dc:language`), `title_native_lang` (ISO 639 code), and
+  `title` (resolved best-available) — composed via DuckDB from component tables.
 - **Entity labels** (creator names, subject terms) resolve via English → any available.
 
 Add more languages with `--language`:

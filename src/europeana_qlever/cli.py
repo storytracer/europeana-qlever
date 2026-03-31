@@ -766,10 +766,7 @@ def _resolve_queries(
                     raise click.UsageError(
                         f"Unknown query: '{name}'. Use `list-queries` to see available queries."
                     )
-                if name == "entity_links":
-                    sparql = method(filters=filters)
-                else:
-                    sparql = method(filters)
+                sparql = method(filters)
                 queries[name] = QuerySpec(name=name, sparql=sparql)
 
     return qb, queries

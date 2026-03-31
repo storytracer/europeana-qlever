@@ -97,13 +97,6 @@ _DESCRIPTIONS: dict[str, str] = {
         "vernacular title/description columns, resolved entity labels, and "
         "multi-valued properties — composed via DuckDB from component tables"
     ),
-    "text_corpus": (
-        "NLP training corpus with parallel English and vernacular title/description "
-        "columns, filtered to items that have a title"
-    ),
-    "image_metadata": "Computer vision training: IMAGE items with technical metadata from web resources",
-    "entity_links": "owl:sameAs cross-reference table for contextual entities",
-    "temporal_coverage": "Items with normalised edm:year from the Europeana proxy",
     # Example queries — designed for fast interactive execution in QLever UI
     "geolocated_places": "Places with coordinates",
     "iiif_availability": "Items with IIIF manifests (svcs:has_service) by provider",
@@ -390,42 +383,6 @@ class QueryBuilder:
 
         parts.append(f"BIND(COALESCE({', '.join(coalesce_vars)}) AS {output_var})")
         return "\n  ".join(parts)
-
-    # -- Entity resolution ---------------------------------------------------
-
-    def _resolve_entity(
-        self,
-        prop_uri: str,
-        subject_var: str,
-        label_var: str,
-        uri_var: str,
-        wd_var: str,
-        entity_class: str,
-        extra_langs: list[str] | None = None,
-    ) -> str:
-        """Generate IRI/literal branching + label resolution for entity refs.
-
-        Uses _lang_resolve_entity for the skos:prefLabel lookup.
-        """
-        ref_var = f"{label_var}Ref"
-        lbl_var = f"{label_var}Lbl"
-        lit_var = f"{label_var}Lit"
-
-        # Build entity label resolution inside the OPTIONAL
-        label_resolve = self._lang_resolve_entity(
-            "skos:prefLabel", ref_var, lbl_var, extra_langs=extra_langs,
-        )
-        # Indent label_resolve for nesting inside OPTIONAL
-        label_lines = label_resolve.replace("\n  ", "\n    ")
-
-        return textwrap.dedent(f"""\
-            OPTIONAL {{ {subject_var} {prop_uri} {ref_var} . FILTER(isIRI({ref_var}))
-              {label_lines}
-              OPTIONAL {{ {ref_var} owl:sameAs {wd_var} . FILTER(STRSTARTS(STR({wd_var}), "http://www.wikidata.org/entity/")) }}
-              BIND({ref_var} AS {uri_var})
-            }}
-            OPTIONAL {{ {subject_var} {prop_uri} {lit_var} . FILTER(isLiteral({lit_var})) }}
-            BIND(COALESCE({lbl_var}, {lit_var}, STR({ref_var})) AS {label_var})""")
 
     def _quote(self, value: str) -> str:
         """Escape a string for use inside a SPARQL literal."""
@@ -754,174 +711,6 @@ class QueryBuilder:
     # AI dataset queries
     # -----------------------------------------------------------------------
 
-    def text_corpus(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(f)
-        limit_block = self._limit_offset(f)
-        extras = self._extra_langs(f)
-
-        vernacular = self._bind_vernacular()
-        title_fragment, title_vars = self._lang_resolve_item(
-            "dc:title", "?proxy", "title", extra_langs=extras,
-        )
-        desc_fragment, desc_vars = self._lang_resolve_item(
-            "dc:description", "?proxy", "desc", extra_langs=extras,
-        )
-
-        # Build extra title columns
-        extra_title_cols = ""
-        for lang in extras:
-            safe = lang.replace("-", "_")
-            extra_title_cols += f"\n       {title_vars[lang]} AS ?title_{safe}"
-
-        # Build extra desc columns
-        extra_desc_cols = ""
-        for lang in extras:
-            safe = lang.replace("-", "_")
-            extra_desc_cols += f"\n       {desc_vars[lang]} AS ?description_{safe}"
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item
-                   ({title_vars["resolved"]} AS ?title)
-                   ({title_vars["en"]} AS ?title_en)
-                   ({title_vars["native"]} AS ?title_native)
-                   ({title_vars["native_lang"]} AS ?title_native_lang){extra_title_cols}
-                   ({desc_vars["resolved"]} AS ?description)
-                   ({desc_vars["en"]} AS ?description_en)
-                   ({desc_vars["native"]} AS ?description_native)
-                   ({desc_vars["native_lang"]} AS ?description_native_lang){extra_desc_cols}
-                   ?language ?type ?rights ?country ?dataProvider
-            WHERE {{
-              {proxy}
-              {vernacular}
-              ?proxy edm:type ?type .
-              {title_fragment}
-              FILTER(BOUND({title_vars["resolved"]}))
-              {desc_fragment}
-              OPTIONAL {{ ?proxy dc:language ?language }}
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?dataProvider .
-              {eagg}
-              ?eAgg edm:country ?country .
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
-
-    def image_metadata(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ebucore", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(f)
-        limit_block = self._limit_offset(f)
-        extras = self._extra_langs(f)
-
-        vernacular = self._bind_vernacular()
-        title_fragment, title_vars = self._lang_resolve_item(
-            "dc:title", "?proxy", "title", extra_langs=extras,
-        )
-
-        # Build extra title columns for SELECT
-        extra_title_cols = ""
-        for lang in extras:
-            safe = lang.replace("-", "_")
-            extra_title_cols += f"\n       {title_vars[lang]} AS ?title_{safe}"
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item
-                   ({title_vars["resolved"]} AS ?title)
-                   ({title_vars["en"]} AS ?title_en)
-                   ({title_vars["native"]} AS ?title_native)
-                   ({title_vars["native_lang"]} AS ?title_native_lang){extra_title_cols}
-                   ?rights ?country ?dataProvider
-                   ?url ?mime ?width ?height ?bytes
-            WHERE {{
-              {proxy}
-              {vernacular}
-              ?proxy edm:type ?type .
-              FILTER(?type = "IMAGE")
-              {title_fragment}
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?dataProvider ;
-                   edm:isShownBy ?url .
-              OPTIONAL {{ ?url ebucore:hasMimeType ?mime }}
-              OPTIONAL {{ ?url ebucore:width ?width }}
-              OPTIONAL {{ ?url ebucore:height ?height }}
-              OPTIONAL {{ ?url ebucore:fileByteSize ?bytes }}
-              {eagg}
-              ?eAgg edm:country ?country .
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
-
-    def entity_links(
-        self, entity_type: str = "agent", filters: QueryFilters | None = None
-    ) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "skos", "owl"})
-        limit_block = self._limit_offset(f)
-        extras = self._extra_langs(f)
-
-        type_map = {
-            "agent": "edm:Agent",
-            "place": "edm:Place",
-            "concept": "skos:Concept",
-            "timespan": "edm:TimeSpan",
-        }
-        rdf_type = type_map.get(entity_type, "edm:Agent")
-
-        label_resolve = self._lang_resolve_entity(
-            "skos:prefLabel", "?entity", "?label", extra_langs=extras,
-        )
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?entity ?label ?sameAs
-            WHERE {{
-              ?entity a {rdf_type} ;
-                      owl:sameAs ?sameAs .
-              {label_resolve}
-            }}
-            {limit_block}
-        """).strip()
-
-    def temporal_coverage(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "edm", "ore", "xsd"})
-        eproxy = self._europeana_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(f, year_var="?year")
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item ?year ?type ?rights ?country ?dataProvider
-            WHERE {{
-              {eproxy}
-              ?eProxy edm:type ?type .
-              ?eProxy edm:year ?year .
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?dataProvider .
-              {eagg}
-              ?eAgg edm:country ?country .
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
-
     # -----------------------------------------------------------------------
     # Example queries
     # -----------------------------------------------------------------------
@@ -1194,7 +983,7 @@ class QueryBuilder:
         # agents is needed for creator label resolution
         depends = component_names + ["agents"]
 
-        specs: dict[str, QuerySpec] = {
+        return {
             "items_enriched": QuerySpec(
                 name="items_enriched",
                 compose_sql=items_enriched_sql(
@@ -1205,14 +994,6 @@ class QueryBuilder:
                 description=_DESCRIPTIONS.get("items_enriched", ""),
             ),
         }
-        for n, m in [
-            ("text_corpus", self.text_corpus),
-            ("image_metadata", self.image_metadata),
-            ("entity_links", lambda f: self.entity_links(filters=f)),
-            ("temporal_coverage", self.temporal_coverage),
-        ]:
-            specs[n] = self._spec(n, m(filters))
-        return specs
 
     def all_example_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
         return {
