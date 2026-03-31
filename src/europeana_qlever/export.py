@@ -444,6 +444,7 @@ def _compose_to_parquet(
 
     con = duckdb.connect()
     con.execute(f"SET memory_limit = '{memory_limit}'")
+    con.execute("SET preserve_insertion_order = false")
     if threads is not None:
         con.execute(f"SET threads = {threads}")
     if temp_directory is not None:

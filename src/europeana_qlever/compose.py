@@ -108,28 +108,28 @@ CREATE TEMP TABLE desc_resolved AS
     # 4. subjects_agg
     steps.append(ComposeStep("subjects_agg", f"""\
 CREATE TEMP TABLE subjects_agg AS
-    SELECT item, LIST(DISTINCT subject ORDER BY subject) AS subjects
+    SELECT item, LIST(subject) AS subjects
     FROM read_parquet('{_DIR}/items_subjects.parquet')
     GROUP BY item"""))
 
     # 5. dates_agg
     steps.append(ComposeStep("dates_agg", f"""\
 CREATE TEMP TABLE dates_agg AS
-    SELECT item, LIST(DISTINCT date ORDER BY date) AS dates
+    SELECT item, LIST(date) AS dates
     FROM read_parquet('{_DIR}/items_dates.parquet')
     GROUP BY item"""))
 
     # 6. years_agg
     steps.append(ComposeStep("years_agg", f"""\
 CREATE TEMP TABLE years_agg AS
-    SELECT item, LIST(DISTINCT year ORDER BY year) AS years
+    SELECT item, LIST(year) AS years
     FROM read_parquet('{_DIR}/items_years.parquet')
     GROUP BY item"""))
 
     # 7. languages_agg
     steps.append(ComposeStep("languages_agg", f"""\
 CREATE TEMP TABLE languages_agg AS
-    SELECT item, LIST(DISTINCT language ORDER BY language) AS languages
+    SELECT item, LIST(language) AS languages
     FROM read_parquet('{_DIR}/items_languages.parquet')
     GROUP BY item"""))
 
@@ -163,7 +163,7 @@ CREATE TEMP TABLE creators_agg AS
         LIST({{
             name: COALESCE(m.label, c.creator_value),
             uri: CASE WHEN c.is_iri THEN c.creator_value END
-        }} ORDER BY COALESCE(m.label, c.creator_value)) AS creators
+        }}) AS creators
     FROM read_parquet('{_DIR}/items_creators.parquet') c
     LEFT JOIN creator_map m ON c.creator_value = m.uri
     GROUP BY c.item"""))
