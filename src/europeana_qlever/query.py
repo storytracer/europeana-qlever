@@ -91,7 +91,7 @@ _DESCRIPTIONS: dict[str, str] = {
     "items_languages": "Language codes per item (multi-row)",
     "items_years": "Normalised edm:year values from Europeana proxy (multi-row per item)",
     "items_creators": "Creator URIs and literals per item with IRI flag (multi-row)",
-    # AI dataset queries
+    # Enriched queries
     "items_enriched": (
         "Fully denormalized one-row-per-item export with parallel English and "
         "vernacular title/description columns, resolved entity labels, and "
@@ -708,7 +708,7 @@ class QueryBuilder:
         """).strip()
 
     # -----------------------------------------------------------------------
-    # AI dataset queries
+    # Enriched queries
     # -----------------------------------------------------------------------
 
     # -----------------------------------------------------------------------
@@ -976,7 +976,7 @@ class QueryBuilder:
             ]
         }
 
-    def all_ai_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
+    def all_enriched_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
         from .compose import items_enriched_sql
 
         component_names = list(self.all_component_queries(filters))
@@ -1015,9 +1015,9 @@ class QueryBuilder:
 
     def all_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
         result: dict[str, QuerySpec] = {}
-        result.update(self.all_base_queries(filters))
-        result.update(self.all_ai_queries(filters))
         result.update(self.all_example_queries(filters))
+        result.update(self.all_base_queries(filters))
+        result.update(self.all_enriched_queries(filters))
         return result
 
     def describe(self, query_name: str) -> str:

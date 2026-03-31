@@ -246,9 +246,9 @@ europeana-qlever -d WORK_DIR
 
 SPARQL queries are generated dynamically by the `QueryBuilder` class in `query.py`. There are 18 named queries in three categories:
 
-- **Base queries** (6) — web resources, rights/providers, agents, places, concepts, timespans
-- **AI dataset queries** (1) — items_enriched (denormalized, composed via DuckDB from component tables)
 - **Example queries** (11) — type/country/language/provider/year distributions, IIIF availability, and more
+- **Base queries** (6) — web resources, rights/providers, agents, places, concepts, timespans
+- **Enriched queries** (1) — items_enriched (denormalized, composed via DuckDB from component tables)
 
 List all available queries:
 
@@ -259,7 +259,7 @@ uv run europeana-qlever -d /data/europeana list-queries
 ### Export examples
 
 ```bash
-# Backward compatible — runs all 7 base queries
+# Backward compatible — runs all 6 base queries
 uv run europeana-qlever -d /data/europeana export --all
 
 # Run specific queries by name

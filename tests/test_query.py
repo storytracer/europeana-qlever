@@ -50,8 +50,8 @@ class TestQueryBuilder:
     def test_all_component_queries_count(self):
         assert len(self.qb.all_component_queries()) == 8
 
-    def test_all_ai_queries_count(self):
-        assert len(self.qb.all_ai_queries()) == 1
+    def test_all_enriched_queries_count(self):
+        assert len(self.qb.all_enriched_queries()) == 1
 
     def test_all_example_queries_count(self):
         assert len(self.qb.all_example_queries()) == 11
@@ -99,7 +99,7 @@ class TestQueryBuilder:
     # --- Specific query tests ---
 
     def test_items_enriched_is_composite(self):
-        specs = self.qb.all_ai_queries()
+        specs = self.qb.all_enriched_queries()
         spec = specs["items_enriched"]
         assert spec.is_composite
         assert spec.compose_sql is not None
@@ -107,7 +107,7 @@ class TestQueryBuilder:
         assert len(spec.depends_on) > 0
 
     def test_items_enriched_depends_on_component_tables(self):
-        specs = self.qb.all_ai_queries()
+        specs = self.qb.all_enriched_queries()
         spec = specs["items_enriched"]
         for dep in [
             "items_core", "items_titles", "items_descriptions",
@@ -117,12 +117,12 @@ class TestQueryBuilder:
             assert dep in spec.depends_on, f"Missing dependency: {dep}"
 
     def test_items_enriched_compose_sql_has_placeholders(self):
-        specs = self.qb.all_ai_queries()
+        specs = self.qb.all_enriched_queries()
         sql = specs["items_enriched"].compose_sql
         assert "{exports_dir}" in sql
 
     def test_items_enriched_compose_sql_uses_separator(self):
-        specs = self.qb.all_ai_queries()
+        specs = self.qb.all_enriched_queries()
         sql = specs["items_enriched"].compose_sql
         assert " ||| " in sql
 
@@ -141,7 +141,7 @@ class TestQueryBuilder:
 
     def test_items_enriched_compose_sql_has_language_columns(self):
         """Composite items_enriched has en/native/resolved columns."""
-        specs = self.qb.all_ai_queries()
+        specs = self.qb.all_enriched_queries()
         sql = specs["items_enriched"].compose_sql
         assert "title_en" in sql
         assert "title_native" in sql
@@ -152,7 +152,7 @@ class TestQueryBuilder:
     def test_extra_languages_in_compose_sql(self):
         """Extra languages produce additional columns in composition SQL."""
         qb = QueryBuilder(languages=["fr", "de"])
-        specs = qb.all_ai_queries()
+        specs = qb.all_enriched_queries()
         sql = specs["items_enriched"].compose_sql
         assert "title_fr" in sql
         assert "title_de" in sql
@@ -288,7 +288,7 @@ class TestQueryBuilder:
 
     def test_custom_separator_in_compose_sql(self):
         qb = QueryBuilder(separator=" ; ")
-        specs = qb.all_ai_queries()
+        specs = qb.all_enriched_queries()
         sql = specs["items_enriched"].compose_sql
         assert " ; " in sql
         assert " ||| " not in sql
