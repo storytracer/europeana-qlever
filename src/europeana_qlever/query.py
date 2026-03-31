@@ -76,7 +76,6 @@ class QueryFilters:
 
 _DESCRIPTIONS: dict[str, str] = {
     # Base queries
-    "core_metadata": "Core item metadata: title, creator, date, type, subject, language, rights, country, data provider",
     "web_resources": "Digital representation URLs with MIME type, dimensions, and file size",
     "rights_providers": "Item-level rights statements with provider, country, and completeness score",
     "agents": "People and organisations with multilingual labels, birth/death dates, profession, and Wikidata links",
@@ -287,67 +286,6 @@ class QueryBuilder:
             f"GROUP BY {proxy_var} }}"
         )
 
-    def _core_subquery(
-        self,
-        filters: QueryFilters | None = None,
-        *,
-        extra_select: str = "",
-        extra_body: str = "",
-    ) -> str:
-        """Inner subquery: identify items with single-valued properties.
-
-        Materialises a compact result (one row per item) with mandatory
-        and single-valued optional properties.  The outer query can then
-        add language resolution and multi-valued properties on the
-        already-bound ``?item`` / ``?proxy`` without re-joining the full
-        graph.
-
-        *extra_select* and *extra_body* allow callers to inject additional
-        SELECT variables or WHERE patterns.
-        """
-        f = filters or QueryFilters()
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(
-            f,
-            type_var="?_type",
-            rights_var="?_rights",
-            provider_var="?_dataProvider",
-            country_var="?_country",
-            completeness_var="?_completeness",
-            year_var="?_year",
-        )
-
-        return textwrap.dedent(f"""\
-            {{
-              SELECT ?item ?proxy ?_type ?_rights ?_dataProvider ?_country
-                     ?_completeness ?_isShownAt ?_isShownBy ?_preview
-                     ?_landingPage ?_datasetName ?_year{extra_select}
-              WHERE {{
-                {proxy}
-                ?proxy edm:type ?_type .
-                {agg}
-                ?agg edm:rights ?_rights ;
-                     edm:dataProvider ?_dataProvider .
-                OPTIONAL {{ ?agg edm:isShownAt ?_isShownAt }}
-                OPTIONAL {{ ?agg edm:isShownBy ?_isShownBy }}
-                {eagg}
-                ?eAgg edm:country ?_country .
-                OPTIONAL {{ ?eAgg edm:completeness ?_completeness }}
-                OPTIONAL {{ ?eAgg edm:preview ?_preview }}
-                OPTIONAL {{ ?eAgg edm:landingPage ?_landingPage }}
-                OPTIONAL {{ ?eAgg edm:datasetName ?_datasetName }}
-                OPTIONAL {{
-                  ?eProxy ore:proxyFor ?item .
-                  ?eProxy edm:europeanaProxy "true" .
-                  ?eProxy edm:year ?_year .
-                }}
-                {extra_body}
-                {filter_block}
-              }}
-            }}""")
-
     def _lang_resolve_item(
         self,
         prop_uri: str,
@@ -503,46 +441,8 @@ class QueryBuilder:
         return mapping.get(category, [])
 
     # -----------------------------------------------------------------------
-    # Base queries (replace the 6 static .sparql files + 1 new)
+    # Base queries
     # -----------------------------------------------------------------------
-
-    def core_metadata(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"dc", "dcterms", "edm", "ore", "xsd"})
-        proxy = self._provider_proxy()
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(f)
-        limit_block = self._limit_offset(f)
-        extras = self._extra_langs(f)
-
-        vernacular = self._bind_vernacular()
-        title_fragment, title_vars = self._lang_resolve_item(
-            "dc:title", "?proxy", "title", extra_langs=extras,
-        )
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item ({title_vars["resolved"]} AS ?title) ?creator ?date ?type ?subject ?language
-                   ?rights ?country ?dataProvider
-            WHERE {{
-              {proxy}
-              {vernacular}
-              ?proxy edm:type ?type .
-              {title_fragment}
-              OPTIONAL {{ ?proxy dc:creator ?creator }}
-              OPTIONAL {{ ?proxy dc:date ?date }}
-              OPTIONAL {{ ?proxy dc:subject ?subject }}
-              OPTIONAL {{ ?proxy dc:language ?language }}
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?dataProvider .
-              {eagg}
-              ?eAgg edm:country ?country .
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
 
     def web_resources(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
@@ -853,146 +753,6 @@ class QueryBuilder:
     # -----------------------------------------------------------------------
     # AI dataset queries
     # -----------------------------------------------------------------------
-
-    def _pre_aggregate(
-        self,
-        subject_var: str,
-        prop_uri: str,
-        out_var: str,
-        separator: str,
-    ) -> str:
-        """Pre-aggregate a multi-valued property via GROUP_CONCAT subquery.
-
-        Returns an OPTIONAL subquery that produces one pre-concatenated
-        row per subject, preventing row multiplication in the outer query.
-        """
-        inner = f"?__pa_{out_var.lstrip('?')}"
-        return (
-            f"OPTIONAL {{ SELECT {subject_var} "
-            f'(GROUP_CONCAT(DISTINCT {inner}; SEPARATOR="{separator}") AS {out_var}) '
-            f"WHERE {{ {subject_var} {prop_uri} {inner} }} "
-            f"GROUP BY {subject_var} }}"
-        )
-
-    def items_enriched(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({
-            "dc", "dcterms", "edm", "ore", "skos", "owl", "xsd",
-        })
-        sep = self.separator
-        limit_block = self._limit_offset(f)
-        extras = self._extra_langs(f)
-
-        # Phase 1: core subquery materialises items with single-valued props
-        core = self._core_subquery(f)
-
-        # Phase 2: language resolution on already-bound ?proxy
-        vernacular = self._bind_vernacular()
-        title_fragment, title_vars = self._lang_resolve_item(
-            "dc:title", "?proxy", "title", extra_langs=extras,
-        )
-        desc_fragment, desc_vars = self._lang_resolve_item(
-            "dc:description", "?proxy", "desc", extra_langs=extras,
-        )
-
-        # Build SELECT columns for title
-        title_select = [
-            f"(SAMPLE({title_vars['resolved']}) AS ?title)",
-            f"(SAMPLE({title_vars['en']}) AS ?title_en)",
-            f"(SAMPLE({title_vars['native']}) AS ?title_native)",
-            f"(SAMPLE({title_vars['native_lang']}) AS ?title_native_lang)",
-        ]
-        for lang in extras:
-            safe = lang.replace("-", "_")
-            title_select.append(f"(SAMPLE({title_vars[lang]}) AS ?title_{safe})")
-
-        # Build SELECT columns for description
-        desc_select = [
-            f"(SAMPLE({desc_vars['resolved']}) AS ?description)",
-            f"(SAMPLE({desc_vars['en']}) AS ?description_en)",
-            f"(SAMPLE({desc_vars['native']}) AS ?description_native)",
-            f"(SAMPLE({desc_vars['native_lang']}) AS ?description_native_lang)",
-        ]
-        for lang in extras:
-            safe = lang.replace("-", "_")
-            desc_select.append(f"(SAMPLE({desc_vars[lang]}) AS ?description_{safe})")
-
-        title_cols = "\n  ".join(title_select)
-        desc_cols = "\n  ".join(desc_select)
-
-        # Creator entity resolution with language chain
-        creator_label_resolve = self._lang_resolve_entity(
-            "skos:prefLabel", "?_creatorRef", "?_creatorLabel", extra_langs=extras,
-        )
-        creator_label_indented = creator_label_resolve.replace("\n  ", "\n    ")
-
-        # Pre-aggregate multi-valued properties in subqueries to prevent
-        # row multiplication in the outer GROUP BY.
-        subjects_agg = self._pre_aggregate("?proxy", "dc:subject", "?_subjects", sep)
-        dates_agg = self._pre_aggregate("?proxy", "dc:date", "?_dates", sep)
-        languages_agg = self._pre_aggregate("?proxy", "dc:language", "?_languages", sep)
-        years_agg = (
-            "OPTIONAL { SELECT ?item "
-            f'(GROUP_CONCAT(DISTINCT ?__pa_year; SEPARATOR="{sep}") AS ?_years) '
-            "WHERE { ?__eP ore:proxyFor ?item . "
-            '?__eP edm:europeanaProxy "true" . '
-            "?__eP edm:year ?__pa_year . } "
-            "GROUP BY ?item }"
-        )
-
-        # Creator pre-aggregation: resolve labels inside the subquery,
-        # then GROUP_CONCAT the results.
-        creators_agg = textwrap.dedent(f"""\
-            OPTIONAL {{ SELECT ?proxy
-              (GROUP_CONCAT(DISTINCT ?__cr_label; SEPARATOR="{sep}") AS ?_creators)
-              (GROUP_CONCAT(DISTINCT ?__cr_uri; SEPARATOR="{sep}") AS ?_creator_uris)
-            WHERE {{
-              {{
-                ?proxy dc:creator ?__cr_ref . FILTER(isIRI(?__cr_ref))
-                {creator_label_indented}
-                BIND(STR(?__cr_ref) AS ?__cr_uri)
-                BIND(COALESCE(?_creatorLabel, STR(?__cr_ref)) AS ?__cr_label)
-              }} UNION {{
-                ?proxy dc:creator ?__cr_lit . FILTER(isLiteral(?__cr_lit))
-                BIND(STR(?__cr_lit) AS ?__cr_label)
-              }}
-            }} GROUP BY ?proxy }}""")
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item
-              {title_cols}
-              {desc_cols}
-              (SAMPLE(?_creators) AS ?creators)
-              (SAMPLE(?_creator_uris) AS ?creator_uris)
-              (SAMPLE(?_subjects) AS ?subjects)
-              (SAMPLE(?_dates) AS ?dates)
-              (SAMPLE(?_years) AS ?years)
-              (SAMPLE(?_type) AS ?type)
-              (SAMPLE(?_languages) AS ?languages)
-              (SAMPLE(?_country) AS ?country)
-              (SAMPLE(?_dataProvider) AS ?data_provider)
-              (SAMPLE(?_rights) AS ?rights)
-              (SAMPLE(?_completeness) AS ?completeness)
-              (SAMPLE(?_isShownAt) AS ?is_shown_at)
-              (SAMPLE(?_isShownBy) AS ?is_shown_by)
-              (SAMPLE(?_preview) AS ?preview)
-              (SAMPLE(?_landingPage) AS ?landing_page)
-              (SAMPLE(?_datasetName) AS ?dataset_name)
-            WHERE {{
-              {core}
-              {vernacular}
-              {title_fragment}
-              {desc_fragment}
-              {creators_agg}
-              {subjects_agg}
-              {dates_agg}
-              {languages_agg}
-              {years_agg}
-            }}
-            GROUP BY ?item
-            {limit_block}
-        """).strip()
 
     def text_corpus(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
@@ -1402,7 +1162,6 @@ class QueryBuilder:
         return {
             n: self._spec(n, m(filters))
             for n, m in [
-                ("core_metadata", self.core_metadata),
                 ("web_resources", self.web_resources),
                 ("rights_providers", self.rights_providers),
                 ("agents", self.agents),

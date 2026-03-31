@@ -31,14 +31,6 @@ class TestQueryBuilder:
 
     # --- Structure tests ---
 
-    def test_core_metadata_has_expected_columns(self):
-        sparql = self.qb.core_metadata()
-        for col in [
-            "?item", "?title", "?creator", "?date", "?type",
-            "?subject", "?language", "?rights", "?country", "?dataProvider",
-        ]:
-            assert col in sparql
-
     def test_all_sparql_queries_have_select_and_where(self):
         for name, spec in self.qb.all_queries().items():
             if spec.sparql:
@@ -53,7 +45,7 @@ class TestQueryBuilder:
     # --- Registry tests ---
 
     def test_all_base_queries_count(self):
-        assert len(self.qb.all_base_queries()) == 7
+        assert len(self.qb.all_base_queries()) == 6
 
     def test_all_component_queries_count(self):
         assert len(self.qb.all_component_queries()) == 8
@@ -65,7 +57,7 @@ class TestQueryBuilder:
         assert len(self.qb.all_example_queries()) == 11
 
     def test_all_queries_count(self):
-        assert len(self.qb.all_queries()) == 23
+        assert len(self.qb.all_queries()) == 22
 
     def test_no_duplicate_names(self):
         queries = self.qb.all_queries()
@@ -80,28 +72,28 @@ class TestQueryBuilder:
 
     def test_country_filter(self):
         f = QueryFilters(countries=["Netherlands", "France"])
-        sparql = self.qb.core_metadata(f)
+        sparql = self.qb.rights_providers(f)
         assert "Netherlands" in sparql
         assert "France" in sparql
 
     def test_type_filter(self):
         f = QueryFilters(types=["IMAGE"])
-        sparql = self.qb.core_metadata(f)
+        sparql = self.qb.temporal_coverage(f)
         assert '"IMAGE"' in sparql
 
     def test_open_rights_filter(self):
         f = QueryFilters(rights_category="open")
-        sparql = self.qb.core_metadata(f)
+        sparql = self.qb.rights_providers(f)
         assert "publicdomain" in sparql
 
     def test_limit(self):
         f = QueryFilters(limit=100)
-        sparql = self.qb.core_metadata(f)
+        sparql = self.qb.rights_providers(f)
         assert "LIMIT 100" in sparql
 
     def test_offset(self):
         f = QueryFilters(limit=100, offset=500)
-        sparql = self.qb.core_metadata(f)
+        sparql = self.qb.rights_providers(f)
         assert "OFFSET 500" in sparql
 
     # --- Specific query tests ---
@@ -155,15 +147,6 @@ class TestQueryBuilder:
 
     # --- Language resolution tests ---
 
-    def test_default_produces_en_native_any(self):
-        """Default config: title_en, title_native, title (resolved), no extra lang columns."""
-        qb = QueryBuilder()
-        sparql = qb.core_metadata()
-        assert "title" in sparql
-        # No French/German/etc. unless user specifies
-        assert "title_fr" not in sparql
-        assert "title_de" not in sparql
-
     def test_items_enriched_compose_sql_has_language_columns(self):
         """Composite items_enriched has en/native/resolved columns."""
         specs = self.qb.all_ai_queries()
@@ -173,16 +156,6 @@ class TestQueryBuilder:
         assert "title_native_lang" in sql
         assert "description_en" in sql
         assert "description_native" in sql
-
-    def test_base_query_single_resolved_column(self):
-        """core_metadata produces a single ?title column, not parallel columns."""
-        qb = QueryBuilder()
-        sparql = qb.core_metadata()
-        assert "?title" in sparql
-        # Should NOT expose title_en, title_native as separate SELECT columns
-        select_clause = sparql.split("WHERE")[0]
-        assert "title_en" not in select_clause
-        assert "title_native" not in select_clause
 
     def test_extra_languages_in_compose_sql(self):
         """Extra languages produce additional columns in composition SQL."""
@@ -205,18 +178,6 @@ class TestQueryBuilder:
         qb = QueryBuilder()
         sparql = qb.entity_links(entity_type="agent")
         assert "_any" in sparql
-
-    def test_vernacular_bound_from_dc_language(self):
-        """The vernacular language is bound from dc:language in core_metadata."""
-        qb = QueryBuilder()
-        sparql = qb.core_metadata()
-        assert "dc:language" in sparql
-        assert "vernacularLang" in sparql
-
-    def test_coalesce_in_resolved_title(self):
-        """The resolved title in core_metadata uses COALESCE."""
-        sparql = self.qb.core_metadata()
-        assert "COALESCE" in sparql
 
     # --- Component query tests ---
 
@@ -336,13 +297,11 @@ class TestQueryBuilder:
     def test_combined_filters(self):
         f = QueryFilters(
             countries=["Germany"],
-            types=["TEXT"],
             rights_category="open",
             limit=500,
         )
-        sparql = self.qb.core_metadata(f)
+        sparql = self.qb.rights_providers(f)
         assert "Germany" in sparql
-        assert '"TEXT"' in sparql
         assert "publicdomain" in sparql
         assert "LIMIT 500" in sparql
 
@@ -350,7 +309,7 @@ class TestQueryBuilder:
 
     def test_provider_filter(self):
         f = QueryFilters(providers=["Rijksmuseum"])
-        sparql = self.qb.core_metadata(f)
+        sparql = self.qb.rights_providers(f)
         assert "Rijksmuseum" in sparql
 
     # --- Year filters ---

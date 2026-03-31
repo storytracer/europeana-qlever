@@ -305,8 +305,6 @@ Queries resolve multilingual labels using a parallel English + vernacular model:
 - **AI queries** (`items_enriched`, `text_corpus`, `image_metadata`) produce parallel
   columns: `title_en` (English), `title_native` (item's own language from `dc:language`),
   `title_native_lang` (ISO 639 code), and `title` (resolved best-available).
-- **Base queries** (`core_metadata`) produce a single resolved column for backward
-  compatibility.
 - **Entity labels** (creator names, subject terms) resolve via English → any available.
 
 Add more languages with `--language`:

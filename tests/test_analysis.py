@@ -467,18 +467,17 @@ SELECT ?s ?label WHERE {
         assert sa.error is not None
         assert "Parse error" in sa.error
 
-    def test_items_enriched_real_query(self):
-        """Parse the actual items_enriched query from QueryBuilder."""
+    def test_text_corpus_real_query(self):
+        """Parse the actual text_corpus query from QueryBuilder."""
         from europeana_qlever.query import QueryBuilder
 
         qb = QueryBuilder()
-        sparql = qb.items_enriched()
-        sa = static_analyze_query("items_enriched", sparql, "")
+        sparql = qb.text_corpus()
+        sa = static_analyze_query("text_corpus", sparql, "")
         assert sa.error is None
-        assert sa.triple_patterns > 5
-        assert sa.optional_count > 5
-        assert sa.variables > 15
-        assert len(sa.aggregates) > 3
+        assert sa.triple_patterns > 3
+        assert sa.optional_count > 3
+        assert sa.variables > 10
 
 
 class TestRenderStaticMarkdown:
