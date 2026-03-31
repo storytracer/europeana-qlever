@@ -114,7 +114,7 @@ class TestQueryBuilder:
         for dep in [
             "items_core", "items_titles", "items_descriptions",
             "items_subjects", "items_dates", "items_languages",
-            "items_years", "items_creators", "agents",
+            "items_years", "items_creators", "agents", "concepts",
         ]:
             assert dep in spec.depends_on, f"Missing dependency: {dep}"
 
@@ -140,27 +140,14 @@ class TestQueryBuilder:
             assert isinstance(desc, str)
             assert len(desc) > 10
 
-    # --- Language resolution tests ---
+    # --- Struct list tests ---
 
-    def test_items_enriched_steps_have_language_columns(self):
-        """Composite items_enriched has en/native/resolved columns."""
+    def test_items_enriched_titles_are_struct_list(self):
+        """Titles are LIST<STRUCT<value, lang>>, not flat columns."""
         specs = self.qb.all_enriched_queries()
         all_sql = "\n".join(s.sql for s in specs["items_enriched"].compose_steps)
-        assert "title_en" in all_sql
-        assert "title_native" in all_sql
-        assert "title_native_lang" in all_sql
-        assert "description_en" in all_sql
-        assert "description_native" in all_sql
-
-    def test_extra_languages_in_steps(self):
-        """Extra languages produce additional columns in composition steps."""
-        qb = QueryBuilder(languages=["fr", "de"])
-        specs = qb.all_enriched_queries()
-        all_sql = "\n".join(s.sql for s in specs["items_enriched"].compose_steps)
-        assert "title_fr" in all_sql
-        assert "title_de" in all_sql
-        assert "description_fr" in all_sql
-        assert "description_de" in all_sql
+        assert "t.titles" in all_sql
+        assert "title_en" not in all_sql
 
     # --- Component query tests ---
 
@@ -189,7 +176,7 @@ class TestQueryBuilder:
 
     def test_items_subjects_columns(self):
         sparql = self.qb.items_subjects()
-        for col in ["?item", "?subject"]:
+        for col in ["?item", "?subject_value", "?is_iri"]:
             assert col in sparql
 
     def test_items_dates_columns(self):

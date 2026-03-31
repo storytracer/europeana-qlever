@@ -119,20 +119,6 @@ _DESCRIPTIONS: dict[str, str] = {
 class QueryBuilder:
     """Generates SPARQL queries for Europeana EDM metadata exports."""
 
-    def __init__(
-        self,
-        languages: list[str] | None = None,
-    ) -> None:
-        """
-        Parameters
-        ----------
-        languages
-            Additional languages to query beyond English and the item's
-            vernacular. For example, ``["fr", "de"]`` produces extra columns
-            ``title_fr``, ``title_de`` and adds them to the COALESCE chain.
-        """
-        self.extra_languages = languages or []
-
     # -----------------------------------------------------------------------
     # Private helpers — SPARQL fragment generators
     # -----------------------------------------------------------------------
@@ -619,7 +605,12 @@ class QueryBuilder:
         """).strip()
 
     def items_subjects(self, filters: QueryFilters | None = None) -> str:
-        """Subject values per item — multi-row."""
+        """Subject values per item with IRI flag — multi-row.
+
+        Subjects can be literal strings (``"Painting"``) or concept URIs
+        (``http://data.europeana.eu/concept/...``).  The ``is_iri`` flag
+        allows the composition step to resolve URIs to human-readable labels.
+        """
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore"})
         proxy = self._provider_proxy()
@@ -627,10 +618,10 @@ class QueryBuilder:
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?item ?subject
+            SELECT ?item (STR(?_sv) AS ?subject_value) (isIRI(?_sv) AS ?is_iri)
             WHERE {{
               {proxy}
-              ?proxy dc:subject ?subject .
+              ?proxy dc:subject ?_sv .
             }}
             {limit_block}
         """).strip()
@@ -976,15 +967,14 @@ class QueryBuilder:
         from .compose import items_enriched_steps
 
         component_names = list(self.all_component_queries(filters))
-        # agents is needed for creator label resolution
-        depends = component_names + ["agents"]
+        # agents needed for creator label resolution,
+        # concepts needed for subject URI resolution
+        depends = component_names + ["agents", "concepts"]
 
         return {
             "items_enriched": QuerySpec(
                 name="items_enriched",
-                compose_steps=items_enriched_steps(
-                    extra_languages=self.extra_languages,
-                ),
+                compose_steps=items_enriched_steps(),
                 depends_on=depends,
                 description=_DESCRIPTIONS.get("items_enriched", ""),
             ),

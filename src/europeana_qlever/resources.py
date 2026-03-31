@@ -201,21 +201,24 @@ class ResourceBudget:
     # ==================================================================
 
     def duckdb_threads(self) -> int:
-        """DuckDB worker threads: 2/3 of CPU count, min 2.
+        """DuckDB worker threads: half of CPU count, min 2.
 
-        Leaves headroom for the OS, QLever server, and other processes
-        to avoid saturating all cores during composition.
+        Fewer threads reduces per-thread memory pressure during heavy
+        struct aggregations (e.g. subjects_agg: 258M rows with
+        LIST<STRUCT> construction).  Leaves headroom for the OS and
+        QLever server.
         """
-        return max(2, (self.cpu_count * 2) // 3)
+        return max(2, self.cpu_count // 2)
 
     def duckdb_memory(self) -> str:
-        """DuckDB memory budget: 60% of available, min 4 GB, no upper cap.
+        """DuckDB memory budget: 75% of available, min 4 GB, no upper cap.
 
         During composition, DuckDB is the only memory-heavy process
         started by the script — QLever is idle (no queries in flight).
-        A generous budget avoids expensive spill-to-disk on large joins.
+        A generous budget avoids expensive spill-to-disk on large joins
+        and struct aggregations.
         """
-        gb = self.available_memory_gb * 0.60
+        gb = self.available_memory_gb * 0.75
         return f"{_round_gb(max(gb, 4.0))}G"
 
     def duckdb_sample_size(self) -> int:

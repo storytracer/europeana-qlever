@@ -105,10 +105,9 @@ RIGHTS_LABELS: dict[str, str] = {
 
 
 # Language resolution strategy:
-# - Item properties: English + vernacular (from dc:language) queried in parallel,
-#   plus optional user-specified extras, with a wildcard fallback.
-# - Entity labels: English + optional extras + wildcard fallback.
-# Users add languages via QueryBuilder(languages=[...]) or --language CLI options.
+# - Entity labels (agents, concepts): English preferred, fallback to any available.
+# - Item titles/descriptions: exported as LIST<STRUCT<value, lang>> with all languages.
+# - The --language CLI flag filters items by dc:language (SPARQL FILTER), not label resolution.
 
 # ---------------------------------------------------------------------------
 # Fallback defaults for resource monitoring

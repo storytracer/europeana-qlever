@@ -3,9 +3,9 @@
 from europeana_qlever.compose import items_enriched_steps
 
 
-def _all_sql(extra_languages=None):
+def _all_sql():
     """Concatenate all step SQL for easy assertion."""
-    return "\n".join(s.sql for s in items_enriched_steps(extra_languages))
+    return "\n".join(s.sql for s in items_enriched_steps())
 
 
 class TestItemsEnrichedSteps:
@@ -17,50 +17,44 @@ class TestItemsEnrichedSteps:
         for table in [
             "items_core", "items_titles", "items_descriptions",
             "items_subjects", "items_dates", "items_languages",
-            "items_years", "items_creators", "agents",
+            "items_years", "items_creators", "agents", "concepts",
         ]:
             assert f"{table}.parquet" in sql
 
-    def test_has_language_resolution(self):
+    def test_titles_are_struct_list(self):
+        """Titles are LIST<STRUCT<value, lang>>, not flat columns."""
         sql = _all_sql()
-        assert "title_en" in sql
-        assert "title_native" in sql
-        assert "title_native_lang" in sql
-        assert "description_en" in sql
-        assert "description_native" in sql
+        assert "t.titles" in sql
+        assert "title_en" not in sql
+        assert "title_native" not in sql
+
+    def test_descriptions_are_struct_list(self):
+        sql = _all_sql()
+        assert "d.descriptions" in sql
+        assert "description_en" not in sql
+        assert "description_native" not in sql
 
     def test_uses_list_aggregation(self):
         sql = _all_sql()
         assert "LIST" in sql
         assert "STRING_AGG" not in sql
-        assert "subjects" in sql
-        assert "dates" in sql
-        assert "years" in sql
-        assert "languages" in sql
-        assert "creators" in sql
 
     def test_creators_use_struct(self):
         sql = _all_sql()
         assert "name:" in sql
         assert "uri:" in sql
 
-    def test_no_separate_creator_uris_column(self):
+    def test_subjects_use_struct(self):
         sql = _all_sql()
-        assert "cr.creator_uris" not in sql
+        assert "label:" in sql
+        assert "concept_labels" in sql
+        assert "subject_map" in sql
 
-    def test_extra_languages(self):
-        sql = _all_sql(extra_languages=["fr", "de"])
-        assert "title_fr" in sql
-        assert "title_de" in sql
-        assert "description_fr" in sql
-        assert "description_de" in sql
-
-    def test_agent_label_resolution(self):
+    def test_nullif_for_empty_strings(self):
         sql = _all_sql()
-        assert "agent_labels" in sql
+        assert "NULLIF" in sql
 
     def test_output_column_aliases(self):
-        """Final SELECT uses clean column names."""
         sql = _all_sql()
         assert "data_provider" in sql
         assert "is_shown_at" in sql
@@ -69,7 +63,7 @@ class TestItemsEnrichedSteps:
 
     def test_step_count(self):
         steps = items_enriched_steps()
-        assert len(steps) == 11
+        assert len(steps) == 12
 
     def test_final_step_is_marked(self):
         steps = items_enriched_steps()
