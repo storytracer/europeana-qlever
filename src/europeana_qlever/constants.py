@@ -103,7 +103,6 @@ RIGHTS_LABELS: dict[str, str] = {
     "http://rightsstatements.org/vocab/CNE/1.0/": "Copyright Not Evaluated",
 }
 
-SEPARATOR = " ||| "
 
 # Language resolution strategy:
 # - Item properties: English + vernacular (from dc:language) queried in parallel,

@@ -20,7 +20,6 @@ from .constants import (
     OPEN_RIGHTS_URIS,
     PERMISSION_RIGHTS_URIS,
     RESTRICTED_RIGHTS_URIS,
-    SEPARATOR,
 )
 
 
@@ -32,25 +31,21 @@ from .constants import (
 class QuerySpec:
     """Specification for a single export.
 
-    Simple SPARQL exports have *sparql* set and *compose_sql* ``None``.
-    Composite exports (e.g. ``items_enriched``) have *compose_sql* set,
-    *sparql* ``None``, and *depends_on* listing the required base tables.
-
-    When *compose_steps* is provided, the export engine executes each
-    step individually with progress logging instead of running the
-    monolithic *compose_sql* in one shot.
+    Simple SPARQL exports have *sparql* set.  Composite exports (e.g.
+    ``items_enriched``) have *compose_steps* set, *sparql* ``None``,
+    and *depends_on* listing the required base tables.  Each step is
+    executed individually with per-step progress logging.
     """
 
     name: str
     sparql: str | None = None
-    compose_sql: str | None = None
     compose_steps: list | None = None
     depends_on: list[str] = field(default_factory=list)
     description: str = ""
 
     @property
     def is_composite(self) -> bool:
-        return self.compose_sql is not None
+        return self.compose_steps is not None
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +122,6 @@ class QueryBuilder:
     def __init__(
         self,
         languages: list[str] | None = None,
-        separator: str = SEPARATOR,
     ) -> None:
         """
         Parameters
@@ -136,11 +130,8 @@ class QueryBuilder:
             Additional languages to query beyond English and the item's
             vernacular. For example, ``["fr", "de"]`` produces extra columns
             ``title_fr``, ``title_de`` and adds them to the COALESCE chain.
-        separator
-            Delimiter for GROUP_CONCAT multi-valued columns.
         """
         self.extra_languages = languages or []
-        self.separator = separator
 
     # -----------------------------------------------------------------------
     # Private helpers — SPARQL fragment generators
@@ -982,7 +973,7 @@ class QueryBuilder:
         }
 
     def all_enriched_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
-        from .compose import items_enriched_sql, items_enriched_steps
+        from .compose import items_enriched_steps
 
         component_names = list(self.all_component_queries(filters))
         # agents is needed for creator label resolution
@@ -991,12 +982,7 @@ class QueryBuilder:
         return {
             "items_enriched": QuerySpec(
                 name="items_enriched",
-                compose_sql=items_enriched_sql(
-                    separator=self.separator,
-                    extra_languages=self.extra_languages,
-                ),
                 compose_steps=items_enriched_steps(
-                    separator=self.separator,
                     extra_languages=self.extra_languages,
                 ),
                 depends_on=depends,

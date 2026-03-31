@@ -10,18 +10,20 @@ class TestQuerySpec:
         spec = QuerySpec(name="test", sparql="SELECT 1")
         assert not spec.is_composite
         assert spec.sparql == "SELECT 1"
-        assert spec.compose_sql is None
+        assert spec.compose_steps is None
         assert spec.depends_on == []
 
     def test_composite_spec(self):
+        from europeana_qlever.compose import ComposeStep
+
         spec = QuerySpec(
             name="composed",
-            compose_sql="SELECT * FROM t",
+            compose_steps=[ComposeStep("step1", "CREATE TEMP TABLE step1 AS SELECT 1")],
             depends_on=["dep1", "dep2"],
         )
         assert spec.is_composite
         assert spec.sparql is None
-        assert spec.compose_sql == "SELECT * FROM t"
+        assert len(spec.compose_steps) == 1
         assert spec.depends_on == ["dep1", "dep2"]
 
 
@@ -102,7 +104,7 @@ class TestQueryBuilder:
         specs = self.qb.all_enriched_queries()
         spec = specs["items_enriched"]
         assert spec.is_composite
-        assert spec.compose_sql is not None
+        assert spec.compose_steps is not None
         assert spec.sparql is None
         assert len(spec.depends_on) > 0
 
@@ -116,15 +118,16 @@ class TestQueryBuilder:
         ]:
             assert dep in spec.depends_on, f"Missing dependency: {dep}"
 
-    def test_items_enriched_compose_sql_has_placeholders(self):
+    def test_items_enriched_steps_have_placeholders(self):
         specs = self.qb.all_enriched_queries()
-        sql = specs["items_enriched"].compose_sql
-        assert "{exports_dir}" in sql
+        all_sql = "\n".join(s.sql for s in specs["items_enriched"].compose_steps)
+        assert "{exports_dir}" in all_sql
 
-    def test_items_enriched_compose_sql_uses_separator(self):
+    def test_items_enriched_steps_use_list(self):
         specs = self.qb.all_enriched_queries()
-        sql = specs["items_enriched"].compose_sql
-        assert " ||| " in sql
+        all_sql = "\n".join(s.sql for s in specs["items_enriched"].compose_steps)
+        assert "LIST" in all_sql
+        assert "STRING_AGG" not in all_sql
 
     def test_items_by_year_uses_europeana_proxy(self):
         sparql = self.qb.items_by_year()
@@ -139,25 +142,25 @@ class TestQueryBuilder:
 
     # --- Language resolution tests ---
 
-    def test_items_enriched_compose_sql_has_language_columns(self):
+    def test_items_enriched_steps_have_language_columns(self):
         """Composite items_enriched has en/native/resolved columns."""
         specs = self.qb.all_enriched_queries()
-        sql = specs["items_enriched"].compose_sql
-        assert "title_en" in sql
-        assert "title_native" in sql
-        assert "title_native_lang" in sql
-        assert "description_en" in sql
-        assert "description_native" in sql
+        all_sql = "\n".join(s.sql for s in specs["items_enriched"].compose_steps)
+        assert "title_en" in all_sql
+        assert "title_native" in all_sql
+        assert "title_native_lang" in all_sql
+        assert "description_en" in all_sql
+        assert "description_native" in all_sql
 
-    def test_extra_languages_in_compose_sql(self):
-        """Extra languages produce additional columns in composition SQL."""
+    def test_extra_languages_in_steps(self):
+        """Extra languages produce additional columns in composition steps."""
         qb = QueryBuilder(languages=["fr", "de"])
         specs = qb.all_enriched_queries()
-        sql = specs["items_enriched"].compose_sql
-        assert "title_fr" in sql
-        assert "title_de" in sql
-        assert "description_fr" in sql
-        assert "description_de" in sql
+        all_sql = "\n".join(s.sql for s in specs["items_enriched"].compose_steps)
+        assert "title_fr" in all_sql
+        assert "title_de" in all_sql
+        assert "description_fr" in all_sql
+        assert "description_de" in all_sql
 
     # --- Component query tests ---
 
@@ -284,14 +287,6 @@ class TestQueryBuilder:
 
     # --- Year filters ---
 
-    # --- Separator customisation ---
-
-    def test_custom_separator_in_compose_sql(self):
-        qb = QueryBuilder(separator=" ; ")
-        specs = qb.all_enriched_queries()
-        sql = specs["items_enriched"].compose_sql
-        assert " ; " in sql
-        assert " ||| " not in sql
 
     # --- Geolocated places ---
 

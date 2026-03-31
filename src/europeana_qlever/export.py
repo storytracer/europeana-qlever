@@ -429,17 +429,16 @@ def _compose_to_parquet(
     temp_directory: Path | None = None,
     row_group_size: int = 100_000,
 ) -> int:
-    """Run a DuckDB composition SQL and write the result to Parquet.
+    """Run a DuckDB composition and write the result to Parquet.
 
-    The SQL template uses ``{exports_dir}`` as a placeholder that is
-    replaced with the actual *output_dir* path.
-
-    When *spec.compose_steps* is set, each step is executed individually
-    with per-step progress logging (row count and elapsed time).
+    Executes each step in *spec.compose_steps* individually with
+    per-step progress logging (row count and elapsed time).  SQL
+    templates use ``{exports_dir}`` as a placeholder replaced with
+    the actual *output_dir* path.
 
     Returns the row count of the output Parquet file.
     """
-    assert spec.compose_sql is not None
+    assert spec.compose_steps is not None
     parquet_path = output_dir / f"{spec.name}.parquet"
     dir_str = str(output_dir)
 
@@ -451,38 +450,30 @@ def _compose_to_parquet(
         temp_directory.mkdir(parents=True, exist_ok=True)
         con.execute(f"SET temp_directory = '{temp_directory}'")
 
-    if spec.compose_steps:
-        total = len(spec.compose_steps)
-        for i, step in enumerate(spec.compose_steps, 1):
-            step_sql = step.sql.replace("{exports_dir}", dir_str)
-            t0 = time.perf_counter()
-            if step.is_final:
-                con.execute(f"""
-                    COPY ({step_sql})
-                    TO '{parquet_path}'
-                    (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})
-                """)
-                elapsed = time.perf_counter() - t0
-                display.console.print(
-                    f"  [dim][{i}/{total}][/dim] {step.name} ({elapsed:.1f}s)"
-                )
-            else:
-                con.execute(step_sql)
-                elapsed = time.perf_counter() - t0
-                count: int = con.execute(
-                    f"SELECT COUNT(*) FROM {step.name}"
-                ).fetchone()[0]  # type: ignore[index]
-                display.console.print(
-                    f"  [dim][{i}/{total}][/dim] {step.name}: "
-                    f"{count:,} rows ({elapsed:.1f}s)"
-                )
-    else:
-        sql = spec.compose_sql.replace("{exports_dir}", dir_str)
-        con.execute(f"""
-            COPY ({sql})
-            TO '{parquet_path}'
-            (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})
-        """)
+    total = len(spec.compose_steps)
+    for i, step in enumerate(spec.compose_steps, 1):
+        step_sql = step.sql.replace("{exports_dir}", dir_str)
+        t0 = time.perf_counter()
+        if step.is_final:
+            con.execute(f"""
+                COPY ({step_sql})
+                TO '{parquet_path}'
+                (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})
+            """)
+            elapsed = time.perf_counter() - t0
+            display.console.print(
+                f"  [dim][{i}/{total}][/dim] {step.name} ({elapsed:.1f}s)"
+            )
+        else:
+            con.execute(step_sql)
+            elapsed = time.perf_counter() - t0
+            count: int = con.execute(
+                f"SELECT COUNT(*) FROM {step.name}"
+            ).fetchone()[0]  # type: ignore[index]
+            display.console.print(
+                f"  [dim][{i}/{total}][/dim] {step.name}: "
+                f"{count:,} rows ({elapsed:.1f}s)"
+            )
 
     count = con.execute(
         f"SELECT COUNT(*) FROM '{parquet_path}'"
