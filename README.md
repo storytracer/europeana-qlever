@@ -38,7 +38,8 @@ The pipeline is designed to run within bounded memory. Each stage has explicit m
 | **Merge** | adaptive | Workers stream line-by-line to temp files; `AdaptiveThrottle` dynamically adjusts concurrency based on CPU and memory pressure (starts at `workers // 2`, scales between 2 and `workers`). Invalid TTL entries are validated inline via rdflib and skipped |
 | **Index** | 8 GB stxxl | Configurable via `--stxxl-memory` |
 | **Query serving** | 10 GB query / 5 GB cache | Configurable via `--query-memory` / `--cache-size` |
-| **Parquet export** | 4 GB DuckDB | DuckDB spills to disk when memory limit is exceeded |
+| **Parquet export (Phase 1)** | bounded | TSV→Parquet conversion uses parallel rdflib parsing with bounded submission (at most `workers * 2` batches in-flight), keeping memory constant regardless of file size |
+| **Parquet export (Phase 2)** | 4 GB DuckDB | DuckDB composition spills to disk when memory limit is exceeded |
 
 A background **resource monitor** (`psutil`) runs throughout the pipeline, sampling RSS, available memory, disk space, and CPU usage (system-wide and per-process) every 1–2 seconds. Samples are logged to `<work-dir>/monitor.log` (CSV). Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, an **adaptive throttle** dynamically adjusts worker concurrency based on CPU and memory pressure, using hysteresis to avoid jitter.
 
