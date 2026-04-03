@@ -43,7 +43,8 @@ from .constants import (
     QLEVER_PORT,
     QLEVER_QUERY_TIMEOUT,
 )
-from .query import QuerySpec
+from .compose import ComposeStep
+from .query import Query, QueryFilters, QueryRegistry
 from .state import ExportResult
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,189 @@ logger = logging.getLogger(__name__)
 # Suppress rdflib.term warnings about technically-invalid IRIs (e.g. spaces
 # in URLs) that are common in real-world Europeana provider data.
 logging.getLogger("rdflib.term").setLevel(logging.ERROR)
+
+
+# ---------------------------------------------------------------------------
+# Export type hierarchy
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Export:
+    """Base class for anything that produces a Parquet file."""
+
+    name: str
+    description: str = ""
+    depends_on: list[str] = field(default_factory=list)
+
+
+@dataclass
+class QueryExport(Export):
+    """Exports a SPARQL query result to Parquet (Phase 1)."""
+
+    sparql: str = ""
+
+    @classmethod
+    def from_query(cls, query: Query, filters: QueryFilters | None = None) -> QueryExport:
+        """Build a QueryExport from a Query, freezing the SPARQL with filters."""
+        return cls(
+            name=query.name,
+            description=query.description,
+            sparql=query.sparql(filters),
+        )
+
+    @classmethod
+    def from_sparql_file(cls, name: str, text: str) -> QueryExport:
+        """Build a QueryExport from a raw .sparql file."""
+        return cls(name=name, sparql=text)
+
+
+@dataclass
+class CompositeExport(Export):
+    """Composes Parquet files via DuckDB (Phase 2)."""
+
+    compose_steps: list[ComposeStep] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# ExportSet — named, non-exclusive collection of exports
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ExportSet:
+    """A named collection of exports.  Exports can belong to multiple sets."""
+
+    name: str
+    description: str
+    members: tuple[str, ...]
+
+    def resolve(self, registry: dict[str, Export]) -> dict[str, Export]:
+        """Return the subset of *registry* matching this set's members."""
+        return {n: registry[n] for n in self.members if n in registry}
+
+
+EXPORT_SETS: dict[str, ExportSet] = {
+    "pipeline": ExportSet(
+        "pipeline",
+        "Full Parquet export pipeline (standalone + component + composite)",
+        (
+            "web_resources",
+            "agents", "places", "concepts", "timespans",
+            "items_core", "items_titles", "items_descriptions",
+            "items_subjects", "items_dates", "items_languages",
+            "items_years", "items_creators",
+            "items_enriched",
+        ),
+    ),
+    "summary": ExportSet(
+        "summary",
+        "Dataset statistics — GROUP BY / COUNT aggregates",
+        (
+            "items_by_country", "items_by_language", "items_by_provider",
+            "items_by_type", "items_by_type_and_country",
+            "items_by_type_and_language", "items_by_year",
+            "items_by_rights_uri", "items_by_reuse_level",
+            "mime_type_distribution", "geolocated_places",
+            "iiif_availability", "texts_by_type",
+        ),
+    ),
+    "items": ExportSet(
+        "items",
+        "All item-related exports",
+        (
+            "items_core", "items_titles", "items_descriptions",
+            "items_subjects", "items_dates", "items_languages",
+            "items_years", "items_creators", "items_enriched",
+            "web_resources",
+            "items_by_country", "items_by_language", "items_by_provider",
+            "items_by_type", "items_by_type_and_country",
+            "items_by_type_and_language", "items_by_year",
+            "items_by_rights_uri", "items_by_reuse_level",
+            "iiif_availability", "mime_type_distribution", "texts_by_type",
+        ),
+    ),
+    "entities": ExportSet(
+        "entities",
+        "Contextual entity exports (agents, places, concepts, timespans)",
+        ("agents", "places", "concepts", "timespans", "geolocated_places"),
+    ),
+    "rights": ExportSet(
+        "rights",
+        "Rights and licensing exports",
+        ("items_by_rights_uri", "items_by_reuse_level"),
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
+# ExportRegistry — builds and holds all Export objects
+# ---------------------------------------------------------------------------
+
+class ExportRegistry:
+    """Builds exports from the query registry and composite definitions."""
+
+    def __init__(self, filters: QueryFilters | None = None) -> None:
+        self._query_registry = QueryRegistry()
+        self._filters = filters
+        self._exports: dict[str, Export] = self._build()
+
+    @property
+    def query_registry(self) -> QueryRegistry:
+        """The underlying query registry."""
+        return self._query_registry
+
+    @property
+    def exports(self) -> dict[str, Export]:
+        """All registered exports (copy)."""
+        return dict(self._exports)
+
+    def get(self, name: str) -> Export:
+        """Look up a single export by name."""
+        return self._exports[name]
+
+    def for_set(self, set_name: str) -> dict[str, Export]:
+        """Return exports belonging to a named query set."""
+        if set_name == "all":
+            return self.exports
+        es = EXPORT_SETS[set_name]
+        return {n: self._exports[n] for n in es.members if n in self._exports}
+
+    def for_names(self, names: list[str]) -> dict[str, Export]:
+        """Return exports matching the given names."""
+        result: dict[str, Export] = {}
+        for n in names:
+            if n not in self._exports:
+                raise KeyError(f"Unknown export: {n!r}")
+            result[n] = self._exports[n]
+        return result
+
+    def _build(self) -> dict[str, Export]:
+        exports: dict[str, Export] = {}
+
+        # Wrap all queries as QueryExports
+        for name, query in self._query_registry.queries.items():
+            exports[name] = QueryExport.from_query(query, self._filters)
+
+        # Composite exports
+        exports["items_enriched"] = CompositeExport(
+            name="items_enriched",
+            description=(
+                "Fully denormalized one-row-per-item export with parallel "
+                "English and vernacular title/description columns, resolved "
+                "entity labels, and multi-valued properties — composed via "
+                "DuckDB from component tables"
+            ),
+            compose_steps=ComposeStep.items_enriched_steps(),
+            depends_on=[
+                "items_core", "items_titles", "items_descriptions",
+                "items_subjects", "items_dates", "items_languages",
+                "items_years", "items_creators", "agents", "concepts",
+            ],
+        )
+
+        return exports
 
 _TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
 
@@ -420,325 +604,285 @@ def tsv_to_parquet(
     return total_rows
 
 
-def _compose_to_parquet(
-    spec: QuerySpec,
-    output_dir: Path,
-    *,
-    memory_limit: str = "4GB",
-    threads: int | None = None,
-    temp_directory: Path | None = None,
-    row_group_size: int = 100_000,
-) -> int:
-    """Run a DuckDB composition and write the result to Parquet.
+# ---------------------------------------------------------------------------
+# ExportPipeline — executes exports in dependency order
+# ---------------------------------------------------------------------------
 
-    Executes each step in *spec.compose_steps* individually with
-    per-step progress logging (row count and elapsed time).  SQL
-    templates use ``{exports_dir}`` as a placeholder replaced with
-    the actual *output_dir* path.
+class ExportPipeline:
+    """Executes a set of exports: SPARQL→Parquet and DuckDB composition.
 
-    Returns the row count of the output Parquet file.
+    Handles both :class:`QueryExport` (Phase 1) and :class:`CompositeExport`
+    (Phase 2). Composite exports automatically trigger their dependencies.
+    Continues past individual failures and reports all errors at the end.
     """
-    assert spec.compose_steps is not None
-    parquet_path = output_dir / f"{spec.name}.parquet"
-    dir_str = str(output_dir)
 
-    con = duckdb.connect()
-    con.execute(f"SET memory_limit = '{memory_limit}'")
-    con.execute("SET preserve_insertion_order = false")
-    if threads is not None:
-        con.execute(f"SET threads = {threads}")
-    if temp_directory is not None:
-        temp_directory.mkdir(parents=True, exist_ok=True)
-        con.execute(f"SET temp_directory = '{temp_directory}'")
+    def __init__(
+        self,
+        output_dir: Path,
+        exports: dict[str, Export],
+        qlever_url: str = f"http://localhost:{QLEVER_PORT}",
+        timeout: int = QLEVER_QUERY_TIMEOUT,
+        skip_existing: bool = False,
+        memory_limit: str = "4GB",
+        duckdb_threads: int | None = None,
+        temp_directory: Path | None = None,
+        dashboard: object | None = None,
+        *,
+        keep_base: bool = True,
+        reuse_tsv: bool = False,
+        http_chunk_size: int = 1_048_576,
+        http_connect_timeout: int = 30,
+        duckdb_sample_size: int = 100_000,
+        duckdb_row_group_size: int = 100_000,
+        max_retries: int = DEFAULT_EXPORT_MAX_RETRIES,
+        retry_delays: tuple[int, ...] = DEFAULT_EXPORT_RETRY_DELAYS,
+    ) -> None:
+        self._output_dir = output_dir
+        self._exports = exports
+        self._qlever_url = qlever_url
+        self._timeout = timeout
+        self._skip_existing = skip_existing
+        self._memory_limit = memory_limit
+        self._duckdb_threads = duckdb_threads
+        self._temp_directory = temp_directory
+        self._dashboard = dashboard
+        self._keep_base = keep_base
+        self._reuse_tsv = reuse_tsv
+        self._http_chunk_size = http_chunk_size
+        self._http_connect_timeout = http_connect_timeout
+        self._duckdb_sample_size = duckdb_sample_size
+        self._duckdb_row_group_size = duckdb_row_group_size
+        self._max_retries = max_retries
+        self._retry_delays = retry_delays
 
-    total = len(spec.compose_steps)
-    for i, step in enumerate(spec.compose_steps, 1):
-        step_sql = step.sql.replace("{exports_dir}", dir_str)
-        t0 = time.perf_counter()
-        if step.is_final:
-            con.execute(f"""
-                COPY ({step_sql})
-                TO '{parquet_path}'
-                (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {row_group_size})
-            """)
-            elapsed = time.perf_counter() - t0
-            display.console.print(
-                f"  [dim][{i}/{total}][/dim] {step.name} ({elapsed:.1f}s)"
-            )
-        else:
-            con.execute(step_sql)
-            elapsed = time.perf_counter() - t0
-            count: int = con.execute(
-                f"SELECT COUNT(*) FROM {step.name}"
-            ).fetchone()[0]  # type: ignore[index]
-            display.console.print(
-                f"  [dim][{i}/{total}][/dim] {step.name}: "
-                f"{count:,} rows ({elapsed:.1f}s)"
-            )
+    def run(self) -> ExportResult:
+        """Execute all exports in dependency order."""
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        result = ExportResult()
 
-    count = con.execute(
-        f"SELECT COUNT(*) FROM '{parquet_path}'"
-    ).fetchone()[0]  # type: ignore[index]
-    con.close()
-    return count
+        dependency_only: set[str] = set()
+        all_exports = self._resolve_dependencies(dependency_only)
+        order = self._topological_order(all_exports)
 
+        for name in order:
+            export = all_exports[name]
+            parquet_path = self._output_dir / f"{name}.parquet"
 
-def _topological_order(specs: dict[str, QuerySpec]) -> list[str]:
-    """Sort spec names so that dependencies come before dependents."""
-    ordered: list[str] = []
-    visited: set[str] = set()
-
-    def visit(name: str) -> None:
-        if name in visited:
-            return
-        visited.add(name)
-        spec = specs.get(name)
-        if spec:
-            for dep in spec.depends_on:
-                visit(dep)
-        ordered.append(name)
-
-    for name in specs:
-        visit(name)
-    return ordered
-
-
-def export_all(
-    output_dir: Path,
-    queries: dict[str, QuerySpec],
-    qlever_url: str = f"http://localhost:{QLEVER_PORT}",
-    timeout: int = QLEVER_QUERY_TIMEOUT,
-    skip_existing: bool = False,
-    memory_limit: str = "4GB",
-    duckdb_threads: int | None = None,
-    temp_directory: Path | None = None,
-    dashboard: object | None = None,
-    *,
-    keep_base: bool = True,
-    reuse_tsv: bool = False,
-    http_chunk_size: int = 1_048_576,
-    http_connect_timeout: int = 30,
-    duckdb_sample_size: int = 100_000,
-    duckdb_row_group_size: int = 100_000,
-    max_retries: int = DEFAULT_EXPORT_MAX_RETRIES,
-    retry_delays: tuple[int, ...] = DEFAULT_EXPORT_RETRY_DELAYS,
-) -> ExportResult:
-    """Run all registered exports and convert results to Parquet.
-
-    Handles both simple SPARQL exports (Phase 1) and composite DuckDB
-    exports (Phase 2). Composite exports automatically trigger their
-    dependencies first.
-
-    Continues past individual query failures and reports all errors at the
-    end.  Returns an :class:`ExportResult` with succeeded/failed lists.
-
-    Parameters
-    ----------
-    output_dir : Path
-        Directory for TSV + Parquet outputs.
-    queries : dict[str, QuerySpec]
-        Mapping of query name to :class:`QuerySpec`.
-    qlever_url : str
-        QLever HTTP endpoint.
-    timeout : int
-        Per-query timeout in seconds.
-    skip_existing : bool
-        Skip queries whose .parquet file already exists.
-    memory_limit : str
-        DuckDB memory budget for Parquet conversion.
-    temp_directory : Path or None
-        DuckDB spill directory. Defaults to ``output_dir / ".duckdb_tmp"``.
-    dashboard : Dashboard or None
-        Optional dashboard for live progress updates.
-    keep_base : bool
-        Keep intermediate base table Parquet files (default True).
-        When False, base tables that were only needed as dependencies
-        are removed after composition.
-    http_chunk_size : int
-        HTTP streaming chunk size in bytes.
-    http_connect_timeout : int
-        HTTP connect timeout in seconds.
-    duckdb_sample_size : int
-        DuckDB type inference sample size.
-    duckdb_row_group_size : int
-        Parquet row group size.
-    max_retries : int
-        Max retry attempts for transient errors.
-    retry_delays : tuple[int, ...]
-        Seconds between retry attempts.
-
-    Returns
-    -------
-    ExportResult
-        Outcome with succeeded/failed query lists and Parquet file paths.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    result = ExportResult()
-
-    # Track which base tables are only needed as dependencies
-    dependency_only: set[str] = set()
-    originally_requested = set(queries.keys())
-
-    # Resolve dependencies: add any specs not already in the dict
-    # that are required by composite exports
-    from .query import QueryBuilder
-
-    all_specs = dict(queries)
-    needs_deps = any(s.is_composite for s in queries.values())
-    if needs_deps:
-        full_registry = QueryBuilder().all_queries()
-        for spec in list(queries.values()):
-            if spec.is_composite:
-                for dep_name in spec.depends_on:
-                    if dep_name not in all_specs and dep_name in full_registry:
-                        all_specs[dep_name] = full_registry[dep_name]
-                        dependency_only.add(dep_name)
-
-    # Process in topological order (dependencies first)
-    order = _topological_order(all_specs)
-
-    for name in order:
-        spec = all_specs[name]
-        parquet_path = output_dir / f"{name}.parquet"
-
-        if skip_existing and parquet_path.exists():
-            display.console.print(f"[dim]Skipping {name} (parquet exists)[/dim]")
-            result.succeeded.append(name)
-            if name not in dependency_only:
-                result.parquet_files.append(parquet_path)
-            if dashboard is not None:
-                try:
-                    dashboard.advance()
-                except Exception:
-                    pass
-            continue
-
-        if spec.is_composite:
-            # Check that all dependencies succeeded
-            missing = [
-                dep for dep in spec.depends_on
-                if dep not in result.succeeded
-                and not (output_dir / f"{dep}.parquet").exists()
-            ]
-            if missing:
-                msg = f"Missing dependencies: {', '.join(missing)}"
-                logger.error("Composite export %s skipped: %s", name, msg)
-                display.console.print(f"  [red]SKIPPED: {msg}[/red]")
-                result.failed[name] = msg
-                if dashboard is not None:
-                    try:
-                        dashboard.advance()
-                    except Exception:
-                        pass
+            if self._skip_existing and parquet_path.exists():
+                display.console.print(f"[dim]Skipping {name} (parquet exists)[/dim]")
+                result.succeeded.append(name)
+                if name not in dependency_only:
+                    result.parquet_files.append(parquet_path)
+                self._advance_dashboard()
                 continue
 
-        tag = "[cyan]compose[/cyan]" if spec.is_composite else "[blue]SPARQL[/blue]"
-        display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
-        if dashboard is not None:
+            if isinstance(export, CompositeExport):
+                missing = [
+                    dep for dep in export.depends_on
+                    if dep not in result.succeeded
+                    and not (self._output_dir / f"{dep}.parquet").exists()
+                ]
+                if missing:
+                    msg = f"Missing dependencies: {', '.join(missing)}"
+                    logger.error("Composite export %s skipped: %s", name, msg)
+                    display.console.print(f"  [red]SKIPPED: {msg}[/red]")
+                    result.failed[name] = msg
+                    self._advance_dashboard()
+                    continue
+
+            is_composite = isinstance(export, CompositeExport)
+            tag = "[cyan]compose[/cyan]" if is_composite else "[blue]SPARQL[/blue]"
+            display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
+            if self._dashboard is not None:
+                try:
+                    self._dashboard.set_info("export", name)
+                except Exception:
+                    pass
+
             try:
-                dashboard.set_info("query", name)
-            except Exception:
-                pass
-
-        try:
-            if spec.is_composite:
-                # Phase 2: DuckDB composition
-                threads_info = f", {duckdb_threads} threads" if duckdb_threads else ""
-                display.console.print(
-                    f"  Composing from base tables "
-                    f"[dim]({memory_limit} memory{threads_info})[/dim]"
-                )
-                duckdb_tmp = temp_directory or (output_dir / ".duckdb_tmp")
-                count = _compose_to_parquet(
-                    spec, output_dir,
-                    memory_limit=memory_limit,
-                    threads=duckdb_threads,
-                    temp_directory=duckdb_tmp,
-                    row_group_size=duckdb_row_group_size,
-                )
-                pq_mb = parquet_path.stat().st_size / 1e6
-                display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
-            else:
-                # Phase 1: SPARQL → TSV → Parquet
-                assert spec.sparql is not None
-                tsv_path = output_dir / f"{name}.tsv"
-
-                if reuse_tsv and tsv_path.exists():
-                    # Count lines for progress hint (subtract header)
-                    with open(tsv_path, "rb") as f:
-                        rows = sum(1 for _ in f) - 1
-                    tsv_mb = tsv_path.stat().st_size / 1e6
-                    display.console.print(
-                        f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB [dim](reused)[/dim]"
-                    )
+                if isinstance(export, CompositeExport):
+                    count, pq_mb = self._run_composite(export)
+                elif isinstance(export, QueryExport):
+                    count, pq_mb = self._run_query_export(export)
                 else:
-                    rows = run_query_to_tsv(
-                        spec.sparql, tsv_path, qlever_url, timeout,
-                        max_retries=max_retries,
-                        retry_delays=retry_delays,
-                        http_chunk_size=http_chunk_size,
-                        http_connect_timeout=http_connect_timeout,
-                    )
-                    tsv_mb = tsv_path.stat().st_size / 1e6
-                    display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
+                    raise TypeError(f"Unknown export type: {type(export)}")
 
-                display.console.print("  Converting to Parquet…")
-                count = tsv_to_parquet(
-                    tsv_path, parquet_path,
-                    row_group_size=duckdb_row_group_size,
-                    total_hint=rows,
+                result.succeeded.append(name)
+                if name not in dependency_only:
+                    result.parquet_files.append(parquet_path)
+                logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
+
+            except Exception as exc:
+                logger.error("Export failed for %s: %s", name, exc)
+                display.console.print(f"  [red]FAILED: {exc}[/red]")
+                result.failed[name] = str(exc)
+                if isinstance(export, QueryExport):
+                    tsv_path = self._output_dir / f"{name}.tsv"
+                    _cleanup_partial(tsv_path, parquet_path)
+                else:
+                    _cleanup_partial(parquet_path)
+
+            self._advance_dashboard()
+
+        if not self._keep_base:
+            for dep_name in dependency_only:
+                dep_path = self._output_dir / f"{dep_name}.parquet"
+                if dep_path.exists():
+                    dep_path.unlink()
+                    logger.info("Removed intermediate base table: %s", dep_name)
+
+        self._print_summary(result, dependency_only)
+        return result
+
+    # -- Private helpers ---------------------------------------------------
+
+    def _resolve_dependencies(self, dependency_only: set[str]) -> dict[str, Export]:
+        """Add missing dependency exports needed by composites."""
+        all_exports = dict(self._exports)
+        needs_deps = any(isinstance(e, CompositeExport) for e in self._exports.values())
+        if needs_deps:
+            full_registry = ExportRegistry().exports
+            for export in list(self._exports.values()):
+                if isinstance(export, CompositeExport):
+                    for dep_name in export.depends_on:
+                        if dep_name not in all_exports and dep_name in full_registry:
+                            all_exports[dep_name] = full_registry[dep_name]
+                            dependency_only.add(dep_name)
+        return all_exports
+
+    @staticmethod
+    def _topological_order(exports: dict[str, Export]) -> list[str]:
+        """Sort export names so dependencies come before dependents."""
+        ordered: list[str] = []
+        visited: set[str] = set()
+
+        def visit(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+            export = exports.get(name)
+            if export:
+                for dep in export.depends_on:
+                    visit(dep)
+            ordered.append(name)
+
+        for name in exports:
+            visit(name)
+        return ordered
+
+    def _run_composite(self, export: CompositeExport) -> tuple[int, float]:
+        """Execute DuckDB composition steps. Returns (row_count, parquet_mb)."""
+        threads_info = f", {self._duckdb_threads} threads" if self._duckdb_threads else ""
+        display.console.print(
+            f"  Composing from base tables "
+            f"[dim]({self._memory_limit} memory{threads_info})[/dim]"
+        )
+        parquet_path = self._output_dir / f"{export.name}.parquet"
+        duckdb_tmp = self._temp_directory or (self._output_dir / ".duckdb_tmp")
+        dir_str = str(self._output_dir)
+
+        con = duckdb.connect()
+        con.execute(f"SET memory_limit = '{self._memory_limit}'")
+        con.execute("SET preserve_insertion_order = false")
+        if self._duckdb_threads is not None:
+            con.execute(f"SET threads = {self._duckdb_threads}")
+        if duckdb_tmp is not None:
+            duckdb_tmp.mkdir(parents=True, exist_ok=True)
+            con.execute(f"SET temp_directory = '{duckdb_tmp}'")
+
+        total = len(export.compose_steps)
+        for i, step in enumerate(export.compose_steps, 1):
+            step_sql = step.sql.replace("{exports_dir}", dir_str)
+            t0 = time.perf_counter()
+            if step.is_final:
+                con.execute(f"""
+                    COPY ({step_sql})
+                    TO '{parquet_path}'
+                    (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {self._duckdb_row_group_size})
+                """)
+                elapsed = time.perf_counter() - t0
+                display.console.print(
+                    f"  [dim][{i}/{total}][/dim] {step.name} ({elapsed:.1f}s)"
                 )
-                pq_mb = parquet_path.stat().st_size / 1e6
-                display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
-
-                if not reuse_tsv:
-                    tsv_path.unlink()
-
-            result.succeeded.append(name)
-            if name not in dependency_only:
-                result.parquet_files.append(parquet_path)
-            logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
-
-        except Exception as exc:
-            logger.error("Export failed for %s: %s", name, exc)
-            display.console.print(f"  [red]FAILED: {exc}[/red]")
-            result.failed[name] = str(exc)
-            if not spec.is_composite:
-                tsv_path = output_dir / f"{name}.tsv"
-                _cleanup_partial(tsv_path, parquet_path)
             else:
-                _cleanup_partial(parquet_path)
+                con.execute(step_sql)
+                elapsed = time.perf_counter() - t0
+                step_count: int = con.execute(
+                    f"SELECT COUNT(*) FROM {step.name}"
+                ).fetchone()[0]  # type: ignore[index]
+                display.console.print(
+                    f"  [dim][{i}/{total}][/dim] {step.name}: "
+                    f"{step_count:,} rows ({elapsed:.1f}s)"
+                )
 
-        if dashboard is not None:
+        count: int = con.execute(
+            f"SELECT COUNT(*) FROM '{parquet_path}'"
+        ).fetchone()[0]  # type: ignore[index]
+        con.close()
+
+        pq_mb = parquet_path.stat().st_size / 1e6
+        display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+        return count, pq_mb
+
+    def _run_query_export(self, export: QueryExport) -> tuple[int, float]:
+        """Run SPARQL → TSV → Parquet. Returns (row_count, parquet_mb)."""
+        name = export.name
+        tsv_path = self._output_dir / f"{name}.tsv"
+        parquet_path = self._output_dir / f"{name}.parquet"
+
+        if self._reuse_tsv and tsv_path.exists():
+            with open(tsv_path, "rb") as f:
+                rows = sum(1 for _ in f) - 1
+            tsv_mb = tsv_path.stat().st_size / 1e6
+            display.console.print(
+                f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB [dim](reused)[/dim]"
+            )
+        else:
+            rows = run_query_to_tsv(
+                export.sparql, tsv_path, self._qlever_url, self._timeout,
+                max_retries=self._max_retries,
+                retry_delays=self._retry_delays,
+                http_chunk_size=self._http_chunk_size,
+                http_connect_timeout=self._http_connect_timeout,
+            )
+            tsv_mb = tsv_path.stat().st_size / 1e6
+            display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
+
+        display.console.print("  Converting to Parquet…")
+        count = tsv_to_parquet(
+            tsv_path, parquet_path,
+            row_group_size=self._duckdb_row_group_size,
+            total_hint=rows,
+        )
+        pq_mb = parquet_path.stat().st_size / 1e6
+        display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+
+        if not self._reuse_tsv:
+            tsv_path.unlink()
+
+        return count, pq_mb
+
+    def _advance_dashboard(self) -> None:
+        if self._dashboard is not None:
             try:
-                dashboard.advance()
+                self._dashboard.advance()
             except Exception:
                 pass
 
-    # Clean up dependency-only base tables if requested
-    if not keep_base:
-        for dep_name in dependency_only:
-            dep_path = output_dir / f"{dep_name}.parquet"
-            if dep_path.exists():
-                dep_path.unlink()
-                logger.info("Removed intermediate base table: %s", dep_name)
+    @staticmethod
+    def _print_summary(result: ExportResult, dependency_only: set[str]) -> None:
+        user_succeeded = [n for n in result.succeeded if n not in dependency_only]
+        user_failed = {n: e for n, e in result.failed.items() if n not in dependency_only}
 
-    # Summary
-    # Filter out dependency-only names from the display
-    user_succeeded = [n for n in result.succeeded if n not in dependency_only]
-    user_failed = {n: e for n, e in result.failed.items() if n not in dependency_only}
-
-    if user_failed:
-        display.console.print(
-            f"\n[yellow bold]{len(user_failed)} query(ies) failed:[/yellow bold]"
-        )
-        for name, err in user_failed.items():
-            display.console.print(f"  [red]{name}: {err}[/red]")
-    if result.parquet_files:
-        display.console.print(
-            f"\n[green bold]{len(user_succeeded)} export(s) complete.[/green bold]"
-        )
-        for p in result.parquet_files:
-            display.console.print(f"  {p.name}: {p.stat().st_size / 1e6:.1f} MB")
-
-    return result
+        if user_failed:
+            display.console.print(
+                f"\n[yellow bold]{len(user_failed)} export(s) failed:[/yellow bold]"
+            )
+            for name, err in user_failed.items():
+                display.console.print(f"  [red]{name}: {err}[/red]")
+        if result.parquet_files:
+            display.console.print(
+                f"\n[green bold]{len(user_succeeded)} export(s) complete.[/green bold]"
+            )
+            for p in result.parquet_files:
+                display.console.print(f"  {p.name}: {p.stat().st_size / 1e6:.1f} MB")

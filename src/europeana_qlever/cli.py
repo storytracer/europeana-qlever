@@ -38,7 +38,8 @@ from .constants import (
     QLEVER_QUERY_TIMEOUT,
     STATE_FILENAME,
 )
-from .query import QUERY_SETS
+from .export import EXPORT_SETS
+from .query import QueryFilters
 
 
 # ---------------------------------------------------------------------------
@@ -365,12 +366,12 @@ UI_PORT = 7000
 
 def _write_ui_config(index_dir: Path, port: int) -> Path:
     """Generate a Qleverfile-ui.yml with lightweight analytics example queries."""
-    from .query import QUERY_SETS, QueryBuilder
+    from .export import ExportRegistry, QueryExport
 
-    builder = QueryBuilder()
-    summary = QUERY_SETS["summary"].resolve(builder.all_queries())
+    registry = ExportRegistry()
+    summary_exports = registry.for_set("summary")
     examples = sorted(
-        [(name, spec.sparql) for name, spec in summary.items() if spec.sparql],
+        [(name, e.sparql) for name, e in summary_exports.items() if isinstance(e, QueryExport)],
         key=lambda e: e[0],
     )
 
@@ -395,7 +396,7 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
         lines.append(f'    - name: "{name}"')
         lines.append(f"      sort_key: {i}")
         lines.append("      query: |")
-        # Normalize indentation: QueryBuilder output has PREFIX lines at col 0
+        # Normalize indentation: generated SPARQL has PREFIX lines at col 0
         # but body lines indented from the f-string template. Find the indent
         # of the first non-PREFIX, non-empty line (typically SELECT) and strip
         # that amount from all lines.
@@ -642,57 +643,56 @@ def stop(ctx: click.Context):
 
 
 # ---------------------------------------------------------------------------
-# list-queries
+# list-exports
 # ---------------------------------------------------------------------------
 
-@cli.command("list-queries")
-@click.option("--query-set", default=None,
-              help="Filter to a specific query set.")
+@cli.command("list-exports")
+@click.option("--export-set", default=None,
+              help="Filter to a specific export set.")
 @click.pass_context
-def list_queries_cmd(ctx: click.Context, query_set: str | None):
-    """List all available named queries."""
+def list_exports_cmd(ctx: click.Context, export_set: str | None):
+    """List all available exports."""
     from rich.table import Table
 
-    from .query import QUERY_SETS, QueryBuilder
+    from .export import CompositeExport, ExportRegistry
 
-    qb = QueryBuilder()
+    registry = ExportRegistry()
 
-    if query_set and query_set != "all":
-        if query_set not in QUERY_SETS:
-            available = ", ".join(sorted(QUERY_SETS))
+    if export_set and export_set != "all":
+        if export_set not in EXPORT_SETS:
+            available = ", ".join(sorted(EXPORT_SETS))
             raise click.UsageError(
-                f"Unknown query set: '{query_set}'. Available: {available}, all"
+                f"Unknown export set: '{export_set}'. Available: {available}, all"
             )
-        specs = QUERY_SETS[query_set].resolve(qb.all_queries())
+        exports = registry.for_set(export_set)
     else:
-        specs = qb.all_queries()
+        exports = registry.exports
 
-    table = Table(title=f"Queries ({query_set or 'all'})")
+    table = Table(title=f"Exports ({export_set or 'all'})")
     table.add_column("Name", style="cyan")
     table.add_column("Type", style="dim")
     table.add_column("Sets", style="green")
     table.add_column("Description")
-    for name, spec in specs.items():
-        qtype = "composite" if spec.is_composite else "SPARQL"
-        sets = ", ".join(spec.query_sets) or "—"
-        table.add_row(name, qtype, sets, spec.description)
+    for name, export in exports.items():
+        etype = "composite" if isinstance(export, CompositeExport) else "SPARQL"
+        member_of = [es.name for es in EXPORT_SETS.values() if name in es.members]
+        table.add_row(name, etype, ", ".join(member_of) or "—", export.description)
     display.console.print(table)
     display.console.print()
 
-    if not query_set:
-        set_names = ", ".join(sorted(QUERY_SETS))
-        display.console.print(f"[dim]Query sets: {set_names}[/dim]")
+    if not export_set:
+        set_names = ", ".join(sorted(EXPORT_SETS))
+        display.console.print(f"[dim]Export sets: {set_names}[/dim]")
 
 
 # ---------------------------------------------------------------------------
-# Shared query resolution helper
+# Shared export resolution helper
 # ---------------------------------------------------------------------------
 
-def _resolve_queries(
-    sparql_files: tuple[Path, ...],
+def _resolve_exports(
+    names: tuple[str, ...],
     run_all: bool,
-    query_names: tuple[str, ...],
-    query_set: str | None,
+    export_set: str | None,
     countries: tuple[str, ...],
     types: tuple[str, ...],
     reuse_level: str | None,
@@ -703,29 +703,19 @@ def _resolve_queries(
     filter_languages: tuple[str, ...],
     dataset_names: tuple[str, ...],
     limit: int | None = None,
-):
-    """Build a QueryBuilder and resolve the queries dict from CLI args.
+) -> dict[str, "Export"]:
+    """Resolve CLI args into a dict of Export objects."""
+    from .export import Export, ExportRegistry
 
-    Returns ``(qb, queries)`` where *qb* is a :class:`QueryBuilder` and
-    *queries* is ``dict[str, QuerySpec]`` mapping names to query specs.
-    """
-    from .query import QueryBuilder, QueryFilters, QuerySpec
-
-    modes = sum([
-        bool(run_all),
-        bool(query_names),
-        bool(query_set),
-        bool(sparql_files),
-    ])
+    modes = sum([bool(run_all), bool(names), bool(export_set)])
     if modes == 0:
         raise click.UsageError(
-            "Provide one of: --all, -q QUERY, --query-set SET, or .sparql files."
+            "Provide one of: NAMES, --all, or --set SET."
         )
-    if modes > 1 and not (bool(query_names) and not run_all and not query_set and not sparql_files):
-        if not (modes == 1 or (bool(query_names) and modes == 1)):
-            raise click.UsageError(
-                "Cannot combine --all, -q, --query-set, and .sparql files."
-            )
+    if modes > 1:
+        raise click.UsageError(
+            "Cannot combine NAMES, --all, and --set."
+        )
 
     filters = QueryFilters(
         countries=list(countries) or None,
@@ -740,56 +730,47 @@ def _resolve_queries(
         limit=limit,
     )
 
-    qb = QueryBuilder()
-    queries: dict[str, QuerySpec] = {}
+    registry = ExportRegistry(filters=filters)
 
-    if sparql_files:
-        for p in sparql_files:
-            stem = p.stem
-            name = re.sub(r"^\d+_", "", stem)
-            queries[name] = QuerySpec(name=name, sparql=p.read_text())
-    elif run_all:
-        queries = QUERY_SETS["pipeline"].resolve(qb.all_queries(filters))
-    elif query_set:
-        if query_set == "all":
-            queries = qb.all_queries(filters)
-        else:
-            queries = QUERY_SETS[query_set].resolve(qb.all_queries(filters))
-    elif query_names:
-        all_specs = qb.all_queries(filters)
-        for name in query_names:
-            if name not in all_specs:
-                raise click.UsageError(
-                    f"Unknown query: '{name}'. Use `list-queries` to see available queries."
-                )
-            queries[name] = all_specs[name]
+    if run_all:
+        return registry.for_set("pipeline")
+    if export_set:
+        if export_set == "all":
+            return registry.exports
+        return registry.for_set(export_set)
 
-    return qb, queries
+    # Positional names
+    exports: dict[str, Export] = {}
+    for name in names:
+        try:
+            exports[name] = registry.get(name)
+        except KeyError:
+            raise click.UsageError(
+                f"Unknown export: '{name}'. Use `list-exports` to see available exports."
+            )
+    return exports
 
 
 def _analysis_output_path(
     analysis_dir: Path,
     suffix: str,
     output_path: Path | None,
-    query_names: tuple[str, ...],
-    query_set: str | None,
+    names: tuple[str, ...],
+    export_set: str | None,
     run_all: bool,
-    sparql_files: tuple[Path, ...],
-    queries: dict[str, str],
+    sparql_map: dict[str, str],
 ) -> Path:
     """Derive the output path for an analysis report."""
     if output_path:
         return output_path
-    if query_names and len(query_names) == 1:
-        stem = query_names[0]
-    elif query_set:
-        stem = query_set
+    if names and len(names) == 1:
+        stem = names[0]
+    elif export_set:
+        stem = export_set
     elif run_all:
-        stem = "base"
-    elif sparql_files:
-        stem = "_".join(p.stem for p in sparql_files)
+        stem = "pipeline"
     else:
-        stem = "_".join(sorted(queries))
+        stem = "_".join(sorted(sparql_map))
     return analysis_dir / f"{stem}.{suffix}.md"
 
 
@@ -813,14 +794,11 @@ def analyze(ctx: click.Context):
 # ---------------------------------------------------------------------------
 
 @analyze.command("qlever")
-@click.argument("sparql_files", nargs=-1,
-                type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("names", nargs=-1)
 @click.option("--all", "run_all", is_flag=True, default=False,
-              help="Analyze all pipeline queries.")
-@click.option("-q", "--query", "query_names", multiple=True,
-              help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(list(QUERY_SETS) + ["all"]),
-              help="Analyze a predefined set of queries.")
+              help="Analyze all pipeline exports.")
+@click.option("--set", "export_set", type=click.Choice(list(EXPORT_SETS) + ["all"]),
+              help="Analyze a predefined export set.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
 @click.option("--type", "types", multiple=True,
@@ -850,10 +828,9 @@ def analyze(ctx: click.Context):
 @click.pass_context
 def analyze_qlever(
     ctx: click.Context,
-    sparql_files: tuple[Path, ...],
+    names: tuple[str, ...],
     run_all: bool,
-    query_names: tuple[str, ...],
-    query_set: str | None,
+    export_set: str | None,
     countries: tuple[str, ...],
     types: tuple[str, ...],
     reuse_level: str | None,
@@ -869,40 +846,41 @@ def analyze_qlever(
     qlever_url: str,
     timeout: int,
 ):
-    """Profile queries against a running QLever server.
+    """Profile exports against a running QLever server.
 
-    Runs queries with a LIMIT, collects runtime information from the
-    QLever execution tree, and writes a Markdown report identifying
-    bottlenecks.  The report is designed to be pasted into a Claude Code
-    prompt for further diagnosis.
+    Only QueryExports (SPARQL-based) can be analyzed — composite exports
+    are skipped.  Runs queries with a LIMIT, collects runtime information
+    from the QLever execution tree, and writes a Markdown report.
     """
     from .analysis import analyze_all, render_markdown
+    from .export import CompositeExport, QueryExport
 
-    qb, specs = _resolve_queries(
-        sparql_files, run_all, query_names, query_set,
+    all_exports = _resolve_exports(
+        names, run_all, export_set,
         countries, types, reuse_level, providers,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names,
     )
 
-    # Extract SPARQL strings, skipping composite queries
-    queries = {n: s.sparql for n, s in specs.items() if s.sparql is not None}
-    skipped = [n for n, s in specs.items() if s.is_composite]
+    # Extract SPARQL strings, rejecting composite exports
+    sparql_map = {n: e.sparql for n, e in all_exports.items() if isinstance(e, QueryExport)}
+    skipped = [n for n, e in all_exports.items() if isinstance(e, CompositeExport)]
     if skipped:
         display.console.print(
-            f"[dim]Skipping composite queries (no SPARQL): {', '.join(skipped)}[/dim]"
+            f"[dim]Skipping composite exports (no SPARQL): {', '.join(skipped)}[/dim]"
         )
 
     analysis_dir: Path = ctx.obj["analysis_dir"]
     out = _analysis_output_path(
         analysis_dir, "qlever", output_path,
-        query_names, query_set, run_all, sparql_files, queries,
+        names, export_set, run_all, sparql_map,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
 
     results = analyze_all(
-        queries, qlever_url, timeout,
-        send=send, limit=limit, describe_fn=lambda n: specs[n].description if n in specs else "",
+        sparql_map, qlever_url, timeout,
+        send=send, limit=limit,
+        describe_fn=lambda n: all_exports[n].description if n in all_exports else "",
     )
 
     md = render_markdown(results, qlever_url, limit)
@@ -922,14 +900,11 @@ def analyze_qlever(
 # ---------------------------------------------------------------------------
 
 @analyze.command("static")
-@click.argument("sparql_files", nargs=-1,
-                type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("names", nargs=-1)
 @click.option("--all", "run_all", is_flag=True, default=False,
-              help="Analyze all pipeline queries.")
-@click.option("-q", "--query", "query_names", multiple=True,
-              help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(list(QUERY_SETS) + ["all"]),
-              help="Analyze a predefined set of queries.")
+              help="Analyze all pipeline exports.")
+@click.option("--set", "export_set", type=click.Choice(list(EXPORT_SETS) + ["all"]),
+              help="Analyze a predefined export set.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
 @click.option("--type", "types", multiple=True,
@@ -951,10 +926,9 @@ def analyze_qlever(
 @click.pass_context
 def analyze_static(
     ctx: click.Context,
-    sparql_files: tuple[Path, ...],
+    names: tuple[str, ...],
     run_all: bool,
-    query_names: tuple[str, ...],
-    query_set: str | None,
+    export_set: str | None,
     countries: tuple[str, ...],
     types: tuple[str, ...],
     reuse_level: str | None,
@@ -968,35 +942,37 @@ def analyze_static(
 ):
     """Offline structural analysis of SPARQL query complexity.
 
-    Parses queries into SPARQL algebra and identifies structural
-    bottlenecks (deep OPTIONAL nesting, high variable count, expensive
-    aggregations) without requiring a running QLever server.
+    Only QueryExports (SPARQL-based) can be analyzed — composite exports
+    are skipped.  Parses queries into SPARQL algebra and identifies
+    structural bottlenecks without requiring a running QLever server.
     """
     from .analysis import render_static_markdown, static_analyze_all
+    from .export import CompositeExport, QueryExport
 
-    qb, specs = _resolve_queries(
-        sparql_files, run_all, query_names, query_set,
+    all_exports = _resolve_exports(
+        names, run_all, export_set,
         countries, types, reuse_level, providers,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names,
     )
 
-    # Extract SPARQL strings, skipping composite queries
-    queries = {n: s.sparql for n, s in specs.items() if s.sparql is not None}
-    skipped = [n for n, s in specs.items() if s.is_composite]
+    sparql_map = {n: e.sparql for n, e in all_exports.items() if isinstance(e, QueryExport)}
+    skipped = [n for n, e in all_exports.items() if isinstance(e, CompositeExport)]
     if skipped:
         display.console.print(
-            f"[dim]Skipping composite queries (no SPARQL): {', '.join(skipped)}[/dim]"
+            f"[dim]Skipping composite exports (no SPARQL): {', '.join(skipped)}[/dim]"
         )
 
     analysis_dir: Path = ctx.obj["analysis_dir"]
     out = _analysis_output_path(
         analysis_dir, "static", output_path,
-        query_names, query_set, run_all, sparql_files, queries,
+        names, export_set, run_all, sparql_map,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    results = static_analyze_all(queries, describe_fn=lambda n: specs[n].description if n in specs else "")
+    results = static_analyze_all(
+        sparql_map, describe_fn=lambda n: all_exports[n].description if n in all_exports else "",
+    )
 
     md = render_static_markdown(results)
     out.write_text(md)
@@ -1015,14 +991,11 @@ def analyze_static(
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@click.argument("sparql_files", nargs=-1,
-                type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("names", nargs=-1)
 @click.option("--all", "run_all", is_flag=True, default=False,
-              help="Run all pipeline queries.")
-@click.option("-q", "--query", "query_names", multiple=True,
-              help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(list(QUERY_SETS) + ["all"]),
-              help="Run a predefined set of queries.")
+              help="Run all pipeline exports.")
+@click.option("--set", "export_set", type=click.Choice(list(EXPORT_SETS) + ["all"]),
+              help="Run a predefined export set.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
 @click.option("--type", "types", multiple=True,
@@ -1040,13 +1013,13 @@ def analyze_static(
                    "and the item's own language. Produces extra columns. Repeatable.")
 @click.option("--dataset-name", "dataset_names", multiple=True,
               help="Filter by datasetName (repeatable).")
-@click.option("--limit", type=int, help="LIMIT clause for all queries.")
+@click.option("--limit", type=int, help="LIMIT clause for SPARQL exports.")
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
               show_default=True, help="QLever HTTP endpoint.")
 @click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
-              help="Per-query timeout in seconds.")
+              help="Per-export timeout in seconds.")
 @click.option("--skip-existing", is_flag=True, default=False,
-              help="Skip queries whose .parquet already exists.")
+              help="Skip exports whose .parquet already exists.")
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget (e.g. '4GB' or 'auto').")
 @click.option("--keep-base/--no-keep-base", default=True, show_default=True,
@@ -1058,10 +1031,9 @@ def analyze_static(
 @click.pass_context
 def export(
     ctx: click.Context,
-    sparql_files: tuple[Path, ...],
+    names: tuple[str, ...],
     run_all: bool,
-    query_names: tuple[str, ...],
-    query_set: str | None,
+    export_set: str | None,
     countries: tuple[str, ...],
     types: tuple[str, ...],
     reuse_level: str | None,
@@ -1079,20 +1051,20 @@ def export(
     keep_base: bool,
     reuse_tsv: bool,
 ):
-    """Export SPARQL query results from QLever as Parquet files.
+    """Export data from QLever as Parquet files.
 
-    Use --all for base queries, --query-set for a category, -q for
-    specific named queries, or pass .sparql file paths directly.
-    Filter options (--country, --type, etc.) apply to named queries.
+    Pass export names as positional arguments, use --all for the full
+    pipeline, or --set for a named export set.  Filter options
+    (--country, --type, etc.) apply to SPARQL-based exports.
 
-    Composite queries (like items_enriched) automatically export their
+    Composite exports (like items_enriched) automatically export their
     dependencies first, then compose the final Parquet via DuckDB.
     Use --no-keep-base to clean up intermediate base table files.
     """
-    from .export import export_all
+    from .export import ExportPipeline
 
-    _qb, queries = _resolve_queries(
-        sparql_files, run_all, query_names, query_set,
+    exports = _resolve_exports(
+        names, run_all, export_set,
         countries, types, reuse_level, providers,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names, limit=limit,
@@ -1102,13 +1074,12 @@ def export(
 
     budget = ctx.obj["budget"]
 
-    # Resolve DuckDB memory
     if duckdb_memory == "auto":
         duckdb_memory = budget.duckdb_memory()
 
-    result = export_all(
+    result = ExportPipeline(
         output_dir=exports_dir,
-        queries=queries,
+        exports=exports,
         qlever_url=qlever_url,
         timeout=timeout,
         skip_existing=skip_existing,
@@ -1123,7 +1094,7 @@ def export(
         duckdb_row_group_size=budget.duckdb_row_group_size(),
         max_retries=budget.export_max_retries(),
         retry_delays=budget.export_retry_delays(),
-    )
+    ).run()
     if result.failed:
         raise SystemExit(1)
 
@@ -1198,10 +1169,9 @@ def pipeline(
     import logging
 
     from .dashboard import Dashboard
-    from .export import export_all
+    from .export import ExportPipeline, ExportRegistry
     from .merge import merge_ttl, scan_prefixes_from_sample
     from .monitor import ResourceMonitor
-    from .query import QueryBuilder
     from .state import PipelineState
 
     log = logging.getLogger(__name__)
@@ -1347,15 +1317,13 @@ def pipeline(
                 dash.complete_stage()
 
                 # --- Stage 5: Export ---
-                qb = QueryBuilder()
-                queries = QUERY_SETS["pipeline"].resolve(qb.all_queries())
-                # Total for dashboard: count SPARQL queries only
-                # (composite dependencies are handled automatically)
-                dash.set_stage("Export", total=len(queries))
+                registry = ExportRegistry()
+                exports = registry.for_set("pipeline")
+                dash.set_stage("Export", total=len(exports))
 
-                export_result = export_all(
+                export_result = ExportPipeline(
                     output_dir=exports_dir,
-                    queries=queries,
+                    exports=exports,
                     qlever_url=f"http://localhost:{port}",
                     timeout=timeout,
                     skip_existing=True,
@@ -1369,7 +1337,7 @@ def pipeline(
                     duckdb_row_group_size=budget.duckdb_row_group_size(),
                     max_retries=budget.export_max_retries(),
                     retry_delays=budget.export_retry_delays(),
-                )
+                ).run()
                 state.update_export(export_result)
                 state.save(state_path)
                 dash.complete_stage()

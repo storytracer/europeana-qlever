@@ -23,48 +23,46 @@ class ComposeStep:
     sql: str
     is_final: bool = False
 
+    # Placeholder used in SQL templates — replaced at execution time.
+    _DIR = "{exports_dir}"
 
-# ---------------------------------------------------------------------------
-# Placeholder used in SQL templates — replaced at execution time
-# ---------------------------------------------------------------------------
-_DIR = "{exports_dir}"
+    @staticmethod
+    def items_enriched_steps() -> list[ComposeStep]:
+        """Return ``items_enriched`` as discrete composition steps.
 
+        Each step creates a DuckDB temp table.  The final step is a SELECT
+        (not a CREATE) intended to be wrapped in a COPY statement by the caller.
 
-def items_enriched_steps() -> list[ComposeStep]:
-    """Return ``items_enriched`` as discrete composition steps.
+        Output schema
+        -------------
+        - ``titles``: ``LIST<STRUCT<value VARCHAR, lang VARCHAR>>``
+        - ``descriptions``: ``LIST<STRUCT<value VARCHAR, lang VARCHAR>>``
+        - ``creators``: ``LIST<STRUCT<name VARCHAR, uri VARCHAR>>``
+        - ``subjects``: ``LIST<STRUCT<label VARCHAR, uri VARCHAR>>``
+        - ``dates``, ``years``, ``languages``: ``LIST<VARCHAR>``
+        - All other columns: scalar ``VARCHAR`` or ``BIGINT``
+        """
+        _DIR = ComposeStep._DIR
+        steps: list[ComposeStep] = []
 
-    Each step creates a DuckDB temp table.  The final step is a SELECT
-    (not a CREATE) intended to be wrapped in a COPY statement by the caller.
-
-    Output schema
-    -------------
-    - ``titles``: ``LIST<STRUCT<value VARCHAR, lang VARCHAR>>``
-    - ``descriptions``: ``LIST<STRUCT<value VARCHAR, lang VARCHAR>>``
-    - ``creators``: ``LIST<STRUCT<name VARCHAR, uri VARCHAR>>``
-    - ``subjects``: ``LIST<STRUCT<label VARCHAR, uri VARCHAR>>``
-    - ``dates``, ``years``, ``languages``: ``LIST<VARCHAR>``
-    - All other columns: scalar ``VARCHAR`` or ``BIGINT``
-    """
-    steps: list[ComposeStep] = []
-
-    # 1. titles_agg — all titles with language tags
-    steps.append(ComposeStep("titles_agg", f"""\
+        # 1. titles_agg — all titles with language tags
+        steps.append(ComposeStep("titles_agg", f"""\
 CREATE TEMP TABLE titles_agg AS
     SELECT item,
            LIST({{value: NULLIF(title, ''), lang: NULLIF(lang, '')}}) AS titles
     FROM read_parquet('{_DIR}/items_titles.parquet')
     GROUP BY item"""))
 
-    # 2. descriptions_agg — all descriptions with language tags
-    steps.append(ComposeStep("descriptions_agg", f"""\
+        # 2. descriptions_agg — all descriptions with language tags
+        steps.append(ComposeStep("descriptions_agg", f"""\
 CREATE TEMP TABLE descriptions_agg AS
     SELECT item,
            LIST({{value: NULLIF(description, ''), lang: NULLIF(lang, '')}}) AS descriptions
     FROM read_parquet('{_DIR}/items_descriptions.parquet')
     GROUP BY item"""))
 
-    # 3. concept_labels (resolve concept URIs to best label)
-    steps.append(ComposeStep("concept_labels", f"""\
+        # 3. concept_labels (resolve concept URIs to best label)
+        steps.append(ComposeStep("concept_labels", f"""\
 CREATE TEMP TABLE concept_labels AS
     SELECT concept,
            COALESCE(
@@ -74,8 +72,8 @@ CREATE TEMP TABLE concept_labels AS
     FROM read_parquet('{_DIR}/concepts.parquet')
     GROUP BY concept"""))
 
-    # 4. subject_map (map distinct subject URIs to labels)
-    steps.append(ComposeStep("subject_map", f"""\
+        # 4. subject_map (map distinct subject URIs to labels)
+        steps.append(ComposeStep("subject_map", f"""\
 CREATE TEMP TABLE subject_map AS
     SELECT s.uri, COALESCE(c.label, s.uri) AS label
     FROM (
@@ -85,8 +83,8 @@ CREATE TEMP TABLE subject_map AS
     ) s
     LEFT JOIN concept_labels c ON s.uri = c.concept"""))
 
-    # 5. subjects_agg (LIST<STRUCT<label, uri>>)
-    steps.append(ComposeStep("subjects_agg", f"""\
+        # 5. subjects_agg (LIST<STRUCT<label, uri>>)
+        steps.append(ComposeStep("subjects_agg", f"""\
 CREATE TEMP TABLE subjects_agg AS
     SELECT
         s.item,
@@ -98,29 +96,29 @@ CREATE TEMP TABLE subjects_agg AS
     LEFT JOIN subject_map m ON s.subject_value = m.uri
     GROUP BY s.item"""))
 
-    # 6. dates_agg
-    steps.append(ComposeStep("dates_agg", f"""\
+        # 6. dates_agg
+        steps.append(ComposeStep("dates_agg", f"""\
 CREATE TEMP TABLE dates_agg AS
     SELECT item, LIST(date) AS dates
     FROM read_parquet('{_DIR}/items_dates.parquet')
     GROUP BY item"""))
 
-    # 7. years_agg
-    steps.append(ComposeStep("years_agg", f"""\
+        # 7. years_agg
+        steps.append(ComposeStep("years_agg", f"""\
 CREATE TEMP TABLE years_agg AS
     SELECT item, LIST(year) AS years
     FROM read_parquet('{_DIR}/items_years.parquet')
     GROUP BY item"""))
 
-    # 8. languages_agg
-    steps.append(ComposeStep("languages_agg", f"""\
+        # 8. languages_agg
+        steps.append(ComposeStep("languages_agg", f"""\
 CREATE TEMP TABLE languages_agg AS
     SELECT item, LIST(language) AS languages
     FROM read_parquet('{_DIR}/items_languages.parquet')
     GROUP BY item"""))
 
-    # 9. agent_labels
-    steps.append(ComposeStep("agent_labels", f"""\
+        # 9. agent_labels
+        steps.append(ComposeStep("agent_labels", f"""\
 CREATE TEMP TABLE agent_labels AS
     SELECT agent,
            COALESCE(
@@ -130,8 +128,8 @@ CREATE TEMP TABLE agent_labels AS
     FROM read_parquet('{_DIR}/agents.parquet')
     GROUP BY agent"""))
 
-    # 10. creator_map (resolve unique IRI values to labels)
-    steps.append(ComposeStep("creator_map", f"""\
+        # 10. creator_map (resolve unique IRI values to labels)
+        steps.append(ComposeStep("creator_map", f"""\
 CREATE TEMP TABLE creator_map AS
     SELECT c.uri, COALESCE(a.label, c.uri) AS label
     FROM (
@@ -141,8 +139,8 @@ CREATE TEMP TABLE creator_map AS
     ) c
     LEFT JOIN agent_labels a ON c.uri = a.agent"""))
 
-    # 11. creators_agg (LIST<STRUCT<name, uri>>)
-    steps.append(ComposeStep("creators_agg", f"""\
+        # 11. creators_agg (LIST<STRUCT<name, uri>>)
+        steps.append(ComposeStep("creators_agg", f"""\
 CREATE TEMP TABLE creators_agg AS
     SELECT
         c.item,
@@ -154,8 +152,8 @@ CREATE TEMP TABLE creators_agg AS
     LEFT JOIN creator_map m ON c.creator_value = m.uri
     GROUP BY c.item"""))
 
-    # 12. Final join (to be wrapped in COPY by caller)
-    steps.append(ComposeStep("join_and_write", f"""\
+        # 12. Final join (to be wrapped in COPY by caller)
+        steps.append(ComposeStep("join_and_write", f"""\
 SELECT
     i.item,
     t.titles,
@@ -179,4 +177,4 @@ LEFT JOIN dates_agg dt USING (item)
 LEFT JOIN years_agg y USING (item)
 LEFT JOIN languages_agg l USING (item)""", is_final=True))
 
-    return steps
+        return steps
