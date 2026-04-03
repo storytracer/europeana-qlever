@@ -655,6 +655,14 @@ def stop(ctx: click.Context):
         display.console.print(f"[red]No Qleverfile in {index_dir}.[/red]")
         raise SystemExit(1)
 
+    # Stop the UI if it's running (qlever ui --stop is a no-op if not active)
+    ui_proc = subprocess.run(
+        ["qlever", "ui", "--stop"], cwd=index_dir,
+        capture_output=True, text=True,
+    )
+    if ui_proc.returncode == 0 and ui_proc.stdout and "stop" in ui_proc.stdout.lower():
+        display.console.print("[green]UI stopped.[/green]")
+
     display.console.print(f"[bold]Stopping QLever server from {display.short_path(index_dir)}[/bold]")
     subprocess.run(["qlever", "stop"], cwd=index_dir, check=True)
     display.console.print("[green]Server stopped.[/green]")
