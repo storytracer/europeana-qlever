@@ -212,20 +212,33 @@ class QueryRegistry:
         return {
             # Pipeline — standalone exports
             "web_resources": q("web_resources",
-                "Digital representation URLs with MIME type, dimensions, and file size",
+                "Digital representations with MIME type, dimensions, file size, rights, and IIIF service detection",
                 self._web_resources),
-            "agents": q("agents",
-                "People and organisations with multilingual labels, birth/death dates, profession, and Wikidata links",
-                self._agents),
-            "places": q("places",
-                "Locations with multilingual labels, coordinates, and Wikidata links",
-                self._places),
-            "concepts": q("concepts",
-                "SKOS concepts with hierarchy, scheme, and cross-scheme matches",
-                self._concepts),
-            "timespans": q("timespans",
-                "Time periods with multilingual labels, begin/end dates, and Wikidata links",
-                self._timespans),
+            # Entity exports — core (single-valued) + links (multi-valued)
+            "agents_core": q("agents_core",
+                "Agents: prefLabels with birth/death, gender, places, begin/end",
+                self._agents_core),
+            "agents_links": q("agents_links",
+                "Agents: altLabels, all owl:sameAs, professions, notes, identifiers, names",
+                self._agents_links),
+            "places_core": q("places_core",
+                "Places: prefLabels with coordinates and altitude",
+                self._places_core),
+            "places_links": q("places_links",
+                "Places: altLabels, all owl:sameAs, notes, hierarchy (isPartOf/hasPart)",
+                self._places_links),
+            "concepts_core": q("concepts_core",
+                "Concepts: prefLabels with scheme",
+                self._concepts_core),
+            "concepts_links": q("concepts_links",
+                "Concepts: altLabels, all SKOS mappings (exact/close/broad/narrow/related), notes, notations",
+                self._concepts_links),
+            "timespans_core": q("timespans_core",
+                "Timespans: prefLabels with begin/end dates and notation",
+                self._timespans_core),
+            "timespans_links": q("timespans_links",
+                "Timespans: altLabels, all owl:sameAs, hierarchy",
+                self._timespans_links),
             "data_providers": q("data_providers",
                 "Organisations with multilingual labels, acronym, country, role, and Wikidata links",
                 self._data_providers),
@@ -318,8 +331,8 @@ class QueryRegistry:
     def _web_resources(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "ebucore"})}
-            SELECT ?item ?url ?mime ?width ?height ?bytes
+            {S.prefix_block({"edm", "ebucore", "svcs"})}
+            SELECT ?item ?url ?mime ?width ?height ?bytes ?wr_rights ?has_service
             WHERE {{
               ?agg edm:aggregatedCHO ?item ;
                    edm:isShownBy ?url .
@@ -327,80 +340,240 @@ class QueryRegistry:
               OPTIONAL {{ ?url ebucore:width ?width }}
               OPTIONAL {{ ?url ebucore:height ?height }}
               OPTIONAL {{ ?url ebucore:fileByteSize ?bytes }}
+              OPTIONAL {{ ?url edm:rights ?wr_rights }}
+              OPTIONAL {{ ?url svcs:has_service ?_svc }}
+              BIND(BOUND(?_svc) AS ?has_service)
             }}
             {f.limit_clause()}
         """).strip()
 
-    def _agents(self, filters: QueryFilters | None = None) -> str:
+    # -- Entity core queries (single-valued properties, one row per prefLabel)
+
+    def _agents_core(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos", "rdaGr2", "owl"})}
-            SELECT ?agent ?name ?lang ?birth ?death ?profession ?wikidata
+            {S.prefix_block({"edm", "skos", "rdaGr2", "foaf", "dc"})}
+            SELECT ?agent ?pref_label ?pref_label_lang
+                   ?date_of_birth ?date_of_death
+                   ?date_of_establishment ?date_of_termination
+                   ?gender ?place_of_birth ?place_of_death
+                   ?begin ?end
             WHERE {{
               ?agent a edm:Agent ;
-                     skos:prefLabel ?name .
-              BIND(LANG(?name) AS ?lang)
-              OPTIONAL {{ ?agent rdaGr2:dateOfBirth ?birth }}
-              OPTIONAL {{ ?agent rdaGr2:dateOfDeath ?death }}
-              OPTIONAL {{ ?agent rdaGr2:professionOrOccupation ?profession }}
-              OPTIONAL {{
-                ?agent owl:sameAs ?wikidata .
-                FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))
-              }}
+                     skos:prefLabel ?pref_label .
+              BIND(LANG(?pref_label) AS ?pref_label_lang)
+              OPTIONAL {{ ?agent rdaGr2:dateOfBirth ?date_of_birth }}
+              OPTIONAL {{ ?agent rdaGr2:dateOfDeath ?date_of_death }}
+              OPTIONAL {{ ?agent rdaGr2:dateOfEstablishment ?date_of_establishment }}
+              OPTIONAL {{ ?agent rdaGr2:dateOfTermination ?date_of_termination }}
+              OPTIONAL {{ ?agent rdaGr2:gender ?gender }}
+              OPTIONAL {{ ?agent rdaGr2:placeOfBirth ?place_of_birth }}
+              OPTIONAL {{ ?agent rdaGr2:placeOfDeath ?place_of_death }}
+              OPTIONAL {{ ?agent edm:begin ?begin }}
+              OPTIONAL {{ ?agent edm:end ?end }}
             }}
             {f.limit_clause()}
         """).strip()
 
-    def _places(self, filters: QueryFilters | None = None) -> str:
+    def _agents_links(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos", "wgs84_pos", "owl"})}
-            SELECT ?place ?name ?lang ?lat ?lon ?wikidata
+            {S.prefix_block({"edm", "skos", "rdaGr2", "foaf", "dc", "owl"})}
+            SELECT ?agent ?property ?value ?lang
             WHERE {{
-              ?place a edm:Place ;
-                     skos:prefLabel ?name .
-              BIND(LANG(?name) AS ?lang)
-              OPTIONAL {{ ?place wgs84_pos:lat ?lat }}
-              OPTIONAL {{ ?place wgs84_pos:long ?lon }}
-              OPTIONAL {{
-                ?place owl:sameAs ?wikidata .
-                FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))
+              ?agent a edm:Agent .
+              {{
+                ?agent skos:altLabel ?value .
+                BIND("alt_label" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?agent owl:sameAs ?value .
+                BIND("same_as" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?agent rdaGr2:professionOrOccupation ?value .
+                BIND("profession" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?agent skos:note ?value .
+                BIND("note" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?agent dc:identifier ?value .
+                BIND("identifier" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?agent foaf:name ?value .
+                BIND("name" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?agent rdaGr2:biographicalInformation ?value .
+                BIND("biographical_info" AS ?property)
+                BIND(LANG(?value) AS ?lang)
               }}
             }}
             {f.limit_clause()}
         """).strip()
 
-    def _concepts(self, filters: QueryFilters | None = None) -> str:
+    def _places_core(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm", "skos", "wgs84_pos"})}
+            SELECT ?place ?pref_label ?pref_label_lang
+                   ?lat ?lon ?alt
+            WHERE {{
+              ?place a edm:Place ;
+                     skos:prefLabel ?pref_label .
+              BIND(LANG(?pref_label) AS ?pref_label_lang)
+              OPTIONAL {{ ?place wgs84_pos:lat ?lat }}
+              OPTIONAL {{ ?place wgs84_pos:long ?lon }}
+              OPTIONAL {{ ?place wgs84_pos:alt ?alt }}
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _places_links(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm", "skos", "dcterms", "owl"})}
+            SELECT ?place ?property ?value ?lang
+            WHERE {{
+              ?place a edm:Place .
+              {{
+                ?place skos:altLabel ?value .
+                BIND("alt_label" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?place owl:sameAs ?value .
+                BIND("same_as" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?place skos:note ?value .
+                BIND("note" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?place dcterms:isPartOf ?value .
+                BIND("is_part_of" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?place dcterms:hasPart ?value .
+                BIND("has_part" AS ?property)
+                BIND("" AS ?lang)
+              }}
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _concepts_core(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"skos"})}
+            SELECT ?concept ?pref_label ?pref_label_lang ?scheme
+            WHERE {{
+              ?concept a skos:Concept ;
+                       skos:prefLabel ?pref_label .
+              BIND(LANG(?pref_label) AS ?pref_label_lang)
+              OPTIONAL {{ ?concept skos:inScheme ?scheme }}
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _concepts_links(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         return textwrap.dedent(f"""\
             {S.prefix_block({"skos", "owl"})}
-            SELECT ?concept ?label ?lang ?scheme ?broader ?exactMatch
+            SELECT ?concept ?property ?value ?lang
             WHERE {{
-              ?concept a skos:Concept ;
-                       skos:prefLabel ?label .
-              BIND(LANG(?label) AS ?lang)
-              OPTIONAL {{ ?concept skos:inScheme ?scheme }}
-              OPTIONAL {{ ?concept skos:broader ?broader }}
-              OPTIONAL {{ ?concept skos:exactMatch ?exactMatch }}
+              ?concept a skos:Concept .
+              {{
+                ?concept skos:altLabel ?value .
+                BIND("alt_label" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?concept skos:broader ?value .
+                BIND("broader" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?concept skos:narrower ?value .
+                BIND("narrower" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?concept skos:related ?value .
+                BIND("related" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?concept skos:exactMatch ?value .
+                BIND("exact_match" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?concept skos:closeMatch ?value .
+                BIND("close_match" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?concept skos:broadMatch ?value .
+                BIND("broad_match" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?concept skos:narrowMatch ?value .
+                BIND("narrow_match" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?concept skos:relatedMatch ?value .
+                BIND("related_match" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?concept skos:note ?value .
+                BIND("note" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?concept skos:notation ?value .
+                BIND("notation" AS ?property)
+                BIND("" AS ?lang)
+              }}
             }}
             {f.limit_clause()}
         """).strip()
 
-    def _timespans(self, filters: QueryFilters | None = None) -> str:
+    def _timespans_core(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos", "owl"})}
-            SELECT ?timespan ?label ?lang ?begin ?end ?notation ?wikidata
+            {S.prefix_block({"edm", "skos"})}
+            SELECT ?timespan ?pref_label ?pref_label_lang
+                   ?begin ?end ?notation
             WHERE {{
               ?timespan a edm:TimeSpan ;
-                        skos:prefLabel ?label .
-              BIND(LANG(?label) AS ?lang)
+                        skos:prefLabel ?pref_label .
+              BIND(LANG(?pref_label) AS ?pref_label_lang)
               OPTIONAL {{ ?timespan edm:begin ?begin }}
               OPTIONAL {{ ?timespan edm:end ?end }}
               OPTIONAL {{ ?timespan skos:notation ?notation }}
-              OPTIONAL {{
-                ?timespan owl:sameAs ?wikidata .
-                FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _timespans_links(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm", "skos", "dcterms", "owl"})}
+            SELECT ?timespan ?property ?value ?lang
+            WHERE {{
+              ?timespan a edm:TimeSpan .
+              {{
+                ?timespan skos:altLabel ?value .
+                BIND("alt_label" AS ?property)
+                BIND(LANG(?value) AS ?lang)
+              }} UNION {{
+                ?timespan owl:sameAs ?value .
+                BIND("same_as" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?timespan dcterms:isPartOf ?value .
+                BIND("is_part_of" AS ?property)
+                BIND("" AS ?lang)
+              }} UNION {{
+                ?timespan dcterms:hasPart ?value .
+                BIND("has_part" AS ?property)
+                BIND("" AS ?lang)
               }}
             }}
             {f.limit_clause()}

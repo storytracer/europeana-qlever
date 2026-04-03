@@ -27,8 +27,8 @@ class ComposeStep:
     _DIR = "{exports_dir}"
 
     @staticmethod
-    def items_enriched_steps() -> list[ComposeStep]:
-        """Return ``items_enriched`` as discrete composition steps.
+    def items_resolved_steps() -> list[ComposeStep]:
+        """Return ``items_resolved`` as discrete composition steps.
 
         Each step creates a DuckDB temp table.  The final step is a SELECT
         (not a CREATE) intended to be wrapped in a COPY statement by the caller.
@@ -40,6 +40,8 @@ class ComposeStep:
         - ``creators``: ``LIST<STRUCT<name VARCHAR, uri VARCHAR>>``
         - ``subjects``: ``LIST<STRUCT<label VARCHAR, uri VARCHAR>>``
         - ``dates``, ``years``, ``languages``: ``LIST<VARCHAR>``
+        - ``reuse_level``: ``VARCHAR`` (open / restricted / prohibited)
+        - ``mime_type``, ``width``, ``height``, ``file_bytes``, ``has_iiif``: web resource scalars
         - All other columns: scalar ``VARCHAR`` or ``BIGINT``
         """
         _DIR = ComposeStep._DIR
@@ -66,10 +68,10 @@ CREATE TEMP TABLE descriptions_agg AS
 CREATE TEMP TABLE concept_labels AS
     SELECT concept,
            COALESCE(
-               MAX(label) FILTER (WHERE lang = 'en'),
-               FIRST(label)
+               MAX(pref_label) FILTER (WHERE pref_label_lang = 'en'),
+               FIRST(pref_label)
            ) AS label
-    FROM read_parquet('{_DIR}/concepts.parquet')
+    FROM read_parquet('{_DIR}/concepts_core.parquet')
     GROUP BY concept"""))
 
         # 4. subject_map (map distinct subject URIs to labels)
@@ -122,10 +124,10 @@ CREATE TEMP TABLE languages_agg AS
 CREATE TEMP TABLE agent_labels AS
     SELECT agent,
            COALESCE(
-               MAX(name) FILTER (WHERE lang = 'en'),
-               FIRST(name)
+               MAX(pref_label) FILTER (WHERE pref_label_lang = 'en'),
+               FIRST(pref_label)
            ) AS label
-    FROM read_parquet('{_DIR}/agents.parquet')
+    FROM read_parquet('{_DIR}/agents_core.parquet')
     GROUP BY agent"""))
 
         # 10. creator_map (resolve unique IRI values to labels)
@@ -152,7 +154,20 @@ CREATE TEMP TABLE creators_agg AS
     LEFT JOIN creator_map m ON c.creator_value = m.uri
     GROUP BY c.item"""))
 
-        # 12. Final join (to be wrapped in COPY by caller)
+        # 12. wr_agg (web resource metadata aggregation)
+        steps.append(ComposeStep("wr_agg", f"""\
+CREATE TEMP TABLE wr_agg AS
+    SELECT
+        item,
+        FIRST(mime) AS mime_type,
+        FIRST(TRY_CAST(width AS INTEGER)) AS width,
+        FIRST(TRY_CAST(height AS INTEGER)) AS height,
+        FIRST(TRY_CAST(bytes AS BIGINT)) AS file_bytes,
+        BOOL_OR(has_service) AS has_iiif
+    FROM read_parquet('{_DIR}/web_resources.parquet')
+    GROUP BY item"""))
+
+        # 13. Final join (to be wrapped in COPY by caller)
         steps.append(ComposeStep("join_and_write", f"""\
 SELECT
     i.item,
@@ -162,12 +177,30 @@ SELECT
     s.subjects, dt.dates, y.years, l.languages,
     i.type, i.country,
     NULLIF(i.dataProvider, '') AS data_provider,
-    i.rights, i.completeness,
+    i.rights,
+    CASE
+      WHEN STARTS_WITH(i.rights, 'http://creativecommons.org/publicdomain/') THEN 'open'
+      WHEN STARTS_WITH(i.rights, 'http://creativecommons.org/licenses/by/') THEN 'open'
+      WHEN STARTS_WITH(i.rights, 'http://creativecommons.org/licenses/by-sa/') THEN 'open'
+      WHEN STARTS_WITH(i.rights, 'http://creativecommons.org/licenses/') THEN 'restricted'
+      WHEN i.rights IN (
+        'http://rightsstatements.org/vocab/NoC-NC/1.0/',
+        'http://rightsstatements.org/vocab/NoC-OKLR/1.0/',
+        'http://rightsstatements.org/vocab/InC-EDU/1.0/'
+      ) THEN 'restricted'
+      ELSE 'prohibited'
+    END AS reuse_level,
+    i.completeness,
     NULLIF(i.isShownAt, '') AS is_shown_at,
     NULLIF(i.isShownBy, '') AS is_shown_by,
     NULLIF(i.preview, '') AS preview,
     NULLIF(i.landingPage, '') AS landing_page,
-    NULLIF(i.datasetName, '') AS dataset_name
+    NULLIF(i.datasetName, '') AS dataset_name,
+    wr.mime_type,
+    wr.width,
+    wr.height,
+    wr.file_bytes,
+    wr.has_iiif
 FROM read_parquet('{_DIR}/items_core.parquet') i
 LEFT JOIN titles_agg t USING (item)
 LEFT JOIN descriptions_agg d USING (item)
@@ -175,6 +208,7 @@ LEFT JOIN subjects_agg s USING (item)
 LEFT JOIN creators_agg cr USING (item)
 LEFT JOIN dates_agg dt USING (item)
 LEFT JOIN years_agg y USING (item)
-LEFT JOIN languages_agg l USING (item)""", is_final=True))
+LEFT JOIN languages_agg l USING (item)
+LEFT JOIN wr_agg wr USING (item)""", is_final=True))
 
         return steps

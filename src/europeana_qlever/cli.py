@@ -72,6 +72,7 @@ def cli(ctx: click.Context, work_dir: Path, width: int | None):
     """
     from .resources import ResourceBudget
     from .state import setup_logging
+    from .telemetry import TelemetryRecorder
 
     if width is not None:
         display.set_width(width)
@@ -91,6 +92,13 @@ def cli(ctx: click.Context, work_dir: Path, width: int | None):
         max_bytes=budget.log_max_bytes(),
         backup_count=budget.log_backup_count(),
     )
+
+    telemetry = TelemetryRecorder(
+        path=work_dir / "telemetry.jsonl",
+        command=ctx.invoked_subcommand,
+    )
+    ctx.obj["telemetry"] = telemetry
+    ctx.call_on_close(lambda: telemetry.close())
 
 
 # ---------------------------------------------------------------------------
@@ -217,10 +225,12 @@ def merge(
     """
     from .merge import merge_ttl, scan_prefixes_from_sample
     from .monitor import ResourceMonitor
+    from .telemetry import command_span
 
     merged_dir: Path = ctx.obj["merged_dir"]
     work_dir: Path = ctx.obj["work_dir"]
     budget = ctx.obj["budget"]
+    telemetry = ctx.obj["telemetry"]
 
     # Auto-detect workers if not specified
     if workers == 0:
@@ -229,31 +239,45 @@ def merge(
 
     prefixes = scan_prefixes_from_sample(ttl_dir, sample_size=sample_size)
     try:
-        with ResourceMonitor(
-            work_dir,
-            log_file=work_dir / "monitor.log",
-            console=display.console,
-            interval=budget.monitor_idle_interval(),
-            active_interval=budget.monitor_active_interval(),
-            warn_pct=budget.monitor_warn_pct(),
-            critical_pct=budget.monitor_critical_pct(),
-        ) as monitor:
-            result = merge_ttl(
-                ttl_dir,
-                merged_dir,
-                chunk_size_gb=chunk_size,
-                workers=workers,
-                prefixes=prefixes,
-                monitor=monitor,
-                copy_buf_size=budget.copy_buf_size(),
-                backpressure_thresholds=budget.backpressure_thresholds(),
-                backpressure_sleeps=budget.backpressure_sleeps(),
-                cpu_target=budget.cpu_target_pct(),
-                cpu_low=budget.cpu_low_pct(),
-                throttle_consecutive_samples=budget.throttle_consecutive_samples(),
-                writer_join_timeout=budget.writer_join_timeout(),
-                checksum_policy=checksum_policy,
-            )
+        with command_span(telemetry, {
+            "ttl_dir": str(ttl_dir), "chunk_size": chunk_size,
+            "workers": workers, "checksum_policy": checksum_policy,
+        }) as counters:
+            with ResourceMonitor(
+                work_dir,
+                log_file=work_dir / "monitor.log",
+                console=display.console,
+                interval=budget.monitor_idle_interval(),
+                active_interval=budget.monitor_active_interval(),
+                warn_pct=budget.monitor_warn_pct(),
+                critical_pct=budget.monitor_critical_pct(),
+                telemetry=telemetry,
+            ) as monitor:
+                result = merge_ttl(
+                    ttl_dir,
+                    merged_dir,
+                    chunk_size_gb=chunk_size,
+                    workers=workers,
+                    prefixes=prefixes,
+                    monitor=monitor,
+                    copy_buf_size=budget.copy_buf_size(),
+                    backpressure_thresholds=budget.backpressure_thresholds(),
+                    backpressure_sleeps=budget.backpressure_sleeps(),
+                    cpu_target=budget.cpu_target_pct(),
+                    cpu_low=budget.cpu_low_pct(),
+                    throttle_consecutive_samples=budget.throttle_consecutive_samples(),
+                    writer_join_timeout=budget.writer_join_timeout(),
+                    checksum_policy=checksum_policy,
+                )
+            counters["total_zips"] = result.total_zips
+            counters["chunks"] = len(result.chunk_files)
+            counters["failed_zips"] = len(result.failed_zips)
+            telemetry.emit("merge_end", {
+                "total_zips": result.total_zips,
+                "chunks": len(result.chunk_files),
+                "failed_zips": len(result.failed_zips),
+                "total_bytes": result.total_bytes,
+            })
     except KeyboardInterrupt:
         display.console.print("\n[yellow]Merge interrupted.[/yellow]")
         raise SystemExit(130)
@@ -1084,11 +1108,12 @@ def export(
     pipeline, or --set for a named export set.  Filter options
     (--country, --type, etc.) apply to SPARQL-based exports.
 
-    Composite exports (like items_enriched) automatically export their
+    Composite exports (like items_resolved) automatically export their
     dependencies first, then compose the final Parquet via DuckDB.
     Use --no-keep-base to clean up intermediate base table files.
     """
     from .export import ExportPipeline
+    from .telemetry import command_span
 
     exports = _resolve_exports(
         names, run_all, export_set,
@@ -1100,30 +1125,36 @@ def export(
     exports_dir: Path = ctx.obj["exports_dir"]
 
     budget = ctx.obj["budget"]
+    telemetry = ctx.obj["telemetry"]
 
     if duckdb_memory == "auto":
         duckdb_memory = budget.duckdb_memory()
 
-    result = ExportPipeline(
-        output_dir=exports_dir,
-        exports=exports,
-        qlever_url=qlever_url,
-        timeout=timeout,
-        skip_existing=skip_existing,
-        memory_limit=duckdb_memory,
-        duckdb_threads=budget.duckdb_threads(),
-        temp_directory=exports_dir / ".duckdb_tmp",
-        keep_base=keep_base,
-        reuse_tsv=reuse_tsv,
-        http_chunk_size=budget.http_chunk_size(),
-        http_connect_timeout=budget.http_connect_timeout(),
-        duckdb_sample_size=budget.duckdb_sample_size(),
-        duckdb_row_group_size=budget.duckdb_row_group_size(),
-        max_retries=budget.export_max_retries(),
-        retry_delays=budget.export_retry_delays(),
-    ).run()
-    if result.failed:
-        raise SystemExit(1)
+    with command_span(telemetry, {
+        "names": list(names), "run_all": run_all, "export_set": export_set,
+    }) as counters:
+        result = ExportPipeline(
+            output_dir=exports_dir,
+            exports=exports,
+            qlever_url=qlever_url,
+            timeout=timeout,
+            skip_existing=skip_existing,
+            memory_limit=duckdb_memory,
+            duckdb_threads=budget.duckdb_threads(),
+            temp_directory=exports_dir / ".duckdb_tmp",
+            keep_base=keep_base,
+            reuse_tsv=reuse_tsv,
+            http_chunk_size=budget.http_chunk_size(),
+            http_connect_timeout=budget.http_connect_timeout(),
+            duckdb_sample_size=budget.duckdb_sample_size(),
+            duckdb_row_group_size=budget.duckdb_row_group_size(),
+            max_retries=budget.export_max_retries(),
+            retry_delays=budget.export_retry_delays(),
+        ).run()
+        counters["succeeded"] = len(result.succeeded)
+        counters["failed"] = len(result.failed)
+        if result.failed:
+            raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -1208,6 +1239,7 @@ def pipeline(
     index_dir: Path = ctx.obj["index_dir"]
     exports_dir: Path = ctx.obj["exports_dir"]
     budget = ctx.obj["budget"]
+    telemetry = ctx.obj["telemetry"]
 
     if workers == 0:
         workers = budget.merge_workers()
@@ -1227,6 +1259,7 @@ def pipeline(
         display.console.print("[dim]Checkpoint cleared (--force)[/dim]")
 
     state = PipelineState.load(state_path) if state_path.exists() else PipelineState.fresh()
+    state.set_telemetry(telemetry)
     log.info("Pipeline started (force=%s)", force)
 
     display.console.rule("[bold]Europeana → QLever → Parquet Pipeline[/bold]")
@@ -1244,6 +1277,7 @@ def pipeline(
             active_interval=budget.monitor_active_interval(),
             warn_pct=budget.monitor_warn_pct(),
             critical_pct=budget.monitor_critical_pct(),
+            telemetry=telemetry,
         ) as monitor:
             with Dashboard(
                 monitor,
@@ -1404,3 +1438,65 @@ def pipeline(
         display.console.rule("[bold green]Pipeline complete[/bold green]")
         display.console.print(f"Parquet files in: {display.short_path(exports_dir)}")
         log.info("Pipeline completed successfully")
+
+
+# ---------------------------------------------------------------------------
+# metrics
+# ---------------------------------------------------------------------------
+
+@cli.command()
+@click.option("--type", "types", multiple=True,
+              help="Filter by edm:type (repeatable).")
+@click.option("--reuse-level",
+              type=click.Choice(["open", "restricted", "prohibited"]),
+              help="Filter by reuse level.")
+@click.option("--country", "countries", multiple=True,
+              help="Filter by country (repeatable).")
+@click.option("--probe-urls", is_flag=True, default=False,
+              help="Sample is_shown_by URLs and test HTTP liveness.")
+@click.option("--sample-size", default=1000, show_default=True,
+              help="Number of URLs to probe (with --probe-urls).")
+@click.option("--duckdb-memory", default="auto", show_default=True,
+              help="DuckDB memory budget.")
+@click.pass_context
+def metrics(
+    ctx: click.Context,
+    types: tuple[str, ...],
+    reuse_level: str | None,
+    countries: tuple[str, ...],
+    probe_urls: bool,
+    sample_size: int,
+    duckdb_memory: str,
+):
+    """Assess quality and coverage of exported Parquet files.
+
+    Reads items_resolved.parquet and entity Parquets from the exports
+    directory. Produces JSON and Markdown reports in <work-dir>/metrics/.
+    """
+    from .metrics import run_metrics
+    from .telemetry import command_span
+
+    telemetry = ctx.obj["telemetry"]
+    exports_dir: Path = ctx.obj["exports_dir"]
+    budget = ctx.obj["budget"]
+
+    if duckdb_memory == "auto":
+        duckdb_memory = budget.duckdb_memory()
+
+    with command_span(telemetry, {
+        "types": list(types), "reuse_level": reuse_level,
+        "countries": list(countries), "probe_urls": probe_urls,
+    }) as counters:
+        report = run_metrics(
+            exports_dir=exports_dir,
+            output_dir=ctx.obj["work_dir"] / "metrics",
+            types=list(types) if types else None,
+            reuse_level=reuse_level,
+            countries=list(countries) if countries else None,
+            probe_urls=probe_urls,
+            sample_size=sample_size,
+            memory_limit=duckdb_memory,
+        )
+        counters["sections"] = report.sections_computed
+        counters["json_path"] = str(report.json_path)
+        counters["markdown_path"] = str(report.markdown_path)

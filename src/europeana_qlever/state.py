@@ -10,8 +10,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .constants import DEFAULT_LOG_BACKUP_COUNT, DEFAULT_LOG_MAX_BYTES, LOG_FILENAME
+
+if TYPE_CHECKING:
+    from .telemetry import TelemetryRecorder
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
@@ -119,6 +123,11 @@ class PipelineState:
     started_at: str = ""
     updated_at: str = ""
     stages: dict[str, StageState] = field(default_factory=dict)
+    _telemetry: TelemetryRecorder | None = field(default=None, repr=False, compare=False)
+
+    def set_telemetry(self, telemetry: TelemetryRecorder) -> None:
+        """Attach a telemetry recorder for stage event emission."""
+        self._telemetry = telemetry
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -126,18 +135,36 @@ class PipelineState:
     def is_complete(self, stage: str) -> bool:
         return self.stages.get(stage, StageState()).status == "complete"
 
+    def mark_running(self, stage: str) -> None:
+        s = self.stages.setdefault(stage, StageState())
+        s.status = "running"
+        self.updated_at = self._now()
+        if self._telemetry:
+            self._telemetry.emit("stage_start", {"stage": stage})
+
     def mark_complete(self, stage: str) -> None:
         s = self.stages.setdefault(stage, StageState())
         s.status = "complete"
         s.completed_at = self._now()
         s.error = None
         self.updated_at = self._now()
+        if self._telemetry:
+            self._telemetry.emit("stage_end", {
+                "stage": stage,
+                "status": "complete",
+            })
 
     def mark_failed(self, stage: str, error: str) -> None:
         s = self.stages.setdefault(stage, StageState())
         s.status = "failed"
         s.error = error
         self.updated_at = self._now()
+        if self._telemetry:
+            self._telemetry.emit("stage_end", {
+                "stage": stage,
+                "status": "failed",
+                "error": error,
+            })
 
     def get_stage(self, stage: str) -> StageState:
         return self.stages.setdefault(stage, StageState())

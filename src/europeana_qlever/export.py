@@ -118,14 +118,17 @@ class ExportSet:
 EXPORT_SETS: dict[str, ExportSet] = {
     "pipeline": ExportSet(
         "pipeline",
-        "Full Parquet export pipeline (standalone + component + composite)",
+        "Full Parquet export pipeline (entity + component + composite)",
         (
             "web_resources",
-            "agents", "places", "concepts", "timespans",
+            "agents_core", "agents_links",
+            "places_core", "places_links",
+            "concepts_core", "concepts_links",
+            "timespans_core", "timespans_links",
             "items_core", "items_titles", "items_descriptions",
             "items_subjects", "items_dates", "items_languages",
             "items_years", "items_creators",
-            "items_enriched",
+            "items_resolved",
         ),
     ),
     "summary": ExportSet(
@@ -136,8 +139,10 @@ EXPORT_SETS: dict[str, ExportSet] = {
             "items_by_type", "items_by_type_and_country",
             "items_by_type_and_language", "items_by_year",
             "items_by_rights_uri", "items_by_reuse_level",
-            "items_by_type_and_reuse_level", "items_by_country_and_reuse_level",
-            "items_by_language_and_reuse_level", "items_by_completeness",
+            "items_by_type_and_reuse_level",
+            "items_by_country_and_reuse_level",
+            "items_by_language_and_reuse_level",
+            "items_by_completeness",
             "content_availability",
             "mime_type_distribution", "geolocated_places",
             "iiif_availability", "texts_by_type",
@@ -149,29 +154,38 @@ EXPORT_SETS: dict[str, ExportSet] = {
         (
             "items_core", "items_titles", "items_descriptions",
             "items_subjects", "items_dates", "items_languages",
-            "items_years", "items_creators", "items_enriched",
+            "items_years", "items_creators", "items_resolved",
             "web_resources",
             "items_by_country", "items_by_language", "items_by_provider",
             "items_by_type", "items_by_type_and_country",
             "items_by_type_and_language", "items_by_year",
             "items_by_rights_uri", "items_by_reuse_level",
-            "items_by_type_and_reuse_level", "items_by_country_and_reuse_level",
-            "items_by_language_and_reuse_level", "items_by_completeness",
+            "items_by_type_and_reuse_level",
+            "items_by_country_and_reuse_level",
+            "items_by_language_and_reuse_level",
+            "items_by_completeness",
             "content_availability",
             "iiif_availability", "mime_type_distribution", "texts_by_type",
         ),
     ),
     "entities": ExportSet(
         "entities",
-        "Contextual entity exports (agents, places, concepts, timespans)",
-        ("agents", "places", "concepts", "timespans", "data_providers", "geolocated_places"),
+        "Contextual entity exports with full linked data",
+        (
+            "agents_core", "agents_links",
+            "places_core", "places_links",
+            "concepts_core", "concepts_links",
+            "timespans_core", "timespans_links",
+            "data_providers", "geolocated_places",
+        ),
     ),
     "rights": ExportSet(
         "rights",
         "Rights and licensing exports",
         (
             "items_by_rights_uri", "items_by_reuse_level",
-            "items_by_type_and_reuse_level", "items_by_country_and_reuse_level",
+            "items_by_type_and_reuse_level",
+            "items_by_country_and_reuse_level",
             "items_by_language_and_reuse_level",
         ),
     ),
@@ -228,19 +242,20 @@ class ExportRegistry:
             exports[name] = QueryExport.from_query(query, self._filters)
 
         # Composite exports
-        exports["items_enriched"] = CompositeExport(
-            name="items_enriched",
+        exports["items_resolved"] = CompositeExport(
+            name="items_resolved",
             description=(
-                "Fully denormalized one-row-per-item export with parallel "
-                "English and vernacular title/description columns, resolved "
-                "entity labels, and multi-valued properties — composed via "
-                "DuckDB from component tables"
+                "Fully resolved one-row-per-item export: entity URIs resolved to labels, "
+                "multi-valued properties aggregated to native LIST/STRUCT types, "
+                "web resource metadata joined, reuse level computed"
             ),
-            compose_steps=ComposeStep.items_enriched_steps(),
+            compose_steps=ComposeStep.items_resolved_steps(),
             depends_on=[
                 "items_core", "items_titles", "items_descriptions",
                 "items_subjects", "items_dates", "items_languages",
-                "items_years", "items_creators", "agents", "concepts",
+                "items_years", "items_creators",
+                "agents_core", "concepts_core",
+                "web_resources",
             ],
         )
 

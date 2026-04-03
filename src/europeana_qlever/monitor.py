@@ -1,21 +1,20 @@
 """Background resource monitor for memory, disk, CPU, and process tracking.
 
 Runs as a daemon thread, sampling system resources at a configurable
-interval.  Logs every sample to a CSV file and prints Rich console
-warnings when memory usage crosses configurable thresholds.  Provides
-a backpressure API so that memory-hungry stages (e.g. merge) can pause
-when the system is under pressure.
+interval.  Emits ``resource_sample`` and ``warning`` events to the
+telemetry JSONL stream, and prints Rich console warnings when memory
+usage crosses configurable thresholds.  Provides a backpressure API
+so that memory-hungry stages (e.g. merge) can pause when the system is
+under pressure.
 """
 
 from __future__ import annotations
 
-import csv
 import logging
 import shutil
 import threading
 import time
 from dataclasses import dataclass
-from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +24,7 @@ from . import display
 
 if TYPE_CHECKING:
     from rich.console import Console
+    from .telemetry import TelemetryRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +34,6 @@ from .constants import (
     DEFAULT_MONITOR_INTERVAL_SECONDS,
     DEFAULT_MONITOR_WARN_MEMORY_PCT,
 )
-
-_CSV_HEADER = [
-    "timestamp", "rss_mb", "available_mb", "total_mb",
-    "memory_pct", "disk_free_gb", "disk_total_gb",
-    "cpu_pct", "swap_used_gb", "swap_total_gb",
-    "process_cpu_pct", "process_rss_mb", "child_count",
-]
 
 
 @dataclass(frozen=True)
@@ -84,6 +77,7 @@ class ResourceMonitor:
         critical_pct: float = DEFAULT_MONITOR_CRITICAL_MEMORY_PCT,
         log_file: Path | None = None,
         console: Console | None = None,
+        telemetry: TelemetryRecorder | None = None,
     ) -> None:
         self._work_dir = work_dir
         self._idle_interval = interval
@@ -93,6 +87,7 @@ class ResourceMonitor:
         self._critical_pct = critical_pct
         self._log_path = log_file or (work_dir / "monitor.log")
         self._console = console or display.console
+        self._telemetry = telemetry
 
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -134,18 +129,13 @@ class ResourceMonitor:
         psutil.cpu_percent(interval=None)
         self._process.cpu_percent(interval=None)
 
-        self._log_path.parent.mkdir(parents=True, exist_ok=True)
-        # Write CSV header
-        with open(self._log_path, "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(_CSV_HEADER)
         self._thread = threading.Thread(
             target=self._run, name="resource-monitor", daemon=True,
         )
         self._thread.start()
         self._console.print(
             f"[dim]Resource monitor started "
-            f"(interval={self._interval}s, log={self._log_path})[/dim]"
+            f"(interval={self._interval}s)[/dim]"
         )
 
     def stop(self) -> None:
@@ -327,9 +317,19 @@ class ResourceMonitor:
         if new == "critical":
             self._console.print(f"[red bold]{msg}[/red bold]")
             logger.warning(msg)
+            if self._telemetry:
+                self._telemetry.emit("warning", {
+                    "kind": "memory", "level": "critical",
+                    "value": snap.memory_pct, "threshold": self._critical_pct,
+                })
         elif new == "warn":
             self._console.print(f"[yellow]{msg}[/yellow]")
             logger.warning(msg)
+            if self._telemetry:
+                self._telemetry.emit("warning", {
+                    "kind": "memory", "level": "warn",
+                    "value": snap.memory_pct, "threshold": self._warn_pct,
+                })
         elif new == "ok" and old in ("warn", "critical"):
             self._console.print(
                 f"[green]Memory recovered: {snap.memory_pct:.1f}% used "
@@ -338,22 +338,12 @@ class ResourceMonitor:
             logger.info(msg)
 
     def _log_sample(self, snap: ResourceSnapshot) -> None:
-        buf = StringIO()
-        w = csv.writer(buf)
-        w.writerow([
-            f"{snap.timestamp:.1f}",
-            f"{snap.rss_mb:.1f}",
-            f"{snap.available_mb:.1f}",
-            f"{snap.total_mb:.1f}",
-            f"{snap.memory_pct:.1f}",
-            f"{snap.disk_free_gb:.2f}",
-            f"{snap.disk_total_gb:.2f}",
-            f"{snap.cpu_pct:.1f}",
-            f"{snap.swap_used_gb:.2f}",
-            f"{snap.swap_total_gb:.2f}",
-            f"{snap.process_cpu_pct:.1f}",
-            f"{snap.process_rss_mb:.1f}",
-            f"{snap.child_count}",
-        ])
-        with open(self._log_path, "a") as f:
-            f.write(buf.getvalue())
+        if self._telemetry:
+            self._telemetry.emit("resource_sample", {
+                "cpu_pct": round(snap.cpu_pct, 1),
+                "process_cpu_pct": round(snap.process_cpu_pct, 1),
+                "process_rss_mb": round(snap.process_rss_mb, 1),
+                "available_mb": round(snap.available_mb, 1),
+                "disk_free_gb": round(snap.disk_free_gb, 2),
+                "child_count": snap.child_count,
+            })
