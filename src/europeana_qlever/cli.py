@@ -1452,6 +1452,8 @@ def pipeline(
               help="Filter by reuse level.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
+@click.option("--has-iiif", is_flag=True, default=False,
+              help="Only include items with a IIIF service.")
 @click.option("--probe-urls", is_flag=True, default=False,
               help="Sample is_shown_by URLs and test HTTP liveness.")
 @click.option("--sample-size", default=1000, show_default=True,
@@ -1464,6 +1466,7 @@ def metrics(
     types: tuple[str, ...],
     reuse_level: str | None,
     countries: tuple[str, ...],
+    has_iiif: bool,
     probe_urls: bool,
     sample_size: int,
     duckdb_memory: str,
@@ -1473,7 +1476,7 @@ def metrics(
     Reads items_resolved.parquet and entity Parquets from the exports
     directory. Produces JSON and Markdown reports in <work-dir>/metrics/.
     """
-    from .metrics import run_metrics
+    from .metrics import MetricsFilter, run_metrics
     from .telemetry import command_span
 
     telemetry = ctx.obj["telemetry"]
@@ -1483,16 +1486,21 @@ def metrics(
     if duckdb_memory == "auto":
         duckdb_memory = budget.duckdb_memory()
 
+    filters = MetricsFilter(
+        types=list(types) if types else None,
+        reuse_level=reuse_level,
+        countries=list(countries) if countries else None,
+        has_iiif=True if has_iiif else None,
+    )
+
     with command_span(telemetry, {
-        "types": list(types), "reuse_level": reuse_level,
-        "countries": list(countries), "probe_urls": probe_urls,
+        "filter": filters.description(),
+        "probe_urls": probe_urls,
     }) as counters:
         report = run_metrics(
             exports_dir=exports_dir,
             output_dir=ctx.obj["work_dir"] / "metrics",
-            types=list(types) if types else None,
-            reuse_level=reuse_level,
-            countries=list(countries) if countries else None,
+            filters=filters,
             probe_urls=probe_urls,
             sample_size=sample_size,
             memory_limit=duckdb_memory,

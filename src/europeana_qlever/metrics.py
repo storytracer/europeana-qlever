@@ -33,59 +33,75 @@ class MetricsReport:
 
 
 # ---------------------------------------------------------------------------
-# Filter builder
+# Filter dataclass
 # ---------------------------------------------------------------------------
 
-def _build_where(
-    types: list[str] | None,
-    reuse_level: str | None,
-    countries: list[str] | None,
-) -> str:
-    """Build a WHERE clause for filtering items_resolved."""
-    clauses: list[str] = []
-    if types:
-        vals = ", ".join(f"'{t}'" for t in types)
-        clauses.append(f"type IN ({vals})")
-    if reuse_level:
-        clauses.append(f"reuse_level = '{reuse_level}'")
-    if countries:
-        vals = ", ".join(f"'{c}'" for c in countries)
-        clauses.append(f"country IN ({vals})")
-    if clauses:
-        return "WHERE " + " AND ".join(clauses)
-    return ""
+# Each spec maps a MetricsFilter field to its SQL column and filter style.
+# Styles: "in_list" → col IN (...), "eq" → col = '...', "bool" → col = true
+_FilterSpec = tuple[str, str, str]  # (field_name, sql_column, style)
+
+_FILTER_SPECS: list[_FilterSpec] = [
+    ("types", "type", "in_list"),
+    ("reuse_level", "reuse_level", "eq"),
+    ("countries", "country", "in_list"),
+    ("has_iiif", "has_iiif", "bool"),
+]
 
 
-def _filter_desc(
-    types: list[str] | None,
-    reuse_level: str | None,
-    countries: list[str] | None,
-) -> str:
-    """Human-readable description of active filters."""
-    parts: list[str] = []
-    if types:
-        parts.append(f"type={','.join(types)}")
-    if reuse_level:
-        parts.append(f"reuse_level={reuse_level}")
-    if countries:
-        parts.append(f"country={','.join(countries)}")
-    return "; ".join(parts) if parts else "all"
+@dataclass
+class MetricsFilter:
+    """Composable filter for metrics queries over items_resolved."""
 
+    types: list[str] | None = None
+    reuse_level: str | None = None
+    countries: list[str] | None = None
+    has_iiif: bool | None = None
 
-def _slice_name(
-    types: list[str] | None,
-    reuse_level: str | None,
-    countries: list[str] | None,
-) -> str:
-    """Filename-safe slice identifier."""
-    parts: list[str] = []
-    if types:
-        parts.extend(t.lower() for t in types)
-    if reuse_level:
-        parts.append(reuse_level)
-    if countries:
-        parts.extend(c.lower() for c in countries)
-    return "_".join(parts) if parts else "all"
+    def where_clause(self) -> str:
+        """Build a DuckDB WHERE clause from active filters."""
+        clauses: list[str] = []
+        for field_name, column, style in _FILTER_SPECS:
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            if style == "in_list" and value:
+                vals = ", ".join(f"'{v}'" for v in value)
+                clauses.append(f"{column} IN ({vals})")
+            elif style == "eq":
+                clauses.append(f"{column} = '{value}'")
+            elif style == "bool" and value:
+                clauses.append(f"{column} = true")
+        return ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    def description(self) -> str:
+        """Human-readable description of active filters."""
+        parts: list[str] = []
+        for field_name, column, style in _FILTER_SPECS:
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            if style == "in_list" and value:
+                parts.append(f"{column}={','.join(value)}")
+            elif style == "eq":
+                parts.append(f"{column}={value}")
+            elif style == "bool" and value:
+                parts.append(column)
+        return "; ".join(parts) if parts else "all"
+
+    def slice_name(self) -> str:
+        """Filename-safe slice identifier."""
+        parts: list[str] = []
+        for field_name, _column, style in _FILTER_SPECS:
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            if style == "in_list" and value:
+                parts.extend(v.lower() for v in value)
+            elif style == "eq":
+                parts.append(str(value).lower())
+            elif style == "bool" and value:
+                parts.append(field_name)
+        return "_".join(parts) if parts else "all"
 
 
 # ---------------------------------------------------------------------------
@@ -533,15 +549,16 @@ def run_metrics(
     *,
     exports_dir: Path,
     output_dir: Path,
-    types: list[str] | None = None,
-    reuse_level: str | None = None,
-    countries: list[str] | None = None,
+    filters: MetricsFilter | None = None,
     probe_urls: bool = False,
     sample_size: int = 1000,
     memory_limit: str = "4GB",
 ) -> MetricsReport:
     """Run DuckDB analytics and produce JSON + Markdown reports."""
     from . import __version__
+
+    if filters is None:
+        filters = MetricsFilter()
 
     resolved_path = exports_dir / "items_resolved.parquet"
     if not resolved_path.exists():
@@ -557,7 +574,7 @@ def run_metrics(
     con.execute(f"SET memory_limit = '{memory_limit}'")
 
     # Create filtered view
-    where = _build_where(types, reuse_level, countries)
+    where = filters.where_clause()
     con.execute(f"""
         CREATE VIEW items AS
         SELECT * FROM read_parquet('{resolved_path}')
@@ -621,11 +638,11 @@ def run_metrics(
     con.close()
 
     # Metadata
-    slice_id = _slice_name(types, reuse_level, countries)
+    slice_id = filters.slice_name()
     data["_meta"] = {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "version": __version__,
-        "filter": _filter_desc(types, reuse_level, countries),
+        "filter": filters.description(),
         "items_resolved_path": str(resolved_path),
         "items_resolved_size_mb": round(resolved_path.stat().st_size / 1e6, 1),
     }
