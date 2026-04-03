@@ -15,12 +15,8 @@ from __future__ import annotations
 import textwrap
 from dataclasses import dataclass, field
 
-from .constants import (
-    EDM_PREFIXES,
-    OPEN_RIGHTS_URIS,
-    PERMISSION_RIGHTS_URIS,
-    RESTRICTED_RIGHTS_URIS,
-)
+from .constants import EDM_PREFIXES
+from .rights import REUSE_LEVELS, generic_rights, uris_for_reuse_level
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +55,7 @@ class QueryFilters:
     countries: list[str] | None = None
     types: list[str] | None = None
     rights: list[str] | None = None
-    rights_category: str | None = None
+    reuse_level: str | None = None
     providers: list[str] | None = None
     min_completeness: int | None = None
     year_from: int | None = None
@@ -82,6 +78,7 @@ _DESCRIPTIONS: dict[str, str] = {
     "places": "Locations with multilingual labels, coordinates, and Wikidata links",
     "concepts": "SKOS concepts with hierarchy, scheme, and cross-scheme matches",
     "timespans": "Time periods with multilingual labels, begin/end dates, and Wikidata links",
+    "rights": "Item counts grouped by rights URI with SPDX identifier",
     # Component queries (building blocks for composite exports)
     "items_core": "One row per item: type, rights, country, data provider, and single-valued aggregation properties",
     "items_titles": "All title values with language tags (multi-row per item)",
@@ -152,16 +149,13 @@ class QueryBuilder:
             f"  {eagg} a edm:EuropeanaAggregation ."
         )
 
-    def _rights_category_bind(
-        self, rights_var: str = "?rights", out_var: str = "?rights_category"
+    def _reuse_level_bind(
+        self, rights_var: str = "?rights", out_var: str = "?reuse_level"
     ) -> str:
         return textwrap.dedent(f"""\
             BIND(
               IF(STRSTARTS(STR({rights_var}), "http://creativecommons.org/publicdomain/") ||
-                 STRSTARTS(STR({rights_var}), "http://creativecommons.org/licenses/by/4") ||
-                 STRSTARTS(STR({rights_var}), "http://creativecommons.org/licenses/by/3") ||
-                 STRSTARTS(STR({rights_var}), "http://creativecommons.org/licenses/by/2") ||
-                 STRSTARTS(STR({rights_var}), "http://creativecommons.org/licenses/by/1") ||
+                 STRSTARTS(STR({rights_var}), "http://creativecommons.org/licenses/by/") ||
                  STRSTARTS(STR({rights_var}), "http://creativecommons.org/licenses/by-sa/"),
                  "open",
               IF(CONTAINS(STR({rights_var}), "-nc") || CONTAINS(STR({rights_var}), "-nd") ||
@@ -169,7 +163,7 @@ class QueryBuilder:
                  STR({rights_var}) = "http://rightsstatements.org/vocab/NoC-OKLR/1.0/" ||
                  STR({rights_var}) = "http://rightsstatements.org/vocab/InC-EDU/1.0/",
                  "restricted",
-                 "permission"))
+                 "prohibited"))
               AS {out_var}
             )""")
 
@@ -199,10 +193,10 @@ class QueryBuilder:
         if f.rights:
             vals = ", ".join(f"<{u}>" for u in f.rights)
             clauses.append(f"FILTER({rights_var} IN ({vals}))")
-        elif f.rights_category:
-            uris = self._rights_category_uris(f.rights_category)
-            vals = ", ".join(f"<{u}>" for u in uris)
-            clauses.append(f"FILTER({rights_var} IN ({vals}))")
+        elif f.reuse_level:
+            clauses.append(
+                self._reuse_level_filter(f.reuse_level, rights_var)
+            )
 
         if f.providers:
             vals = ", ".join(f'"{self._quote(p)}"' for p in f.providers)
@@ -370,14 +364,33 @@ class QueryBuilder:
         """Escape a string for use inside a SPARQL literal."""
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
-    def _rights_category_uris(self, category: str) -> list[str]:
-        """Map a category name to its URI list."""
-        mapping = {
-            "open": OPEN_RIGHTS_URIS,
-            "restricted": RESTRICTED_RIGHTS_URIS,
-            "permission": PERMISSION_RIGHTS_URIS,
-        }
-        return mapping.get(category, [])
+    def _reuse_level_filter(self, level: str, rights_var: str = "?rights") -> str:
+        """Build a SPARQL FILTER for a reuse level using pattern matching."""
+        rv = f"STR({rights_var})"
+        if level == "open":
+            return (
+                f'FILTER(STRSTARTS({rv}, "http://creativecommons.org/publicdomain/") || '
+                f'STRSTARTS({rv}, "http://creativecommons.org/licenses/by/") || '
+                f'STRSTARTS({rv}, "http://creativecommons.org/licenses/by-sa/"))'
+            )
+        if level == "restricted":
+            return (
+                f'FILTER(CONTAINS({rv}, "-nc") || CONTAINS({rv}, "-nd") || '
+                f'{rv} = "http://rightsstatements.org/vocab/NoC-NC/1.0/" || '
+                f'{rv} = "http://rightsstatements.org/vocab/NoC-OKLR/1.0/" || '
+                f'{rv} = "http://rightsstatements.org/vocab/InC-EDU/1.0/")'
+            )
+        # prohibited: everything not open or restricted
+        return (
+            f'FILTER('
+            f'!STRSTARTS({rv}, "http://creativecommons.org/publicdomain/") && '
+            f'!STRSTARTS({rv}, "http://creativecommons.org/licenses/") || '
+            f'({rv} = "http://rightsstatements.org/vocab/InC/1.0/" || '
+            f'{rv} = "http://rightsstatements.org/vocab/InC-OW-EU/1.0/" || '
+            f'{rv} = "http://rightsstatements.org/vocab/CNE/1.0/" || '
+            f'{rv} = "http://rightsstatements.org/vocab/NKC/1.0/" || '
+            f'{rv} = "http://rightsstatements.org/vocab/UND/1.0/"))'
+        )
 
     # -----------------------------------------------------------------------
     # Base queries
@@ -510,6 +523,36 @@ class QueryBuilder:
                 FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))
               }}
             }}
+            {limit_block}
+        """).strip()
+
+    def _rights_identifier_bind(self, rights_var: str = "?rights", out_var: str = "?rights_id") -> str:
+        """Build a nested IF() BIND that maps rights URIs to SPDX identifiers."""
+        entries = generic_rights()
+        # Build from inside out: innermost is the fallback
+        expr = '"Other"'
+        for rs in reversed(entries):
+            expr = (
+                f'IF(STR({rights_var}) = "{rs.uri}", "{rs.identifier}", {expr})'
+            )
+        return f"BIND({expr} AS {out_var})"
+
+    def rights(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"edm"})
+        id_bind = self._rights_identifier_bind()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?rights ?rights_id (COUNT(?item) AS ?count)
+            WHERE {{
+              ?agg edm:aggregatedCHO ?item ;
+                   edm:rights ?rights .
+              {id_bind}
+            }}
+            GROUP BY ?rights ?rights_id
+            ORDER BY DESC(?count)
             {limit_block}
         """).strip()
 
@@ -944,6 +987,7 @@ class QueryBuilder:
                 ("places", self.places),
                 ("concepts", self.concepts),
                 ("timespans", self.timespans),
+                ("rights", self.rights),
             ]
         }
 

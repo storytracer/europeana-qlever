@@ -691,7 +691,7 @@ def _resolve_queries(
     query_set: str | None,
     countries: tuple[str, ...],
     types: tuple[str, ...],
-    rights_category: str | None,
+    reuse_level: str | None,
     providers: tuple[str, ...],
     min_completeness: int | None,
     year_from: int | None,
@@ -726,7 +726,7 @@ def _resolve_queries(
     filters = QueryFilters(
         countries=list(countries) or None,
         types=list(types) or None,
-        rights_category=rights_category,
+        reuse_level=reuse_level,
         providers=list(providers) or None,
         min_completeness=min_completeness,
         year_from=year_from,
@@ -830,8 +830,8 @@ def analyze(ctx: click.Context):
               help="Filter by country (repeatable).")
 @click.option("--type", "types", multiple=True,
               help="Filter by edm:type (repeatable).")
-@click.option("--rights-category", type=click.Choice(["open", "restricted", "permission"]),
-              help="Filter by rights category.")
+@click.option("--reuse-level", type=click.Choice(["open", "restricted", "prohibited"]),
+              help="Filter by reuse level.")
 @click.option("--provider", "providers", multiple=True,
               help="Filter by dataProvider (repeatable).")
 @click.option("--min-completeness", type=int,
@@ -861,7 +861,7 @@ def analyze_qlever(
     query_set: str | None,
     countries: tuple[str, ...],
     types: tuple[str, ...],
-    rights_category: str | None,
+    reuse_level: str | None,
     providers: tuple[str, ...],
     min_completeness: int | None,
     year_from: int | None,
@@ -885,7 +885,7 @@ def analyze_qlever(
 
     qb, specs = _resolve_queries(
         sparql_files, run_all, query_names, query_set,
-        countries, types, rights_category, providers,
+        countries, types, reuse_level, providers,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names,
     )
@@ -939,8 +939,8 @@ def analyze_qlever(
               help="Filter by country (repeatable).")
 @click.option("--type", "types", multiple=True,
               help="Filter by edm:type (repeatable).")
-@click.option("--rights-category", type=click.Choice(["open", "restricted", "permission"]),
-              help="Filter by rights category.")
+@click.option("--reuse-level", type=click.Choice(["open", "restricted", "prohibited"]),
+              help="Filter by reuse level.")
 @click.option("--provider", "providers", multiple=True,
               help="Filter by dataProvider (repeatable).")
 @click.option("--min-completeness", type=int,
@@ -962,7 +962,7 @@ def analyze_static(
     query_set: str | None,
     countries: tuple[str, ...],
     types: tuple[str, ...],
-    rights_category: str | None,
+    reuse_level: str | None,
     providers: tuple[str, ...],
     min_completeness: int | None,
     year_from: int | None,
@@ -981,7 +981,7 @@ def analyze_static(
 
     qb, specs = _resolve_queries(
         sparql_files, run_all, query_names, query_set,
-        countries, types, rights_category, providers,
+        countries, types, reuse_level, providers,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names,
     )
@@ -1032,8 +1032,8 @@ def analyze_static(
               help="Filter by country (repeatable).")
 @click.option("--type", "types", multiple=True,
               help="Filter by edm:type (repeatable).")
-@click.option("--rights-category", type=click.Choice(["open", "restricted", "permission"]),
-              help="Filter by rights category.")
+@click.option("--reuse-level", type=click.Choice(["open", "restricted", "prohibited"]),
+              help="Filter by reuse level.")
 @click.option("--provider", "providers", multiple=True,
               help="Filter by dataProvider (repeatable).")
 @click.option("--min-completeness", type=int,
@@ -1069,7 +1069,7 @@ def export(
     query_set: str | None,
     countries: tuple[str, ...],
     types: tuple[str, ...],
-    rights_category: str | None,
+    reuse_level: str | None,
     providers: tuple[str, ...],
     min_completeness: int | None,
     year_from: int | None,
@@ -1098,7 +1098,7 @@ def export(
 
     _qb, queries = _resolve_queries(
         sparql_files, run_all, query_names, query_set,
-        countries, types, rights_category, providers,
+        countries, types, reuse_level, providers,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names, limit=limit,
     )

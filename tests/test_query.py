@@ -47,7 +47,7 @@ class TestQueryBuilder:
     # --- Registry tests ---
 
     def test_all_base_queries_count(self):
-        assert len(self.qb.all_base_queries()) == 6
+        assert len(self.qb.all_base_queries()) == 7
 
     def test_all_component_queries_count(self):
         assert len(self.qb.all_component_queries()) == 8
@@ -59,7 +59,7 @@ class TestQueryBuilder:
         assert len(self.qb.all_example_queries()) == 11
 
     def test_all_queries_count(self):
-        assert len(self.qb.all_queries()) == 18
+        assert len(self.qb.all_queries()) == 19
 
     def test_no_duplicate_names(self):
         queries = self.qb.all_queries()
@@ -83,10 +83,15 @@ class TestQueryBuilder:
         sparql = self.qb.items_core(f)
         assert '"IMAGE"' in sparql
 
-    def test_open_rights_filter(self):
-        f = QueryFilters(rights_category="open")
+    def test_open_reuse_level_filter(self):
+        f = QueryFilters(reuse_level="open")
         sparql = self.qb.rights_providers(f)
         assert "publicdomain" in sparql
+
+    def test_prohibited_reuse_level_filter(self):
+        f = QueryFilters(reuse_level="prohibited")
+        sparql = self.qb.rights_providers(f)
+        assert "InC/1.0/" in sparql
 
     def test_limit(self):
         f = QueryFilters(limit=100)
@@ -128,6 +133,14 @@ class TestQueryBuilder:
         all_sql = "\n".join(s.sql for s in specs["items_enriched"].compose_steps)
         assert "LIST" in all_sql
         assert "STRING_AGG" not in all_sql
+
+    def test_rights_query(self):
+        sparql = self.qb.rights()
+        assert "rights_id" in sparql
+        assert "GROUP BY" in sparql
+        assert '"CC0-1.0"' in sparql
+        assert '"InC-1.0"' in sparql
+        assert '"Other"' in sparql
 
     def test_items_by_year_uses_europeana_proxy(self):
         sparql = self.qb.items_by_year()
@@ -257,7 +270,7 @@ class TestQueryBuilder:
     def test_combined_filters(self):
         f = QueryFilters(
             countries=["Germany"],
-            rights_category="open",
+            reuse_level="open",
             limit=500,
         )
         sparql = self.qb.rights_providers(f)

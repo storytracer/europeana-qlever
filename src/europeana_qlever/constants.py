@@ -50,59 +50,6 @@ EDM_PREFIXES: dict[str, str] = {
     "xsd": "http://www.w3.org/2001/XMLSchema#",
 }
 
-# ---------------------------------------------------------------------------
-# Rights URI classification
-# ---------------------------------------------------------------------------
-OPEN_RIGHTS_URIS: list[str] = [
-    "http://creativecommons.org/publicdomain/zero/1.0/",
-    "http://creativecommons.org/publicdomain/mark/1.0/",
-    "http://creativecommons.org/licenses/by/4.0/",
-    "http://creativecommons.org/licenses/by/3.0/",
-    "http://creativecommons.org/licenses/by/2.0/",
-    "http://creativecommons.org/licenses/by/1.0/",
-    "http://creativecommons.org/licenses/by-sa/4.0/",
-    "http://creativecommons.org/licenses/by-sa/3.0/",
-    "http://creativecommons.org/licenses/by-sa/2.0/",
-    "http://creativecommons.org/licenses/by-sa/1.0/",
-]
-
-RESTRICTED_RIGHTS_URIS: list[str] = [
-    "http://creativecommons.org/licenses/by-nc/4.0/",
-    "http://creativecommons.org/licenses/by-nc/3.0/",
-    "http://creativecommons.org/licenses/by-nd/4.0/",
-    "http://creativecommons.org/licenses/by-nd/3.0/",
-    "http://creativecommons.org/licenses/by-nc-sa/4.0/",
-    "http://creativecommons.org/licenses/by-nc-sa/3.0/",
-    "http://creativecommons.org/licenses/by-nc-nd/4.0/",
-    "http://creativecommons.org/licenses/by-nc-nd/3.0/",
-    "http://rightsstatements.org/vocab/NoC-NC/1.0/",
-    "http://rightsstatements.org/vocab/NoC-OKLR/1.0/",
-    "http://rightsstatements.org/vocab/InC-EDU/1.0/",
-]
-
-PERMISSION_RIGHTS_URIS: list[str] = [
-    "http://rightsstatements.org/vocab/InC/1.0/",
-    "http://rightsstatements.org/vocab/InC-OW-EU/1.0/",
-    "http://rightsstatements.org/vocab/CNE/1.0/",
-]
-
-RIGHTS_LABELS: dict[str, str] = {
-    "http://creativecommons.org/publicdomain/zero/1.0/": "CC0",
-    "http://creativecommons.org/publicdomain/mark/1.0/": "Public Domain Mark",
-    "http://creativecommons.org/licenses/by/4.0/": "CC BY 4.0",
-    "http://creativecommons.org/licenses/by-sa/4.0/": "CC BY-SA 4.0",
-    "http://creativecommons.org/licenses/by-nc/4.0/": "CC BY-NC 4.0",
-    "http://creativecommons.org/licenses/by-nd/4.0/": "CC BY-ND 4.0",
-    "http://creativecommons.org/licenses/by-nc-sa/4.0/": "CC BY-NC-SA 4.0",
-    "http://creativecommons.org/licenses/by-nc-nd/4.0/": "CC BY-NC-ND 4.0",
-    "http://rightsstatements.org/vocab/InC/1.0/": "In Copyright",
-    "http://rightsstatements.org/vocab/InC-EDU/1.0/": "In Copyright - Educational",
-    "http://rightsstatements.org/vocab/InC-OW-EU/1.0/": "EU Orphan Work",
-    "http://rightsstatements.org/vocab/NoC-NC/1.0/": "No Copyright - Non-Commercial",
-    "http://rightsstatements.org/vocab/NoC-OKLR/1.0/": "No Copyright - Other Restrictions",
-    "http://rightsstatements.org/vocab/CNE/1.0/": "Copyright Not Evaluated",
-}
-
 
 # Language resolution strategy:
 # - Entity labels (agents, concepts): English preferred, fallback to any available.

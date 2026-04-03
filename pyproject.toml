@@ -12,6 +12,7 @@ dependencies = [
     "duckdb>=1.5.1",
     "pyarrow>=23.0.1",
     "psutil>=7.0.0",
+    "license-expression>=30.4.0",
 ]
 
 [project.scripts]
