@@ -549,12 +549,15 @@ def _parse_qleverfile(path: Path) -> dict[str, dict[str, str]]:
 
 
 @cli.command()
+@click.option("--ui", is_flag=True, default=False,
+              help="Also start the QLever UI (wraps `qlever ui`).")
 @click.pass_context
-def start(ctx: click.Context):
+def start(ctx: click.Context, ui: bool):
     """Start the QLever SPARQL server (wraps `qlever start`).
 
     Runs from <work-dir>/index/. If a server is already running on the
-    configured port, it is stopped first.
+    configured port, it is stopped first.  Use --ui to also launch the
+    QLever web UI.
     """
     index_dir: Path = ctx.obj["index_dir"]
     merged_dir: Path = ctx.obj["merged_dir"]
@@ -622,6 +625,21 @@ def start(ctx: click.Context):
         for line in proc.stdout.splitlines():
             display.console.print(line, highlight=False, markup=False)
     display.console.print("[green]Server started.[/green]")
+
+    if ui:
+        display.console.print("[bold]Starting QLever UI…[/bold]")
+        ui_proc = subprocess.run(
+            ["qlever", "ui"], cwd=index_dir,
+            capture_output=True, text=True,
+        )
+        if ui_proc.returncode == 0:
+            if ui_proc.stdout:
+                for line in ui_proc.stdout.splitlines():
+                    display.console.print(line, highlight=False, markup=False)
+            display.console.print("[green]UI started.[/green]")
+        else:
+            stderr = ui_proc.stderr.strip() if ui_proc.stderr else "unknown error"
+            display.console.print(f"[yellow]UI failed to start: {stderr}[/yellow]")
 
 
 @cli.command()

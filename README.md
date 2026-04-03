@@ -191,9 +191,12 @@ This takes approximately 2-5 hours depending on hardware. Run in tmux or screen 
 
 ```bash
 uv run europeana-qlever -d /data/europeana start
+
+# Also launch the QLever web UI
+uv run europeana-qlever -d /data/europeana start --ui
 ```
 
-The `start` command regenerates the Qleverfile with current resource budgets before launching. Verify with a basic query:
+The `start` command regenerates the Qleverfile with current resource budgets before launching. Add `--ui` to also start the QLever web interface. Verify with a basic query:
 
 ```bash
 curl -Gs http://localhost:7001 \
@@ -233,7 +236,7 @@ europeana-qlever -d WORK_DIR
 ├── merge TTL_DIR              Merge all Europeana TTL ZIPs into chunked TTL files
 ├── write-qleverfile           Generate a Qleverfile configured for the Europeana dataset
 ├── index                      Build the QLever index from merged TTL chunks
-├── start                      Start the QLever SPARQL server
+├── start [--ui]                Start the QLever SPARQL server (and optionally the web UI)
 ├── stop                       Stop the QLever SPARQL server
 ├── list-exports               List all available exports
 ├── analyze
