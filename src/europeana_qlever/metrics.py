@@ -279,7 +279,7 @@ def _section_entities(con: duckdb.DuckDBPyConnection, exports_dir: Path) -> dict
             """).fetchone()[0]
             entry["alt_label_coverage_pct"] = round(alt_count / total * 100, 2) if total else 0
 
-            # For concepts: SKOS mapping coverage
+            # For concepts: SKOS mapping coverage + top subjects from items
             if etype == "concepts":
                 for prop in ("exact_match", "broader", "narrower"):
                     prop_count = con.execute(f"""
@@ -288,6 +288,19 @@ def _section_entities(con: duckdb.DuckDBPyConnection, exports_dir: Path) -> dict
                         WHERE property = '{prop}'
                     """).fetchone()[0]
                     entry[f"{prop}_coverage_pct"] = round(prop_count / total * 100, 2) if total else 0
+
+        # For concepts: top 20 subjects used in items
+        if etype == "concepts":
+            top_subjects = con.execute("""
+                SELECT s.label AS subj, s.uri AS uri, COUNT(*) AS cnt
+                FROM (SELECT UNNEST(subjects) AS s FROM items)
+                WHERE s.label IS NOT NULL
+                GROUP BY s.label, s.uri ORDER BY cnt DESC LIMIT 20
+            """).fetchall()
+            entry["top_20_subjects"] = [
+                {"subject": s, "uri": u, "count": c}
+                for s, u, c in top_subjects
+            ]
 
         data[etype] = entry
 
@@ -469,6 +482,13 @@ def _render_markdown(data: dict) -> str:
                 key = f"{prop}_coverage_pct"
                 if key in edata:
                     lines.append(f"- {prop} coverage: **{edata[key]}%**")
+            if "top_20_subjects" in edata and edata["top_20_subjects"]:
+                lines.append("\n### Top 20 Subjects (in items)\n")
+                lines.append("| Subject | URI | Count |")
+                lines.append("|---------|-----|------:|")
+                for row in edata["top_20_subjects"]:
+                    uri = f"[{row['uri']}]({row['uri']})" if row['uri'] else ''
+                    lines.append(f"| {row['subject']} | {uri} | {row['count']:,} |")
         lines.append("")
 
     # 6. Content
