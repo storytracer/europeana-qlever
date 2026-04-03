@@ -267,6 +267,24 @@ class QueryRegistry:
             "items_creators": q("items_creators",
                 "Creator URIs and literals per item with IRI flag (multi-row)",
                 self._items_creators),
+            "items_contributors": q("items_contributors",
+                "Contributor URIs and literals per item with IRI flag (multi-row)",
+                self._items_contributors),
+            "items_publishers": q("items_publishers",
+                "Publisher URIs and literals per item with IRI flag (multi-row)",
+                self._items_publishers),
+            "items_dc_types": q("items_dc_types",
+                "dc:type values per item with IRI flag (multi-row)",
+                self._items_dc_types),
+            "items_formats": q("items_formats",
+                "dc:format values per item with IRI flag (multi-row)",
+                self._items_formats),
+            "items_identifiers": q("items_identifiers",
+                "dc:identifier values per item (multi-row)",
+                self._items_identifiers),
+            "items_dc_rights": q("items_dc_rights",
+                "dc:rights (rights holder) values per item (multi-row)",
+                self._items_dc_rights),
             # Summary queries
             "items_by_country": q("items_by_country",
                 "Item counts grouped by country",
@@ -841,6 +859,78 @@ class QueryRegistry:
             WHERE {{
               {S.provider_proxy()}
               ?proxy dc:creator ?_cv .
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_contributors(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"dc", "edm", "ore"})}
+            SELECT ?item (STR(?_cv) AS ?contributor_value) (isIRI(?_cv) AS ?is_iri)
+            WHERE {{
+              {S.provider_proxy()}
+              ?proxy dc:contributor ?_cv .
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_publishers(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"dc", "edm", "ore"})}
+            SELECT ?item (STR(?_pv) AS ?publisher_value) (isIRI(?_pv) AS ?is_iri)
+            WHERE {{
+              {S.provider_proxy()}
+              ?proxy dc:publisher ?_pv .
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_dc_types(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"dc", "edm", "ore"})}
+            SELECT ?item (STR(?_tv) AS ?type_value) (isIRI(?_tv) AS ?is_iri)
+            WHERE {{
+              {S.provider_proxy()}
+              ?proxy dc:type ?_tv .
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_formats(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"dc", "edm", "ore"})}
+            SELECT ?item (STR(?_fv) AS ?format_value) (isIRI(?_fv) AS ?is_iri)
+            WHERE {{
+              {S.provider_proxy()}
+              ?proxy dc:format ?_fv .
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_identifiers(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"dc", "edm", "ore"})}
+            SELECT ?item ?identifier
+            WHERE {{
+              {S.provider_proxy()}
+              ?proxy dc:identifier ?identifier .
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_dc_rights(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"dc", "edm", "ore"})}
+            SELECT ?item ?dc_rights
+            WHERE {{
+              {S.provider_proxy()}
+              ?proxy dc:rights ?dc_rights .
             }}
             {f.limit_clause()}
         """).strip()

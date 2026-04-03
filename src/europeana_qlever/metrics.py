@@ -190,17 +190,27 @@ def _section_completeness(con: duckdb.DuckDBPyConnection) -> dict:
             COUNT(*) FILTER (WHERE titles IS NOT NULL AND LEN(titles) > 0) AS has_title,
             COUNT(*) FILTER (WHERE descriptions IS NOT NULL AND LEN(descriptions) > 0) AS has_description,
             COUNT(*) FILTER (WHERE creators IS NOT NULL AND LEN(creators) > 0) AS has_creator,
+            COUNT(*) FILTER (WHERE contributors IS NOT NULL AND LEN(contributors) > 0) AS has_contributor,
+            COUNT(*) FILTER (WHERE publishers IS NOT NULL AND LEN(publishers) > 0) AS has_publisher,
             COUNT(*) FILTER (WHERE subjects IS NOT NULL AND LEN(subjects) > 0) AS has_subject,
+            COUNT(*) FILTER (WHERE dc_types IS NOT NULL AND LEN(dc_types) > 0) AS has_dc_type,
+            COUNT(*) FILTER (WHERE formats IS NOT NULL AND LEN(formats) > 0) AS has_format,
             COUNT(*) FILTER (WHERE dates IS NOT NULL AND LEN(dates) > 0) AS has_date,
             COUNT(*) FILTER (WHERE years IS NOT NULL AND LEN(years) > 0) AS has_year,
             COUNT(*) FILTER (WHERE languages IS NOT NULL AND LEN(languages) > 0) AS has_language,
+            COUNT(*) FILTER (WHERE identifiers IS NOT NULL AND LEN(identifiers) > 0) AS has_identifier,
+            COUNT(*) FILTER (WHERE dc_rights IS NOT NULL AND LEN(dc_rights) > 0) AS has_dc_rights,
             COUNT(*) FILTER (WHERE is_shown_by IS NOT NULL) AS has_content_url,
             COUNT(*) FILTER (WHERE has_iiif) AS has_iiif
         FROM items
     """).fetchone()
     field_names = [
-        "has_title", "has_description", "has_creator", "has_subject",
-        "has_date", "has_year", "has_language", "has_content_url", "has_iiif",
+        "has_title", "has_description", "has_creator",
+        "has_contributor", "has_publisher",
+        "has_subject", "has_dc_type", "has_format",
+        "has_date", "has_year", "has_language",
+        "has_identifier", "has_dc_rights",
+        "has_content_url", "has_iiif",
     ]
     return {
         "by_completeness_score": [
