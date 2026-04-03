@@ -369,11 +369,12 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
     from .export import ExportRegistry, QueryExport
 
     registry = ExportRegistry()
-    summary_exports = registry.for_set("summary")
-    examples = sorted(
-        [(name, e.sparql) for name, e in summary_exports.items() if isinstance(e, QueryExport)],
-        key=lambda e: e[0],
-    )
+    ui_exports: dict[str, QueryExport] = {}
+    for set_name in ("summary", "entities", "rights"):
+        for name, e in registry.for_set(set_name).items():
+            if isinstance(e, QueryExport) and name not in ui_exports:
+                ui_exports[name] = e
+    examples = sorted(ui_exports.items(), key=lambda e: e[0])
 
     hostname = socket.gethostname()
 
@@ -392,7 +393,7 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
         "  examples:",
     ]
 
-    for i, (name, sparql) in enumerate(examples, 1):
+    for i, (name, qe) in enumerate(examples, 1):
         lines.append(f'    - name: "{name}"')
         lines.append(f"      sort_key: {i}")
         lines.append("      query: |")
@@ -400,7 +401,7 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
         # but body lines indented from the f-string template. Find the indent
         # of the first non-PREFIX, non-empty line (typically SELECT) and strip
         # that amount from all lines.
-        raw_lines = sparql.splitlines()
+        raw_lines = qe.sparql.splitlines()
         body_indent = 0
         for rl in raw_lines:
             if rl.strip() and not rl.startswith("PREFIX"):
