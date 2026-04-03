@@ -226,6 +226,9 @@ class QueryRegistry:
             "timespans": q("timespans",
                 "Time periods with multilingual labels, begin/end dates, and Wikidata links",
                 self._timespans),
+            "data_providers": q("data_providers",
+                "Organisations with multilingual labels, acronym, country, role, and Wikidata links",
+                self._data_providers),
             # Pipeline — component exports
             "items_core": q("items_core",
                 "One row per item: type, rights, country, data provider, and single-valued aggregation properties",
@@ -382,6 +385,26 @@ class QueryRegistry:
               OPTIONAL {{ ?timespan skos:notation ?notation }}
               OPTIONAL {{
                 ?timespan owl:sameAs ?wikidata .
+                FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))
+              }}
+            }}
+            {f.limit_clause()}
+        """).strip()
+
+    def _data_providers(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm", "foaf", "skos", "owl"})}
+            SELECT ?org ?name ?lang ?acronym ?country ?role ?wikidata
+            WHERE {{
+              ?org a foaf:Organization ;
+                   skos:prefLabel ?name .
+              BIND(LANG(?name) AS ?lang)
+              OPTIONAL {{ ?org edm:acronym ?acronym }}
+              OPTIONAL {{ ?org edm:country ?country }}
+              OPTIONAL {{ ?org edm:europeanaRole ?role }}
+              OPTIONAL {{
+                ?org owl:sameAs ?wikidata .
                 FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/"))
               }}
             }}
@@ -586,9 +609,8 @@ class QueryRegistry:
         return textwrap.dedent(f"""\
             {S.prefix_block({"edm", "skos"})}
             SELECT ?dataProvider
-                   (SAMPLE(?enName) AS ?providerName_en)
-                   (SAMPLE(?anyName) AS ?providerName)
-                   (COUNT(?item) AS ?count)
+                   (SAMPLE(COALESCE(?enName, ?anyName)) AS ?providerName)
+                   (COUNT(DISTINCT ?item) AS ?count)
             WHERE {{
               {S.aggregation()}
               ?agg edm:dataProvider ?dataProvider .
@@ -695,8 +717,7 @@ class QueryRegistry:
         return textwrap.dedent(f"""\
             {S.prefix_block({"edm", "skos", "svcs"})}
             SELECT ?dataProvider
-                   (SAMPLE(?enName) AS ?providerName_en)
-                   (SAMPLE(?anyName) AS ?providerName)
+                   (SAMPLE(COALESCE(?enName, ?anyName)) AS ?providerName)
                    (COUNT(DISTINCT ?item) AS ?iiif_items)
             WHERE {{
               ?agg edm:aggregatedCHO ?item ;

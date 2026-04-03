@@ -158,7 +158,7 @@ EXPORT_SETS: dict[str, ExportSet] = {
     "entities": ExportSet(
         "entities",
         "Contextual entity exports (agents, places, concepts, timespans)",
-        ("agents", "places", "concepts", "timespans", "geolocated_places"),
+        ("agents", "places", "concepts", "timespans", "data_providers", "geolocated_places"),
     ),
     "rights": ExportSet(
         "rights",
@@ -693,6 +693,10 @@ class ExportPipeline:
             is_composite = isinstance(export, CompositeExport)
             tag = "[cyan]compose[/cyan]" if is_composite else "[blue]SPARQL[/blue]"
             display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
+            if isinstance(export, QueryExport) and export.sparql:
+                display.console.print(
+                    f"[dim]{export.sparql}[/dim]"
+                )
             if self._dashboard is not None:
                 try:
                     self._dashboard.set_info("export", name)
