@@ -47,7 +47,7 @@ class TestQueryBuilder:
     # --- Registry tests ---
 
     def test_all_base_queries_count(self):
-        assert len(self.qb.all_base_queries()) == 7
+        assert len(self.qb.all_base_queries()) == 8
 
     def test_all_component_queries_count(self):
         assert len(self.qb.all_component_queries()) == 8
@@ -59,7 +59,7 @@ class TestQueryBuilder:
         assert len(self.qb.all_example_queries()) == 11
 
     def test_all_queries_count(self):
-        assert len(self.qb.all_queries()) == 19
+        assert len(self.qb.all_queries()) == 20
 
     def test_no_duplicate_names(self):
         queries = self.qb.all_queries()
@@ -91,7 +91,9 @@ class TestQueryBuilder:
     def test_prohibited_reuse_level_filter(self):
         f = QueryFilters(reuse_level="prohibited")
         sparql = self.qb.rights_providers(f)
-        assert "InC/1.0/" in sparql
+        # Prohibited = NOT open AND NOT restricted
+        assert "STRSTARTS" in sparql
+        assert "CONTAINS" in sparql
 
     def test_limit(self):
         f = QueryFilters(limit=100)
@@ -136,11 +138,18 @@ class TestQueryBuilder:
 
     def test_rights_query(self):
         sparql = self.qb.rights()
-        assert "rights_id" in sparql
-        assert "GROUP BY" in sparql
-        assert '"CC0-1.0"' in sparql
-        assert '"InC-1.0"' in sparql
-        assert '"Other"' in sparql
+        assert "?rights" in sparql
+        assert "GROUP BY ?rights" in sparql
+        assert "COUNT" in sparql
+        assert "rights_id" not in sparql
+
+    def test_rights_reuse_query(self):
+        sparql = self.qb.rights_reuse()
+        assert "?reuse_level" in sparql
+        assert "GROUP BY ?reuse_level" in sparql
+        assert '"open"' in sparql
+        assert '"restricted"' in sparql
+        assert '"prohibited"' in sparql
 
     def test_items_by_year_uses_europeana_proxy(self):
         sparql = self.qb.items_by_year()

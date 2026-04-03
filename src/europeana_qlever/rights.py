@@ -1,42 +1,68 @@
 """Authoritative registry of Europeana-accepted rights statement URIs.
 
 Generates all valid Creative Commons license/public-domain URIs from the
-Europeana spec, plus RightsStatements.org entries. Each URI is paired with
-an SPDX-style identifier and a reuse level ("open", "restricted", "prohibited").
+Europeana spec, plus RightsStatements.org entries.  Each URI is paired with
+a short identifier (extracted from the URI path) and a reuse level
+("open", "restricted", "prohibited").
 
-SPDX identifiers are validated against the ``license-expression`` package's
-SPDX symbol catalog where possible; ported CC variants not in the SPDX list
-use the same naming convention (e.g. ``CC-BY-SA-3.0-AU``).
+The classification rules are defined once and exposed as both Python
+look-ups and SPARQL fragment generators so that ``query.py`` never
+duplicates them.
 """
 
 from __future__ import annotations
 
+import textwrap
 from dataclasses import dataclass
-from functools import lru_cache
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from license_expression import Licensing
 
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
+
+REUSE_LEVELS: list[str] = ["open", "restricted", "prohibited"]
 
 
 @dataclass(frozen=True)
 class RightsStatement:
     uri: str
     identifier: str
-    reuse_level: str  # "open", "restricted", or "prohibited"
+    reuse_level: str  # "open" | "restricted" | "prohibited"
 
 
-REUSE_LEVELS: list[str] = ["open", "restricted", "prohibited"]
+# ---------------------------------------------------------------------------
+# URI prefixes — used for both Python classification and SPARQL generation
+# ---------------------------------------------------------------------------
+
+_CC_LICENSE_PREFIX = "http://creativecommons.org/licenses/"
+_CC_PD_PREFIX = "http://creativecommons.org/publicdomain/"
+_RS_BASE = "http://rightsstatements.org/vocab/"
+
+# CC license properties whose URIs are classified "open".
+_OPEN_CC_PREFIXES = (
+    f"{_CC_LICENSE_PREFIX}by/",
+    f"{_CC_LICENSE_PREFIX}by-sa/",
+)
+
+# RightsStatements.org URIs classified "restricted".
+_RESTRICTED_RS_URIS = (
+    f"{_RS_BASE}NoC-NC/1.0/",
+    f"{_RS_BASE}NoC-OKLR/1.0/",
+    f"{_RS_BASE}InC-EDU/1.0/",
+)
+
+# RightsStatements.org URIs classified "prohibited".
+_PROHIBITED_RS_URIS = (
+    f"{_RS_BASE}InC/1.0/",
+    f"{_RS_BASE}InC-OW-EU/1.0/",
+    f"{_RS_BASE}CNE/1.0/",
+    f"{_RS_BASE}NKC/1.0/",
+    f"{_RS_BASE}UND/1.0/",
+)
 
 # ---------------------------------------------------------------------------
 # CC URI generation data — from the Europeana spec
 # ---------------------------------------------------------------------------
 
-# License properties common to all versions (except v1.0 swap, handled below).
 _CC_PROPERTIES: list[str] = [
     "by", "by-sa", "by-nd", "by-nc", "by-nc-sa", "by-nc-nd",
 ]
@@ -68,74 +94,48 @@ _VERSION_PORTS: dict[str, list[str | None]] = {
     "4.0": [None],
 }
 
-# Maps URI license-properties segment → canonical SPDX component.
-# Notably, v1.0's "by-nd-nc" maps to the standard "BY-NC-ND" ordering.
-_PROPERTY_TO_SPDX: dict[str, str] = {
-    "by": "BY",
-    "by-sa": "BY-SA",
-    "by-nd": "BY-ND",
-    "by-nc": "BY-NC",
-    "by-nc-sa": "BY-NC-SA",
-    "by-nc-nd": "BY-NC-ND",
-    "by-nd-nc": "BY-NC-ND",
-}
-
-# Open license properties (all versions/ports are "open").
-_OPEN_PROPERTIES: frozenset[str] = frozenset({"by", "by-sa"})
-
 # ---------------------------------------------------------------------------
-# RightsStatements.org — static entries
-# ---------------------------------------------------------------------------
-
-_RIGHTSSTATEMENTS: list[tuple[str, str, str]] = [
-    # (URI suffix after vocab/, identifier, reuse_level)
-    ("NoC-NC/1.0/",    "NoC-NC-1.0",    "restricted"),
-    ("NoC-OKLR/1.0/",  "NoC-OKLR-1.0",  "restricted"),
-    ("InC/1.0/",       "InC-1.0",       "prohibited"),
-    ("InC-EDU/1.0/",   "InC-EDU-1.0",   "restricted"),
-    ("InC-OW-EU/1.0/", "InC-OW-EU-1.0", "prohibited"),
-    ("CNE/1.0/",       "CNE-1.0",       "prohibited"),
-    ("NKC/1.0/",       "NKC-1.0",       "prohibited"),
-    ("UND/1.0/",       "UND-1.0",       "prohibited"),
-]
-
-_RS_BASE = "http://rightsstatements.org/vocab/"
-
-# ---------------------------------------------------------------------------
-# SPDX identifier helpers
+# Identifier extraction — mechanical transformation of URI path segments
 # ---------------------------------------------------------------------------
 
 
-@lru_cache(maxsize=1)
-def _spdx_symbols() -> dict[str, str]:
-    """Load SPDX symbol keys from license-expression, keyed by uppercase."""
-    from license_expression import get_spdx_licensing
+def _identifier_from_uri(uri: str) -> str:
+    """Extract a short identifier from a rights URI.
 
-    licensing: Licensing = get_spdx_licensing()
-    return {k.upper(): k for k in licensing.known_symbols}
-
-
-def _cc_license_identifier(properties: str, version: str, port: str | None) -> str:
-    """Build an SPDX-style identifier for a CC license URI."""
-    spdx_prop = _PROPERTY_TO_SPDX[properties]
-    parts = ["CC", spdx_prop, version]
-    if port is not None:
-        parts.append(port.upper())
-    candidate = "-".join(parts)
-
-    # Check against canonical SPDX symbols
-    symbols = _spdx_symbols()
-    canonical = symbols.get(candidate.upper())
-    return canonical if canonical is not None else candidate
+    CC licenses:      ``.../licenses/by-sa/3.0/au/`` → ``CC-BY-SA-3.0-AU``
+    CC public domain: ``.../publicdomain/zero/1.0/``  → ``CC-PD-ZERO-1.0``
+    RightsStatements: ``.../vocab/InC/1.0/``          → ``InC-1.0``
+    """
+    for prefix, id_prefix in (
+        (_CC_LICENSE_PREFIX, "CC-"),
+        (_CC_PD_PREFIX, "CC-PD-"),
+        (_RS_BASE, ""),
+    ):
+        if uri.startswith(prefix):
+            tail = uri[len(prefix):].rstrip("/")
+            parts = tail.split("/")
+            if prefix == _RS_BASE:
+                return "-".join(parts)
+            return id_prefix + "-".join(p.upper() for p in parts)
+    return "Other"
 
 
-def _cc_publicdomain_identifier(tool: str) -> str:
-    """Return the SPDX identifier for a CC public domain tool."""
-    if tool == "zero":
-        return "CC0-1.0"
-    if tool == "mark":
-        return "CC-PDDC"
-    raise ValueError(f"Unknown public domain tool: {tool}")
+# ---------------------------------------------------------------------------
+# Reuse-level classification — single source of truth
+# ---------------------------------------------------------------------------
+
+
+def _classify(uri: str) -> str:
+    """Classify a rights URI into a reuse level."""
+    if uri.startswith(_CC_PD_PREFIX):
+        return "open"
+    if any(uri.startswith(p) for p in _OPEN_CC_PREFIXES):
+        return "open"
+    if uri.startswith(_CC_LICENSE_PREFIX):
+        return "restricted"
+    if uri in _RESTRICTED_RS_URIS:
+        return "restricted"
+    return "prohibited"
 
 
 # ---------------------------------------------------------------------------
@@ -147,33 +147,25 @@ def _build_registry() -> dict[str, RightsStatement]:
     """Build the complete rights statement registry."""
     registry: dict[str, RightsStatement] = {}
 
-    # --- CC licenses ---
+    # CC licenses
     for version, ports in _VERSION_PORTS.items():
-        properties_list = _CC_V1_PROPERTIES if version == "1.0" else _CC_PROPERTIES
-        for properties in properties_list:
+        props = _CC_V1_PROPERTIES if version == "1.0" else _CC_PROPERTIES
+        for prop in props:
             for port in ports:
                 if port is None:
-                    uri = f"http://creativecommons.org/licenses/{properties}/{version}/"
+                    uri = f"{_CC_LICENSE_PREFIX}{prop}/{version}/"
                 else:
-                    uri = f"http://creativecommons.org/licenses/{properties}/{version}/{port}/"
+                    uri = f"{_CC_LICENSE_PREFIX}{prop}/{version}/{port}/"
+                registry[uri] = RightsStatement(uri, _identifier_from_uri(uri), _classify(uri))
 
-                # Reuse level: normalise v1.0's by-nd-nc to canonical form
-                canonical = properties if properties != "by-nd-nc" else "by-nc-nd"
-                reuse_level = "open" if canonical in ("by", "by-sa") else "restricted"
-
-                identifier = _cc_license_identifier(properties, version, port)
-                registry[uri] = RightsStatement(uri, identifier, reuse_level)
-
-    # --- CC public domain tools ---
+    # CC public domain tools
     for tool in ("zero", "mark"):
-        uri = f"http://creativecommons.org/publicdomain/{tool}/1.0/"
-        identifier = _cc_publicdomain_identifier(tool)
-        registry[uri] = RightsStatement(uri, identifier, "open")
+        uri = f"{_CC_PD_PREFIX}{tool}/1.0/"
+        registry[uri] = RightsStatement(uri, _identifier_from_uri(uri), _classify(uri))
 
-    # --- RightsStatements.org ---
-    for suffix, identifier, reuse_level in _RIGHTSSTATEMENTS:
-        uri = f"{_RS_BASE}{suffix}"
-        registry[uri] = RightsStatement(uri, identifier, reuse_level)
+    # RightsStatements.org
+    for rs_uri in _RESTRICTED_RS_URIS + _PROHIBITED_RS_URIS:
+        registry[rs_uri] = RightsStatement(rs_uri, _identifier_from_uri(rs_uri), _classify(rs_uri))
 
     return registry
 
@@ -194,7 +186,7 @@ def uris_for_reuse_level(level: str) -> list[str]:
 
 
 def identifier_for_uri(uri: str) -> str:
-    """Return the SPDX-style identifier for a rights URI, or 'Other' if unknown."""
+    """Return the short identifier for a rights URI, or 'Other' if unknown."""
     rs = RIGHTS_REGISTRY.get(uri)
     return rs.identifier if rs is not None else "Other"
 
@@ -208,19 +200,69 @@ def reuse_level_for_uri(uri: str) -> str:
 def generic_rights() -> list[RightsStatement]:
     """Return only unported/generic CC URIs plus all RightsStatements.org entries.
 
-    Useful for SPARQL BINDs where enumerating all ~600 URIs is impractical.
+    Useful for SPARQL BINDs where enumerating all ~580 URIs is impractical.
+    A generic CC URI has no port segment, i.e. exactly 6 slashes.
     """
-    result: list[RightsStatement] = []
-    for rs in RIGHTS_REGISTRY.values():
-        uri = rs.uri
-        if uri.startswith(_RS_BASE):
-            result.append(rs)
-        elif uri.startswith("http://creativecommons.org/publicdomain/"):
-            result.append(rs)
-        elif uri.startswith("http://creativecommons.org/licenses/"):
-            # Generic = exactly 6 slashes (scheme + empty + domain + licenses + props + version + trailing)
-            # e.g. http://creativecommons.org/licenses/by/4.0/ has 6 slashes
-            # Ported adds one more: .../by/4.0/au/ has 7 slashes
-            if uri.count("/") == 6:
-                result.append(rs)
-    return result
+    return [
+        rs for rs in RIGHTS_REGISTRY.values()
+        if not rs.uri.startswith(_CC_LICENSE_PREFIX) or rs.uri.count("/") == 6
+    ]
+
+
+# ---------------------------------------------------------------------------
+# SPARQL fragment generators
+#
+# These translate the classification rules into SPARQL expressions so
+# that query.py doesn't have to hard-code URI patterns.
+# ---------------------------------------------------------------------------
+
+
+def sparql_reuse_level_bind(rights_var: str = "?rights", out_var: str = "?reuse_level") -> str:
+    """SPARQL BIND that classifies a rights URI into a reuse level."""
+    rv = f"STR({rights_var})"
+    open_cond = _sparql_open_condition(rv)
+    restricted_cond = _sparql_restricted_condition(rv)
+    return textwrap.dedent(f"""\
+        BIND(
+          IF({open_cond}, "open",
+          IF({restricted_cond}, "restricted",
+             "prohibited"))
+          AS {out_var}
+        )""")
+
+
+def sparql_reuse_level_filter(level: str, rights_var: str = "?rights") -> str:
+    """SPARQL FILTER that selects URIs matching a single reuse level."""
+    rv = f"STR({rights_var})"
+    if level == "open":
+        return f"FILTER({_sparql_open_condition(rv)})"
+    if level == "restricted":
+        return f"FILTER({_sparql_restricted_condition(rv)})"
+    # prohibited = NOT open AND NOT restricted
+    return f"FILTER(!({_sparql_open_condition(rv)}) && !({_sparql_restricted_condition(rv)}))"
+
+
+def sparql_identifier_bind(rights_var: str = "?rights", out_var: str = "?rights_id") -> str:
+    """SPARQL BIND that maps generic/unported rights URIs to short identifiers."""
+    entries = generic_rights()
+    expr = '"Other"'
+    for rs in reversed(entries):
+        expr = f'IF(STR({rights_var}) = "{rs.uri}", "{rs.identifier}", {expr})'
+    return f"BIND({expr} AS {out_var})"
+
+
+# -- shared SPARQL condition fragments ------------------------------------
+
+def _sparql_open_condition(rv: str) -> str:
+    """SPARQL boolean expression that is true for "open" rights URIs."""
+    prefixes = [_CC_PD_PREFIX] + list(_OPEN_CC_PREFIXES)
+    return " || ".join(f'STRSTARTS({rv}, "{p}")' for p in prefixes)
+
+
+def _sparql_restricted_condition(rv: str) -> str:
+    """SPARQL boolean expression that is true for "restricted" rights URIs."""
+    # CC licenses containing -nc or -nd in the URI path
+    cc = 'CONTAINS({rv}, "-nc") || CONTAINS({rv}, "-nd")'.format(rv=rv)
+    # RightsStatements.org restricted entries
+    rs = " || ".join(f'{rv} = "{u}"' for u in _RESTRICTED_RS_URIS)
+    return f"{cc} || {rs}"

@@ -16,7 +16,7 @@ import textwrap
 from dataclasses import dataclass, field
 
 from .constants import EDM_PREFIXES
-from .rights import REUSE_LEVELS, generic_rights, uris_for_reuse_level
+from .rights import sparql_reuse_level_bind, sparql_reuse_level_filter
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +78,8 @@ _DESCRIPTIONS: dict[str, str] = {
     "places": "Locations with multilingual labels, coordinates, and Wikidata links",
     "concepts": "SKOS concepts with hierarchy, scheme, and cross-scheme matches",
     "timespans": "Time periods with multilingual labels, begin/end dates, and Wikidata links",
-    "rights": "Item counts grouped by rights URI with SPDX identifier",
+    "rights": "Item counts grouped by rights URI",
+    "rights_reuse": "Item counts grouped by reuse level (open, restricted, prohibited)",
     # Component queries (building blocks for composite exports)
     "items_core": "One row per item: type, rights, country, data provider, and single-valued aggregation properties",
     "items_titles": "All title values with language tags (multi-row per item)",
@@ -149,24 +150,6 @@ class QueryBuilder:
             f"  {eagg} a edm:EuropeanaAggregation ."
         )
 
-    def _reuse_level_bind(
-        self, rights_var: str = "?rights", out_var: str = "?reuse_level"
-    ) -> str:
-        return textwrap.dedent(f"""\
-            BIND(
-              IF(STRSTARTS(STR({rights_var}), "http://creativecommons.org/publicdomain/") ||
-                 STRSTARTS(STR({rights_var}), "http://creativecommons.org/licenses/by/") ||
-                 STRSTARTS(STR({rights_var}), "http://creativecommons.org/licenses/by-sa/"),
-                 "open",
-              IF(CONTAINS(STR({rights_var}), "-nc") || CONTAINS(STR({rights_var}), "-nd") ||
-                 STR({rights_var}) = "http://rightsstatements.org/vocab/NoC-NC/1.0/" ||
-                 STR({rights_var}) = "http://rightsstatements.org/vocab/NoC-OKLR/1.0/" ||
-                 STR({rights_var}) = "http://rightsstatements.org/vocab/InC-EDU/1.0/",
-                 "restricted",
-                 "prohibited"))
-              AS {out_var}
-            )""")
-
     def _build_filters(
         self,
         f: QueryFilters,
@@ -195,7 +178,7 @@ class QueryBuilder:
             clauses.append(f"FILTER({rights_var} IN ({vals}))")
         elif f.reuse_level:
             clauses.append(
-                self._reuse_level_filter(f.reuse_level, rights_var)
+                sparql_reuse_level_filter(f.reuse_level, rights_var)
             )
 
         if f.providers:
@@ -364,34 +347,6 @@ class QueryBuilder:
         """Escape a string for use inside a SPARQL literal."""
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
-    def _reuse_level_filter(self, level: str, rights_var: str = "?rights") -> str:
-        """Build a SPARQL FILTER for a reuse level using pattern matching."""
-        rv = f"STR({rights_var})"
-        if level == "open":
-            return (
-                f'FILTER(STRSTARTS({rv}, "http://creativecommons.org/publicdomain/") || '
-                f'STRSTARTS({rv}, "http://creativecommons.org/licenses/by/") || '
-                f'STRSTARTS({rv}, "http://creativecommons.org/licenses/by-sa/"))'
-            )
-        if level == "restricted":
-            return (
-                f'FILTER(CONTAINS({rv}, "-nc") || CONTAINS({rv}, "-nd") || '
-                f'{rv} = "http://rightsstatements.org/vocab/NoC-NC/1.0/" || '
-                f'{rv} = "http://rightsstatements.org/vocab/NoC-OKLR/1.0/" || '
-                f'{rv} = "http://rightsstatements.org/vocab/InC-EDU/1.0/")'
-            )
-        # prohibited: everything not open or restricted
-        return (
-            f'FILTER('
-            f'!STRSTARTS({rv}, "http://creativecommons.org/publicdomain/") && '
-            f'!STRSTARTS({rv}, "http://creativecommons.org/licenses/") || '
-            f'({rv} = "http://rightsstatements.org/vocab/InC/1.0/" || '
-            f'{rv} = "http://rightsstatements.org/vocab/InC-OW-EU/1.0/" || '
-            f'{rv} = "http://rightsstatements.org/vocab/CNE/1.0/" || '
-            f'{rv} = "http://rightsstatements.org/vocab/NKC/1.0/" || '
-            f'{rv} = "http://rightsstatements.org/vocab/UND/1.0/"))'
-        )
-
     # -----------------------------------------------------------------------
     # Base queries
     # -----------------------------------------------------------------------
@@ -526,32 +481,38 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def _rights_identifier_bind(self, rights_var: str = "?rights", out_var: str = "?rights_id") -> str:
-        """Build a nested IF() BIND that maps rights URIs to SPDX identifiers."""
-        entries = generic_rights()
-        # Build from inside out: innermost is the fallback
-        expr = '"Other"'
-        for rs in reversed(entries):
-            expr = (
-                f'IF(STR({rights_var}) = "{rs.uri}", "{rs.identifier}", {expr})'
-            )
-        return f"BIND({expr} AS {out_var})"
-
     def rights(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm"})
-        id_bind = self._rights_identifier_bind()
         limit_block = self._limit_offset(f)
 
         return textwrap.dedent(f"""\
             {prefixes}
-            SELECT ?rights ?rights_id (COUNT(?item) AS ?count)
+            SELECT ?rights (COUNT(?item) AS ?count)
             WHERE {{
               ?agg edm:aggregatedCHO ?item ;
                    edm:rights ?rights .
-              {id_bind}
             }}
-            GROUP BY ?rights ?rights_id
+            GROUP BY ?rights
+            ORDER BY DESC(?count)
+            {limit_block}
+        """).strip()
+
+    def rights_reuse(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        prefixes = self._prefix_block({"edm"})
+        reuse_bind = sparql_reuse_level_bind()
+        limit_block = self._limit_offset(f)
+
+        return textwrap.dedent(f"""\
+            {prefixes}
+            SELECT ?reuse_level (COUNT(?item) AS ?count)
+            WHERE {{
+              ?agg edm:aggregatedCHO ?item ;
+                   edm:rights ?rights .
+              {reuse_bind}
+            }}
+            GROUP BY ?reuse_level
             ORDER BY DESC(?count)
             {limit_block}
         """).strip()
@@ -988,6 +949,7 @@ class QueryBuilder:
                 ("concepts", self.concepts),
                 ("timespans", self.timespans),
                 ("rights", self.rights),
+                ("rights_reuse", self.rights_reuse),
             ]
         }
 

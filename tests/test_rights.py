@@ -125,19 +125,20 @@ class TestIdentifiers:
         assert identifier_for_uri("http://creativecommons.org/licenses/by/4.0/") == "CC-BY-4.0"
         assert identifier_for_uri("http://creativecommons.org/licenses/by-sa/3.0/") == "CC-BY-SA-3.0"
         assert identifier_for_uri("http://creativecommons.org/licenses/by-nc-nd/2.0/") == "CC-BY-NC-ND-2.0"
+        assert identifier_for_uri("http://creativecommons.org/licenses/by-nd-nc/1.0/") == "CC-BY-ND-NC-1.0"
 
     def test_cc_ported_identifiers(self):
         assert identifier_for_uri("http://creativecommons.org/licenses/by-sa/3.0/au/") == "CC-BY-SA-3.0-AU"
         assert identifier_for_uri("http://creativecommons.org/licenses/by/2.5/scotland/") == "CC-BY-2.5-SCOTLAND"
 
-    def test_v1_by_nd_nc_uses_canonical_spdx_order(self):
-        """v1.0 'by-nd-nc' maps to the canonical SPDX order 'BY-NC-ND'."""
-        assert identifier_for_uri("http://creativecommons.org/licenses/by-nd-nc/1.0/") == "CC-BY-NC-ND-1.0"
-        assert identifier_for_uri("http://creativecommons.org/licenses/by-nd-nc/1.0/nl/") == "CC-BY-NC-ND-1.0-NL"
+    def test_v1_by_nd_nc_preserves_uri_order(self):
+        """v1.0 'by-nd-nc' is preserved as-is in the identifier (no reordering)."""
+        assert identifier_for_uri("http://creativecommons.org/licenses/by-nd-nc/1.0/") == "CC-BY-ND-NC-1.0"
+        assert identifier_for_uri("http://creativecommons.org/licenses/by-nd-nc/1.0/nl/") == "CC-BY-ND-NC-1.0-NL"
 
     def test_public_domain_identifiers(self):
-        assert identifier_for_uri("http://creativecommons.org/publicdomain/zero/1.0/") == "CC0-1.0"
-        assert identifier_for_uri("http://creativecommons.org/publicdomain/mark/1.0/") == "CC-PDDC"
+        assert identifier_for_uri("http://creativecommons.org/publicdomain/zero/1.0/") == "CC-PD-ZERO-1.0"
+        assert identifier_for_uri("http://creativecommons.org/publicdomain/mark/1.0/") == "CC-PD-MARK-1.0"
 
     def test_rightsstatements_identifiers(self):
         assert identifier_for_uri("http://rightsstatements.org/vocab/InC/1.0/") == "InC-1.0"
