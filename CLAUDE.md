@@ -31,14 +31,6 @@ src/europeana_qlever/
   state.py                        # Pipeline state tracking, ValidateResult dataclass, logging setup
   throttle.py                     # Adaptive concurrency throttle (CPU/memory-aware, replaces semaphore)
   validate.py                     # Standalone validation + inline entry validation for merge
-tests/
-  test_analysis.py                # Query performance analysis tests
-  test_compose.py                 # DuckDB composition SQL tests
-  test_export.py                  # Export functionality tests (including ?-stripping)
-  test_query.py                   # Unit tests for query generation and QuerySpec
-  test_state.py                   # State persistence tests
-  test_throttle.py                # Adaptive throttle tests
-  test_validate.py                # Validation tests
 EDM.md                            # Europeana Data Model reference (EDM, entities, rights)
 README.md                         # General-purpose project README
 docs/
@@ -89,7 +81,6 @@ uv run europeana-qlever -d WORK_DIR export --query-set all       # Export all 18
 uv run europeana-qlever -d WORK_DIR export -q items_enriched     # Export a specific named query
 uv run europeana-qlever -d WORK_DIR export FILE.sparql           # Export a custom .sparql file
 uv run europeana-qlever -d WORK_DIR pipeline TTL_DIR             # Run full pipeline end-to-end
-uv run pytest tests/test_query.py                                # Run query generator tests
 ```
 
 All commands require `-d WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Output paths are derived automatically. Always use `uv run` — never bare `python` or `pip install`.
@@ -151,5 +142,6 @@ The provider proxy (identified by `FILTER NOT EXISTS { ?proxy edm:europeanaProxy
 
 - All data-processing logic is in the Python CLI. No bash scripts for pipeline steps.
 - CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`/`query.py`/`validate.py`/`throttle.py`, configuration in `constants.py`, resource detection in `resources.py`, live display in `dashboard.py`/`display.py`, state tracking in `state.py`.
+- **No unit tests.** This project does not use unit tests. Do not create test files or run pytest.
 - Use `rich.console.Console` for all terminal output (not bare `print`).
 - Click options use `Path` type with `path_type=Path`.

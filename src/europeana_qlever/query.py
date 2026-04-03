@@ -43,6 +43,28 @@ class QuerySpec:
     def is_composite(self) -> bool:
         return self.compose_steps is not None
 
+    @property
+    def query_sets(self) -> list[str]:
+        """Names of all query sets this spec belongs to."""
+        return [qs.name for qs in QUERY_SETS.values() if self.name in qs.members]
+
+
+# ---------------------------------------------------------------------------
+# QuerySet — named, non-exclusive collection of queries
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class QuerySet:
+    """A named collection of queries.  Queries can belong to multiple sets."""
+
+    name: str
+    description: str
+    members: tuple[str, ...]
+
+    def resolve(self, registry: dict[str, QuerySpec]) -> dict[str, QuerySpec]:
+        """Return the subset of *registry* matching this set's members."""
+        return {n: registry[n] for n in self.members if n in registry}
+
 
 # ---------------------------------------------------------------------------
 # Filter dataclass
@@ -67,46 +89,59 @@ class QueryFilters:
 
 
 # ---------------------------------------------------------------------------
-# Query descriptions
+# Query set definitions
 # ---------------------------------------------------------------------------
 
-_DESCRIPTIONS: dict[str, str] = {
-    # Base queries
-    "web_resources": "Digital representation URLs with MIME type, dimensions, and file size",
-    "rights_providers": "Item-level rights statements with provider, country, and completeness score",
-    "agents": "People and organisations with multilingual labels, birth/death dates, profession, and Wikidata links",
-    "places": "Locations with multilingual labels, coordinates, and Wikidata links",
-    "concepts": "SKOS concepts with hierarchy, scheme, and cross-scheme matches",
-    "timespans": "Time periods with multilingual labels, begin/end dates, and Wikidata links",
-    "rights": "Item counts grouped by rights URI",
-    "rights_reuse": "Item counts grouped by reuse level (open, restricted, prohibited)",
-    # Component queries (building blocks for composite exports)
-    "items_core": "One row per item: type, rights, country, data provider, and single-valued aggregation properties",
-    "items_titles": "All title values with language tags (multi-row per item)",
-    "items_descriptions": "All description values with language tags (multi-row per item)",
-    "items_subjects": "Subject values per item (multi-row)",
-    "items_dates": "Date values per item (multi-row)",
-    "items_languages": "Language codes per item (multi-row)",
-    "items_years": "Normalised edm:year values from Europeana proxy (multi-row per item)",
-    "items_creators": "Creator URIs and literals per item with IRI flag (multi-row)",
-    # Enriched queries
-    "items_enriched": (
-        "Fully denormalized one-row-per-item export with parallel English and "
-        "vernacular title/description columns, resolved entity labels, and "
-        "multi-valued properties — composed via DuckDB from component tables"
+QUERY_SETS: dict[str, QuerySet] = {
+    "pipeline": QuerySet(
+        "pipeline",
+        "Full Parquet export pipeline (standalone + component + composite)",
+        (
+            "web_resources",
+            "agents", "places", "concepts", "timespans",
+            "items_core", "items_titles", "items_descriptions",
+            "items_subjects", "items_dates", "items_languages",
+            "items_years", "items_creators",
+            "items_enriched",
+        ),
     ),
-    # Example queries — designed for fast interactive execution in QLever UI
-    "geolocated_places": "Places with coordinates",
-    "iiif_availability": "Items with IIIF manifests (svcs:has_service) by provider",
-    "items_by_country": "Item counts grouped by country",
-    "items_by_language": "Item counts grouped by edm:language",
-    "items_by_provider": "Item counts grouped by data provider",
-    "items_by_type": "Item counts grouped by edm:type",
-    "items_by_type_and_country": "Item counts grouped by edm:type and country",
-    "items_by_type_and_language": "Item counts grouped by edm:type and edm:language",
-    "items_by_year": "Item counts grouped by edm:year",
-    "mime_type_distribution": "Item counts grouped by MIME type and edm:type",
-    "texts_by_type": "dc:type value distribution for TEXT items (books, newspapers, etc.)",
+    "summary": QuerySet(
+        "summary",
+        "Dataset statistics — GROUP BY / COUNT aggregates",
+        (
+            "items_by_country", "items_by_language", "items_by_provider",
+            "items_by_type", "items_by_type_and_country",
+            "items_by_type_and_language", "items_by_year",
+            "items_by_rights_uri", "items_by_reuse_level",
+            "mime_type_distribution", "geolocated_places",
+            "iiif_availability", "texts_by_type",
+        ),
+    ),
+    "items": QuerySet(
+        "items",
+        "All item-related queries",
+        (
+            "items_core", "items_titles", "items_descriptions",
+            "items_subjects", "items_dates", "items_languages",
+            "items_years", "items_creators", "items_enriched",
+            "web_resources",
+            "items_by_country", "items_by_language", "items_by_provider",
+            "items_by_type", "items_by_type_and_country",
+            "items_by_type_and_language", "items_by_year",
+            "items_by_rights_uri", "items_by_reuse_level",
+            "iiif_availability", "mime_type_distribution", "texts_by_type",
+        ),
+    ),
+    "entities": QuerySet(
+        "entities",
+        "Contextual entity queries (agents, places, concepts, timespans)",
+        ("agents", "places", "concepts", "timespans", "geolocated_places"),
+    ),
+    "rights": QuerySet(
+        "rights",
+        "Rights and licensing queries",
+        ("items_by_rights_uri", "items_by_reuse_level"),
+    ),
 }
 
 
@@ -115,7 +150,14 @@ _DESCRIPTIONS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 class QueryBuilder:
-    """Generates SPARQL queries for Europeana EDM metadata exports."""
+    """Generates SPARQL queries for Europeana EDM metadata exports.
+
+    Instantiate with optional ``extra_languages`` for label resolution.
+    Access queries via :meth:`all_queries` or :meth:`queries_for_set`.
+    """
+
+    def __init__(self, extra_languages: list[str] | None = None) -> None:
+        self.extra_languages: list[str] = extra_languages or []
 
     # -----------------------------------------------------------------------
     # Private helpers — SPARQL fragment generators
@@ -348,10 +390,10 @@ class QueryBuilder:
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
     # -----------------------------------------------------------------------
-    # Base queries
+    # SPARQL query generators (private — accessed via all_queries registry)
     # -----------------------------------------------------------------------
 
-    def web_resources(self, filters: QueryFilters | None = None) -> str:
+    def _web_resources(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ebucore"})
         limit_block = self._limit_offset(f)
@@ -370,31 +412,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def rights_providers(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        prefixes = self._prefix_block({"edm", "xsd"})
-        agg = self._aggregation()
-        eagg = self._europeana_aggregation()
-        filter_block = self._build_filters(f)
-        limit_block = self._limit_offset(f)
-
-        return textwrap.dedent(f"""\
-            {prefixes}
-            SELECT ?item ?rights ?dataProvider ?provider ?country ?completeness
-            WHERE {{
-              {agg}
-              ?agg edm:rights ?rights ;
-                   edm:dataProvider ?dataProvider ;
-                   edm:provider ?provider .
-              {eagg}
-              ?eAgg edm:country ?country ;
-                    edm:completeness ?completeness .
-              {filter_block}
-            }}
-            {limit_block}
-        """).strip()
-
-    def agents(self, filters: QueryFilters | None = None) -> str:
+    def _agents(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "skos", "rdaGr2", "owl"})
         limit_block = self._limit_offset(f)
@@ -417,7 +435,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def places(self, filters: QueryFilters | None = None) -> str:
+    def _places(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "skos", "wgs84_pos", "owl"})
         limit_block = self._limit_offset(f)
@@ -439,7 +457,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def concepts(self, filters: QueryFilters | None = None) -> str:
+    def _concepts(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"skos", "owl"})
         limit_block = self._limit_offset(f)
@@ -458,7 +476,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def timespans(self, filters: QueryFilters | None = None) -> str:
+    def _timespans(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "skos", "owl"})
         limit_block = self._limit_offset(f)
@@ -481,7 +499,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def rights(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_rights_uri(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm"})
         limit_block = self._limit_offset(f)
@@ -498,7 +516,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def rights_reuse(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_reuse_level(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm"})
         reuse_bind = sparql_reuse_level_bind()
@@ -517,16 +535,8 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    # -----------------------------------------------------------------------
-    # Component queries — building blocks for composite exports
-    #
-    # Each is a flat, simple SPARQL scan with no GROUP BY and minimal
-    # OPTIONALs. QLever executes these in minutes over 66M items.
-    # DuckDB then joins the resulting Parquet files to produce the
-    # final denormalized exports.
-    # -----------------------------------------------------------------------
 
-    def items_core(self, filters: QueryFilters | None = None) -> str:
+    def _items_core(self, filters: QueryFilters | None = None) -> str:
         """One row per item with single-valued properties.
 
         Uses subquery materialization: the mandatory joins (proxy ×
@@ -572,7 +582,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_titles(self, filters: QueryFilters | None = None) -> str:
+    def _items_titles(self, filters: QueryFilters | None = None) -> str:
         """All title values with language tags — multi-row per item."""
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore"})
@@ -590,7 +600,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_descriptions(self, filters: QueryFilters | None = None) -> str:
+    def _items_descriptions(self, filters: QueryFilters | None = None) -> str:
         """All description values with language tags — multi-row per item."""
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore"})
@@ -608,7 +618,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_subjects(self, filters: QueryFilters | None = None) -> str:
+    def _items_subjects(self, filters: QueryFilters | None = None) -> str:
         """Subject values per item with IRI flag — multi-row.
 
         Subjects can be literal strings (``"Painting"``) or concept URIs
@@ -630,7 +640,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_dates(self, filters: QueryFilters | None = None) -> str:
+    def _items_dates(self, filters: QueryFilters | None = None) -> str:
         """Date values per item — multi-row."""
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore"})
@@ -647,7 +657,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_languages(self, filters: QueryFilters | None = None) -> str:
+    def _items_languages(self, filters: QueryFilters | None = None) -> str:
         """Language codes per item — multi-row."""
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore"})
@@ -664,7 +674,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_years(self, filters: QueryFilters | None = None) -> str:
+    def _items_years(self, filters: QueryFilters | None = None) -> str:
         """Normalised edm:year from the Europeana proxy — multi-row per item."""
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore"})
@@ -681,7 +691,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_creators(self, filters: QueryFilters | None = None) -> str:
+    def _items_creators(self, filters: QueryFilters | None = None) -> str:
         """Creator URIs and literals per item with IRI flag — multi-row."""
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore"})
@@ -698,15 +708,8 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    # -----------------------------------------------------------------------
-    # Enriched queries
-    # -----------------------------------------------------------------------
 
-    # -----------------------------------------------------------------------
-    # Example queries
-    # -----------------------------------------------------------------------
-
-    def items_by_type(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_type(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore"})
         eproxy = self._europeana_proxy()
@@ -724,7 +727,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_by_country(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_country(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm"})
         limit_block = self._limit_offset(f)
@@ -742,7 +745,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_by_type_and_country(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_type_and_country(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore"})
         eproxy = self._europeana_proxy()
@@ -763,7 +766,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_by_provider(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_provider(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "skos"})
         agg = self._aggregation()
@@ -786,7 +789,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_by_language(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_language(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm"})
         eagg = self._europeana_aggregation()
@@ -804,7 +807,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_by_type_and_language(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_type_and_language(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore"})
         eproxy = self._europeana_proxy()
@@ -825,7 +828,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def mime_type_distribution(self, filters: QueryFilters | None = None) -> str:
+    def _mime_type_distribution(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ebucore"})
         agg = self._aggregation()
@@ -844,7 +847,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def items_by_year(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_year(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "ore"})
         limit_block = self._limit_offset(f)
@@ -862,7 +865,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def geolocated_places(self, filters: QueryFilters | None = None) -> str:
+    def _geolocated_places(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "skos", "wgs84_pos"})
         limit_block = self._limit_offset(f)
@@ -880,7 +883,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def texts_by_type(self, filters: QueryFilters | None = None) -> str:
+    def _texts_by_type(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"dc", "edm", "ore"})
         proxy = self._provider_proxy()
@@ -899,7 +902,7 @@ class QueryBuilder:
             {limit_block}
         """).strip()
 
-    def iiif_availability(self, filters: QueryFilters | None = None) -> str:
+    def _iiif_availability(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         prefixes = self._prefix_block({"edm", "skos", "svcs"})
         limit_block = self._limit_offset(f)
@@ -924,92 +927,118 @@ class QueryBuilder:
         """).strip()
 
     # -----------------------------------------------------------------------
-    # Registry methods
-    #
-    # Return ``dict[str, QuerySpec]`` for unified handling of simple
-    # SPARQL exports and composite DuckDB exports.
+    # Registry — single source of truth for (name, description, method)
     # -----------------------------------------------------------------------
 
-    def _spec(self, name: str, sparql: str) -> QuerySpec:
-        """Wrap a simple SPARQL query as a QuerySpec."""
-        return QuerySpec(
-            name=name,
-            sparql=sparql,
-            description=_DESCRIPTIONS.get(name, ""),
-        )
-
-    def all_base_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
-        return {
-            n: self._spec(n, m(filters))
-            for n, m in [
-                ("web_resources", self.web_resources),
-                ("rights_providers", self.rights_providers),
-                ("agents", self.agents),
-                ("places", self.places),
-                ("concepts", self.concepts),
-                ("timespans", self.timespans),
-                ("rights", self.rights),
-                ("rights_reuse", self.rights_reuse),
-            ]
-        }
-
-    def all_component_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
-        """Component queries: building blocks for composite exports."""
-        return {
-            n: self._spec(n, m(filters))
-            for n, m in [
-                ("items_core", self.items_core),
-                ("items_titles", self.items_titles),
-                ("items_descriptions", self.items_descriptions),
-                ("items_subjects", self.items_subjects),
-                ("items_dates", self.items_dates),
-                ("items_languages", self.items_languages),
-                ("items_years", self.items_years),
-                ("items_creators", self.items_creators),
-            ]
-        }
-
-    def all_enriched_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
-        from .compose import items_enriched_steps
-
-        component_names = list(self.all_component_queries(filters))
-        # agents needed for creator label resolution,
-        # concepts needed for subject URI resolution
-        depends = component_names + ["agents", "concepts"]
-
-        return {
-            "items_enriched": QuerySpec(
-                name="items_enriched",
-                compose_steps=items_enriched_steps(),
-                depends_on=depends,
-                description=_DESCRIPTIONS.get("items_enriched", ""),
-            ),
-        }
-
-    def all_example_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
-        return {
-            n: self._spec(n, m(filters))
-            for n, m in [
-                ("geolocated_places", self.geolocated_places),
-                ("iiif_availability", self.iiif_availability),
-                ("items_by_country", self.items_by_country),
-                ("items_by_language", self.items_by_language),
-                ("items_by_provider", self.items_by_provider),
-                ("items_by_type", self.items_by_type),
-                ("items_by_type_and_country", self.items_by_type_and_country),
-                ("items_by_type_and_language", self.items_by_type_and_language),
-                ("items_by_year", self.items_by_year),
-                ("mime_type_distribution", self.mime_type_distribution),
-                ("texts_by_type", self.texts_by_type),
-            ]
-        }
+    _QUERIES: tuple[tuple[str, str, str], ...] = (
+        # Pipeline — standalone exports
+        ("web_resources",
+         "Digital representation URLs with MIME type, dimensions, and file size",
+         "_web_resources"),
+        ("agents",
+         "People and organisations with multilingual labels, birth/death dates, profession, and Wikidata links",
+         "_agents"),
+        ("places",
+         "Locations with multilingual labels, coordinates, and Wikidata links",
+         "_places"),
+        ("concepts",
+         "SKOS concepts with hierarchy, scheme, and cross-scheme matches",
+         "_concepts"),
+        ("timespans",
+         "Time periods with multilingual labels, begin/end dates, and Wikidata links",
+         "_timespans"),
+        # Pipeline — component exports (building blocks for items_enriched)
+        ("items_core",
+         "One row per item: type, rights, country, data provider, and single-valued aggregation properties",
+         "_items_core"),
+        ("items_titles",
+         "All title values with language tags (multi-row per item)",
+         "_items_titles"),
+        ("items_descriptions",
+         "All description values with language tags (multi-row per item)",
+         "_items_descriptions"),
+        ("items_subjects",
+         "Subject values per item (multi-row)",
+         "_items_subjects"),
+        ("items_dates",
+         "Date values per item (multi-row)",
+         "_items_dates"),
+        ("items_languages",
+         "Language codes per item (multi-row)",
+         "_items_languages"),
+        ("items_years",
+         "Normalised edm:year values from Europeana proxy (multi-row per item)",
+         "_items_years"),
+        ("items_creators",
+         "Creator URIs and literals per item with IRI flag (multi-row)",
+         "_items_creators"),
+        # Summary queries
+        ("items_by_country",
+         "Item counts grouped by country",
+         "_items_by_country"),
+        ("items_by_language",
+         "Item counts grouped by edm:language",
+         "_items_by_language"),
+        ("items_by_provider",
+         "Item counts grouped by data provider",
+         "_items_by_provider"),
+        ("items_by_type",
+         "Item counts grouped by edm:type",
+         "_items_by_type"),
+        ("items_by_type_and_country",
+         "Item counts grouped by edm:type and country",
+         "_items_by_type_and_country"),
+        ("items_by_type_and_language",
+         "Item counts grouped by edm:type and edm:language",
+         "_items_by_type_and_language"),
+        ("items_by_year",
+         "Item counts grouped by edm:year",
+         "_items_by_year"),
+        ("items_by_rights_uri",
+         "Item counts grouped by rights URI",
+         "_items_by_rights_uri"),
+        ("items_by_reuse_level",
+         "Item counts grouped by reuse level (open, restricted, prohibited)",
+         "_items_by_reuse_level"),
+        ("geolocated_places",
+         "Places with coordinates",
+         "_geolocated_places"),
+        ("iiif_availability",
+         "Items with IIIF manifests (svcs:has_service) by provider",
+         "_iiif_availability"),
+        ("mime_type_distribution",
+         "Item counts grouped by MIME type and edm:type",
+         "_mime_type_distribution"),
+        ("texts_by_type",
+         "dc:type value distribution for TEXT items (books, newspapers, etc.)",
+         "_texts_by_type"),
+    )
 
     def all_queries(self, filters: QueryFilters | None = None) -> dict[str, QuerySpec]:
-        result: dict[str, QuerySpec] = {}
-        result.update(self.all_example_queries(filters))
-        result.update(self.all_base_queries(filters))
-        result.update(self.all_enriched_queries(filters))
-        return result
+        """Return all registered queries as a flat dict."""
+        from .compose import items_enriched_steps
 
-    def describe(self, query_name: str) -> str:
-        return _DESCRIPTIONS.get(query_name, f"No description available for '{query_name}'")
+        specs: dict[str, QuerySpec] = {}
+        for name, description, method_name in self._QUERIES:
+            specs[name] = QuerySpec(
+                name=name,
+                description=description,
+                sparql=getattr(self, method_name)(filters),
+            )
+
+        specs["items_enriched"] = QuerySpec(
+            name="items_enriched",
+            description=(
+                "Fully denormalized one-row-per-item export with parallel English and "
+                "vernacular title/description columns, resolved entity labels, and "
+                "multi-valued properties — composed via DuckDB from component tables"
+            ),
+            compose_steps=items_enriched_steps(),
+            depends_on=[
+                "items_core", "items_titles", "items_descriptions",
+                "items_subjects", "items_dates", "items_languages",
+                "items_years", "items_creators", "agents", "concepts",
+            ],
+        )
+
+        return specs

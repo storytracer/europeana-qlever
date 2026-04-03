@@ -38,6 +38,7 @@ from .constants import (
     QLEVER_QUERY_TIMEOUT,
     STATE_FILENAME,
 )
+from .query import QUERY_SETS
 
 
 # ---------------------------------------------------------------------------
@@ -364,23 +365,14 @@ UI_PORT = 7000
 
 def _write_ui_config(index_dir: Path, port: int) -> Path:
     """Generate a Qleverfile-ui.yml with lightweight analytics example queries."""
-    from .query import QueryBuilder
+    from .query import QUERY_SETS, QueryBuilder
 
     builder = QueryBuilder()
-    examples = [
-        ("geolocated_places", builder.geolocated_places()),
-        ("iiif_availability", builder.iiif_availability()),
-        ("items_by_country", builder.items_by_country()),
-        ("items_by_language", builder.items_by_language()),
-        ("items_by_provider", builder.items_by_provider()),
-        ("items_by_type", builder.items_by_type()),
-        ("items_by_type_and_country", builder.items_by_type_and_country()),
-        ("items_by_type_and_language", builder.items_by_type_and_language()),
-        ("items_by_year", builder.items_by_year()),
-        ("mime_type_distribution", builder.mime_type_distribution()),
-        ("texts_by_type", builder.texts_by_type()),
-    ]
-    examples.sort(key=lambda e: e[0])
+    summary = QUERY_SETS["summary"].resolve(builder.all_queries())
+    examples = sorted(
+        [(name, spec.sparql) for name, spec in summary.items() if spec.sparql],
+        key=lambda e: e[0],
+    )
 
     hostname = socket.gethostname()
 
@@ -654,30 +646,42 @@ def stop(ctx: click.Context):
 # ---------------------------------------------------------------------------
 
 @cli.command("list-queries")
+@click.option("--query-set", default=None,
+              help="Filter to a specific query set.")
 @click.pass_context
-def list_queries_cmd(ctx: click.Context):
-    """List all available named queries grouped by category."""
+def list_queries_cmd(ctx: click.Context, query_set: str | None):
+    """List all available named queries."""
     from rich.table import Table
 
-    from .query import QueryBuilder
+    from .query import QUERY_SETS, QueryBuilder
 
     qb = QueryBuilder()
 
-    for category, queries in [
-        ("Example queries", qb.all_example_queries()),
-        ("Base queries", qb.all_base_queries()),
-        ("Component queries (base tables for composite exports)", qb.all_component_queries()),
-        ("Enriched queries", qb.all_enriched_queries()),
-    ]:
-        table = Table(title=category)
-        table.add_column("Name", style="cyan")
-        table.add_column("Type", style="dim")
-        table.add_column("Description")
-        for name, spec in queries.items():
-            qtype = "composite" if spec.is_composite else "SPARQL"
-            table.add_row(name, qtype, qb.describe(name))
-        display.console.print(table)
-        display.console.print()
+    if query_set and query_set != "all":
+        if query_set not in QUERY_SETS:
+            available = ", ".join(sorted(QUERY_SETS))
+            raise click.UsageError(
+                f"Unknown query set: '{query_set}'. Available: {available}, all"
+            )
+        specs = QUERY_SETS[query_set].resolve(qb.all_queries())
+    else:
+        specs = qb.all_queries()
+
+    table = Table(title=f"Queries ({query_set or 'all'})")
+    table.add_column("Name", style="cyan")
+    table.add_column("Type", style="dim")
+    table.add_column("Sets", style="green")
+    table.add_column("Description")
+    for name, spec in specs.items():
+        qtype = "composite" if spec.is_composite else "SPARQL"
+        sets = ", ".join(spec.query_sets) or "—"
+        table.add_row(name, qtype, sets, spec.description)
+    display.console.print(table)
+    display.console.print()
+
+    if not query_set:
+        set_names = ", ".join(sorted(QUERY_SETS))
+        display.console.print(f"[dim]Query sets: {set_names}[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -745,29 +749,20 @@ def _resolve_queries(
             name = re.sub(r"^\d+_", "", stem)
             queries[name] = QuerySpec(name=name, sparql=p.read_text())
     elif run_all:
-        queries = qb.all_base_queries(filters)
+        queries = QUERY_SETS["pipeline"].resolve(qb.all_queries(filters))
     elif query_set:
-        registry = {
-            "examples": qb.all_example_queries,
-            "base": qb.all_base_queries,
-            "enriched": qb.all_enriched_queries,
-            "all": qb.all_queries,
-        }
-        queries = registry[query_set](filters)
+        if query_set == "all":
+            queries = qb.all_queries(filters)
+        else:
+            queries = QUERY_SETS[query_set].resolve(qb.all_queries(filters))
     elif query_names:
-        # Check if any requested name is in the registry (handles composites)
         all_specs = qb.all_queries(filters)
         for name in query_names:
-            if name in all_specs:
-                queries[name] = all_specs[name]
-            else:
-                method = getattr(qb, name, None)
-                if method is None or name.startswith("_") or name.startswith("all_"):
-                    raise click.UsageError(
-                        f"Unknown query: '{name}'. Use `list-queries` to see available queries."
-                    )
-                sparql = method(filters)
-                queries[name] = QuerySpec(name=name, sparql=sparql)
+            if name not in all_specs:
+                raise click.UsageError(
+                    f"Unknown query: '{name}'. Use `list-queries` to see available queries."
+                )
+            queries[name] = all_specs[name]
 
     return qb, queries
 
@@ -821,10 +816,10 @@ def analyze(ctx: click.Context):
 @click.argument("sparql_files", nargs=-1,
                 type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--all", "run_all", is_flag=True, default=False,
-              help="Analyze all base queries.")
+              help="Analyze all pipeline queries.")
 @click.option("-q", "--query", "query_names", multiple=True,
               help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(["examples", "base", "enriched", "all"]),
+@click.option("--query-set", type=click.Choice(list(QUERY_SETS) + ["all"]),
               help="Analyze a predefined set of queries.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
@@ -907,7 +902,7 @@ def analyze_qlever(
 
     results = analyze_all(
         queries, qlever_url, timeout,
-        send=send, limit=limit, describe_fn=qb.describe,
+        send=send, limit=limit, describe_fn=lambda n: specs[n].description if n in specs else "",
     )
 
     md = render_markdown(results, qlever_url, limit)
@@ -930,10 +925,10 @@ def analyze_qlever(
 @click.argument("sparql_files", nargs=-1,
                 type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--all", "run_all", is_flag=True, default=False,
-              help="Analyze all base queries.")
+              help="Analyze all pipeline queries.")
 @click.option("-q", "--query", "query_names", multiple=True,
               help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(["examples", "base", "enriched", "all"]),
+@click.option("--query-set", type=click.Choice(list(QUERY_SETS) + ["all"]),
               help="Analyze a predefined set of queries.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
@@ -1001,7 +996,7 @@ def analyze_static(
     )
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    results = static_analyze_all(queries, describe_fn=qb.describe)
+    results = static_analyze_all(queries, describe_fn=lambda n: specs[n].description if n in specs else "")
 
     md = render_static_markdown(results)
     out.write_text(md)
@@ -1023,10 +1018,10 @@ def analyze_static(
 @click.argument("sparql_files", nargs=-1,
                 type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--all", "run_all", is_flag=True, default=False,
-              help="Run all base queries (backward-compatible).")
+              help="Run all pipeline queries.")
 @click.option("-q", "--query", "query_names", multiple=True,
               help="Named query from QueryBuilder (repeatable).")
-@click.option("--query-set", type=click.Choice(["examples", "base", "enriched", "all"]),
+@click.option("--query-set", type=click.Choice(list(QUERY_SETS) + ["all"]),
               help="Run a predefined set of queries.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
@@ -1353,7 +1348,7 @@ def pipeline(
 
                 # --- Stage 5: Export ---
                 qb = QueryBuilder()
-                queries = qb.all_base_queries()
+                queries = QUERY_SETS["pipeline"].resolve(qb.all_queries())
                 # Total for dashboard: count SPARQL queries only
                 # (composite dependencies are handled automatically)
                 dash.set_stage("Export", total=len(queries))

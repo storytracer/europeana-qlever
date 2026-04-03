@@ -582,21 +582,16 @@ def export_all(
     # Resolve dependencies: add any specs not already in the dict
     # that are required by composite exports
     from .query import QueryBuilder
-    qb = QueryBuilder()
 
     all_specs = dict(queries)
-    for spec in list(queries.values()):
-        if spec.is_composite:
-            for dep_name in spec.depends_on:
-                if dep_name not in all_specs:
-                    # Get the dependency query from the builder
-                    method = getattr(qb, dep_name, None)
-                    if method is not None and not dep_name.startswith("_"):
-                        dep_sparql = method()
-                        all_specs[dep_name] = QuerySpec(
-                            name=dep_name,
-                            sparql=dep_sparql,
-                        )
+    needs_deps = any(s.is_composite for s in queries.values())
+    if needs_deps:
+        full_registry = QueryBuilder().all_queries()
+        for spec in list(queries.values()):
+            if spec.is_composite:
+                for dep_name in spec.depends_on:
+                    if dep_name not in all_specs and dep_name in full_registry:
+                        all_specs[dep_name] = full_registry[dep_name]
                         dependency_only.add(dep_name)
 
     # Process in topological order (dependencies first)
