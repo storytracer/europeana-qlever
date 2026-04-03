@@ -282,6 +282,21 @@ class QueryRegistry:
             "items_by_reuse_level": q("items_by_reuse_level",
                 "Item counts grouped by reuse level (open, restricted, prohibited)",
                 self._items_by_reuse_level),
+            "items_by_type_and_reuse_level": q("items_by_type_and_reuse_level",
+                "Item counts grouped by edm:type and reuse level (open, restricted, prohibited)",
+                self._items_by_type_and_reuse_level),
+            "items_by_country_and_reuse_level": q("items_by_country_and_reuse_level",
+                "Item counts grouped by country and reuse level (open, restricted, prohibited)",
+                self._items_by_country_and_reuse_level),
+            "items_by_language_and_reuse_level": q("items_by_language_and_reuse_level",
+                "Item counts grouped by dc:language and reuse level (open, restricted, prohibited)",
+                self._items_by_language_and_reuse_level),
+            "items_by_completeness": q("items_by_completeness",
+                "Item counts grouped by completeness score (1-10) and edm:type",
+                self._items_by_completeness),
+            "content_availability": q("content_availability",
+                "Item counts by edm:type, reuse level, and content access method (direct URL, IIIF)",
+                self._content_availability),
             "geolocated_places": q("geolocated_places",
                 "Places with coordinates",
                 self._geolocated_places),
@@ -438,6 +453,104 @@ class QueryRegistry:
             }}
             GROUP BY ?reuse_level
             ORDER BY DESC(?count)
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_by_type_and_reuse_level(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        reuse_bind = sparql_reuse_level_bind()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm", "ore"})}
+            SELECT ?type ?reuse_level (COUNT(?item) AS ?count)
+            WHERE {{
+              {S.europeana_proxy()}
+              ?eProxy edm:type ?type .
+              ?agg edm:aggregatedCHO ?item ;
+                   edm:rights ?rights .
+              {reuse_bind}
+            }}
+            GROUP BY ?type ?reuse_level
+            ORDER BY ?type DESC(?count)
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_by_country_and_reuse_level(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        reuse_bind = sparql_reuse_level_bind()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm"})}
+            SELECT ?country ?reuse_level (COUNT(?item) AS ?count)
+            WHERE {{
+              ?agg edm:aggregatedCHO ?item ;
+                   edm:rights ?rights .
+              ?eAgg edm:aggregatedCHO ?item .
+              ?eAgg a edm:EuropeanaAggregation .
+              ?eAgg edm:country ?country .
+              {reuse_bind}
+            }}
+            GROUP BY ?country ?reuse_level
+            ORDER BY ?country DESC(?count)
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_by_language_and_reuse_level(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        reuse_bind = sparql_reuse_level_bind()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"dc", "edm", "ore"})}
+            SELECT ?language ?reuse_level (COUNT(?item) AS ?count)
+            WHERE {{
+              {S.provider_proxy()}
+              ?proxy dc:language ?language .
+              ?agg edm:aggregatedCHO ?item ;
+                   edm:rights ?rights .
+              {reuse_bind}
+            }}
+            GROUP BY ?language ?reuse_level
+            ORDER BY ?language DESC(?count)
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_by_completeness(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm", "ore"})}
+            SELECT ?completeness ?type (COUNT(?item) AS ?count)
+            WHERE {{
+              {S.europeana_proxy()}
+              ?eProxy edm:type ?type .
+              {S.europeana_aggregation()}
+              ?eAgg edm:completeness ?completeness .
+            }}
+            GROUP BY ?completeness ?type
+            ORDER BY ?completeness ?type
+            {f.limit_clause()}
+        """).strip()
+
+    def _content_availability(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        reuse_bind = sparql_reuse_level_bind()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm", "ore", "svcs"})}
+            SELECT ?type ?reuse_level
+                   ?has_direct_url ?has_iiif
+                   (COUNT(?item) AS ?count)
+            WHERE {{
+              {S.europeana_proxy()}
+              ?eProxy edm:type ?type .
+              ?agg edm:aggregatedCHO ?item ;
+                   edm:rights ?rights .
+              {reuse_bind}
+              OPTIONAL {{ ?agg edm:isShownBy ?_isb }}
+              BIND(BOUND(?_isb) AS ?has_direct_url)
+              OPTIONAL {{
+                ?agg edm:isShownBy ?_wr .
+                ?_wr svcs:has_service ?_svc .
+              }}
+              BIND(BOUND(?_svc) AS ?has_iiif)
+            }}
+            GROUP BY ?type ?reuse_level ?has_direct_url ?has_iiif
+            ORDER BY ?type ?reuse_level DESC(?count)
             {f.limit_clause()}
         """).strip()
 

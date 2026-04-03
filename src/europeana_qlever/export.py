@@ -136,6 +136,9 @@ EXPORT_SETS: dict[str, ExportSet] = {
             "items_by_type", "items_by_type_and_country",
             "items_by_type_and_language", "items_by_year",
             "items_by_rights_uri", "items_by_reuse_level",
+            "items_by_type_and_reuse_level", "items_by_country_and_reuse_level",
+            "items_by_language_and_reuse_level", "items_by_completeness",
+            "content_availability",
             "mime_type_distribution", "geolocated_places",
             "iiif_availability", "texts_by_type",
         ),
@@ -152,6 +155,9 @@ EXPORT_SETS: dict[str, ExportSet] = {
             "items_by_type", "items_by_type_and_country",
             "items_by_type_and_language", "items_by_year",
             "items_by_rights_uri", "items_by_reuse_level",
+            "items_by_type_and_reuse_level", "items_by_country_and_reuse_level",
+            "items_by_language_and_reuse_level", "items_by_completeness",
+            "content_availability",
             "iiif_availability", "mime_type_distribution", "texts_by_type",
         ),
     ),
@@ -163,7 +169,11 @@ EXPORT_SETS: dict[str, ExportSet] = {
     "rights": ExportSet(
         "rights",
         "Rights and licensing exports",
-        ("items_by_rights_uri", "items_by_reuse_level"),
+        (
+            "items_by_rights_uri", "items_by_reuse_level",
+            "items_by_type_and_reuse_level", "items_by_country_and_reuse_level",
+            "items_by_language_and_reuse_level",
+        ),
     ),
 }
 
