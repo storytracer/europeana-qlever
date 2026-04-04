@@ -123,6 +123,18 @@ def _section_volume(con: duckdb.DuckDBPyConnection) -> dict:
     dataset_count = con.execute(
         "SELECT COUNT(DISTINCT dataset_name) FROM items WHERE dataset_name IS NOT NULL"
     ).fetchone()[0]
+    by_dc_type = con.execute("""
+        SELECT d.label AS dc_type, COUNT(*) AS cnt
+        FROM (SELECT UNNEST(dc_types) AS d FROM items)
+        WHERE d.label IS NOT NULL
+        GROUP BY d.label ORDER BY cnt DESC LIMIT 20
+    """).fetchall()
+    by_format = con.execute("""
+        SELECT f.label AS fmt, COUNT(*) AS cnt
+        FROM (SELECT UNNEST(formats) AS f FROM items)
+        WHERE f.label IS NOT NULL
+        GROUP BY f.label ORDER BY cnt DESC LIMIT 20
+    """).fetchall()
 
     return {
         "total_items": total,
@@ -130,6 +142,8 @@ def _section_volume(con: duckdb.DuckDBPyConnection) -> dict:
         "top_20_countries": [{"country": t, "count": c, "pct": round(c / total * 100, 2) if total else 0} for t, c in by_country],
         "top_20_providers": [{"provider": str(t), "count": c, "pct": round(c / total * 100, 2) if total else 0} for t, c in by_provider],
         "distinct_datasets": dataset_count,
+        "top_20_dc_types": [{"dc_type": t, "count": c, "pct": round(c / total * 100, 2) if total else 0} for t, c in by_dc_type],
+        "top_20_formats": [{"format": f, "count": c, "pct": round(c / total * 100, 2) if total else 0} for f, c in by_format],
     }
 
 
@@ -439,6 +453,18 @@ def _render_markdown(data: dict) -> str:
         lines.append("|---------|------:|--:|")
         for row in v["top_20_countries"]:
             lines.append(f"| {row['country']} | {row['count']:,} | {row['pct']}% |")
+        if v.get("top_20_dc_types"):
+            lines.append("\n### Top 20 dc:type\n")
+            lines.append("| dc:type | Count | % |")
+            lines.append("|---------|------:|--:|")
+            for row in v["top_20_dc_types"]:
+                lines.append(f"| {row['dc_type']} | {row['count']:,} | {row['pct']}% |")
+        if v.get("top_20_formats"):
+            lines.append("\n### Top 20 dc:format\n")
+            lines.append("| dc:format | Count | % |")
+            lines.append("|-----------|------:|--:|")
+            for row in v["top_20_formats"]:
+                lines.append(f"| {row['format']} | {row['count']:,} | {row['pct']}% |")
         lines.append("")
 
     # 2. Rights
