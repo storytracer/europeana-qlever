@@ -43,10 +43,11 @@ The upstream data is published by Europeana under the [Europeana Data Exchange A
 | `languages` | `LIST<VARCHAR>` | `dc:language` codes |
 | `type` | `VARCHAR` | `edm:type`: TEXT, IMAGE, SOUND, VIDEO, or 3D |
 | `country` | `VARCHAR` | Country of the providing institution |
-| `data_provider` | `VARCHAR` | Name of the institution that provided the metadata |
+| `institution` | `VARCHAR` | Name of the institution that provided the metadata (`edm:dataProvider`) |
+| `aggregator` | `VARCHAR` | Name of the aggregator supplying data to Europeana (`edm:provider`) |
 | `rights` | `VARCHAR` | Rights statement URI (Creative Commons, Rights Statements, etc.) |
 | `completeness` | `VARCHAR` | Europeana metadata completeness score (1-10) |
-| `is_shown_at` | `VARCHAR` | URL where the item can be viewed on the provider's site |
+| `is_shown_at` | `VARCHAR` | URL where the item can be viewed on the institution's site |
 | `is_shown_by` | `VARCHAR` | Direct URL to the digital object (image, PDF, etc.) |
 | `preview` | `VARCHAR` | Thumbnail URL |
 | `landing_page` | `VARCHAR` | Europeana landing page URL |

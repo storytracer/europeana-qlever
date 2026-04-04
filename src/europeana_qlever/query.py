@@ -80,7 +80,8 @@ class QueryFilters:
     types: list[str] | None = None
     rights: list[str] | None = None
     reuse_level: str | None = None
-    providers: list[str] | None = None
+    institutions: list[str] | None = None
+    aggregators: list[str] | None = None
     min_completeness: int | None = None
     year_from: int | None = None
     year_to: int | None = None
@@ -95,7 +96,8 @@ class QueryFilters:
         country_var: str = "?country",
         type_var: str = "?type",
         rights_var: str = "?rights",
-        provider_var: str = "?dataProvider",
+        institution_var: str = "?dataProvider",
+        aggregator_var: str = "?provider",
         completeness_var: str = "?completeness",
         year_var: str | None = None,
         language_var: str | None = None,
@@ -118,9 +120,13 @@ class QueryFilters:
         elif self.reuse_level:
             clauses.append(sparql_reuse_level_filter(self.reuse_level, rights_var))
 
-        if self.providers:
-            vals = ", ".join(f'"{S.quote(p)}"' for p in self.providers)
-            clauses.append(f"FILTER({provider_var} IN ({vals}))")
+        if self.institutions:
+            vals = ", ".join(f'"{S.quote(p)}"' for p in self.institutions)
+            clauses.append(f"FILTER({institution_var} IN ({vals}))")
+
+        if self.aggregators:
+            vals = ", ".join(f'"{S.quote(a)}"' for a in self.aggregators)
+            clauses.append(f"FILTER({aggregator_var} IN ({vals}))")
 
         if self.min_completeness is not None:
             clauses.append(
@@ -239,12 +245,12 @@ class QueryRegistry:
             "timespans_links": q("timespans_links",
                 "Timespans: altLabels, all owl:sameAs, hierarchy",
                 self._timespans_links),
-            "data_providers": q("data_providers",
+            "institutions": q("institutions",
                 "Organisations with multilingual labels, acronym, country, role, and Wikidata links",
-                self._data_providers),
+                self._institutions),
             # Pipeline — component exports
             "items_core": q("items_core",
-                "One row per item: type, rights, country, data provider, and single-valued aggregation properties",
+                "One row per item: type, rights, country, institution, aggregator, and single-valued aggregation properties",
                 self._items_core),
             "items_titles": q("items_titles",
                 "All title values with language tags (multi-row per item)",
@@ -292,9 +298,12 @@ class QueryRegistry:
             "items_by_language": q("items_by_language",
                 "Item counts grouped by edm:language",
                 self._items_by_language),
-            "items_by_provider": q("items_by_provider",
-                "Item counts grouped by data provider",
-                self._items_by_provider),
+            "items_by_institution": q("items_by_institution",
+                "Item counts grouped by institution (edm:dataProvider)",
+                self._items_by_institution),
+            "items_by_aggregator": q("items_by_aggregator",
+                "Item counts grouped by aggregator (edm:provider)",
+                self._items_by_aggregator),
             "items_by_type": q("items_by_type",
                 "Item counts grouped by edm:type",
                 self._items_by_type),
@@ -332,7 +341,7 @@ class QueryRegistry:
                 "Places with coordinates",
                 self._geolocated_places),
             "iiif_availability": q("iiif_availability",
-                "Items with IIIF manifests (svcs:has_service) by provider",
+                "Items with IIIF manifests (svcs:has_service) by institution",
                 self._iiif_availability),
             "mime_type_distribution": q("mime_type_distribution",
                 "Item counts grouped by MIME type and edm:type",
@@ -597,7 +606,7 @@ class QueryRegistry:
             {f.limit_clause()}
         """).strip()
 
-    def _data_providers(self, filters: QueryFilters | None = None) -> str:
+    def _institutions(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         return textwrap.dedent(f"""\
             {S.prefix_block({"edm", "foaf", "skos", "owl"})}
@@ -749,18 +758,19 @@ class QueryRegistry:
         f = filters or QueryFilters()
         return textwrap.dedent(f"""\
             {S.prefix_block({"edm", "ore", "xsd"})}
-            SELECT ?item ?type ?rights ?country ?dataProvider
+            SELECT ?item ?type ?rights ?country ?dataProvider ?provider
                    ?isShownAt ?isShownBy ?preview ?landingPage
                    ?datasetName ?completeness
             WHERE {{
               {{
-                SELECT ?item ?agg ?eAgg ?type ?rights ?dataProvider ?country
+                SELECT ?item ?agg ?eAgg ?type ?rights ?dataProvider ?provider ?country
                 WHERE {{
                   {S.europeana_proxy()}
                   ?eProxy edm:type ?type .
                   {S.aggregation()}
                   ?agg edm:rights ?rights ;
-                       edm:dataProvider ?dataProvider .
+                       edm:dataProvider ?dataProvider ;
+                       edm:provider ?provider .
                   {S.europeana_aggregation()}
                   ?eAgg edm:country ?country .
                   {f.to_sparql()}
@@ -980,12 +990,12 @@ class QueryRegistry:
             {f.limit_clause()}
         """).strip()
 
-    def _items_by_provider(self, filters: QueryFilters | None = None) -> str:
+    def _items_by_institution(self, filters: QueryFilters | None = None) -> str:
         f = filters or QueryFilters()
         return textwrap.dedent(f"""\
             {S.prefix_block({"edm", "skos"})}
             SELECT ?dataProvider
-                   (SAMPLE(COALESCE(?enName, ?anyName)) AS ?providerName)
+                   (SAMPLE(COALESCE(?enName, ?anyName)) AS ?institutionName)
                    (COUNT(DISTINCT ?item) AS ?count)
             WHERE {{
               {S.aggregation()}
@@ -994,6 +1004,24 @@ class QueryRegistry:
               OPTIONAL {{ ?dataProvider skos:prefLabel ?anyName }}
             }}
             GROUP BY ?dataProvider
+            ORDER BY DESC(?count)
+            {f.limit_clause()}
+        """).strip()
+
+    def _items_by_aggregator(self, filters: QueryFilters | None = None) -> str:
+        f = filters or QueryFilters()
+        return textwrap.dedent(f"""\
+            {S.prefix_block({"edm", "skos"})}
+            SELECT ?provider
+                   (SAMPLE(COALESCE(?enName, ?anyName)) AS ?aggregatorName)
+                   (COUNT(DISTINCT ?item) AS ?count)
+            WHERE {{
+              {S.aggregation()}
+              ?agg edm:provider ?provider .
+              OPTIONAL {{ ?provider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }}
+              OPTIONAL {{ ?provider skos:prefLabel ?anyName }}
+            }}
+            GROUP BY ?provider
             ORDER BY DESC(?count)
             {f.limit_clause()}
         """).strip()
@@ -1093,7 +1121,7 @@ class QueryRegistry:
         return textwrap.dedent(f"""\
             {S.prefix_block({"edm", "skos", "svcs"})}
             SELECT ?dataProvider
-                   (SAMPLE(COALESCE(?enName, ?anyName)) AS ?providerName)
+                   (SAMPLE(COALESCE(?enName, ?anyName)) AS ?institutionName)
                    (COUNT(DISTINCT ?item) AS ?iiif_items)
             WHERE {{
               ?agg edm:aggregatedCHO ?item ;

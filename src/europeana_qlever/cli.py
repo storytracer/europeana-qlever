@@ -747,7 +747,8 @@ def _resolve_exports(
     countries: tuple[str, ...],
     types: tuple[str, ...],
     reuse_level: str | None,
-    providers: tuple[str, ...],
+    institutions: tuple[str, ...],
+    aggregators: tuple[str, ...],
     min_completeness: int | None,
     year_from: int | None,
     year_to: int | None,
@@ -772,7 +773,8 @@ def _resolve_exports(
         countries=list(countries) or None,
         types=list(types) or None,
         reuse_level=reuse_level,
-        providers=list(providers) or None,
+        institutions=list(institutions) or None,
+        aggregators=list(aggregators) or None,
         min_completeness=min_completeness,
         year_from=year_from,
         year_to=year_to,
@@ -856,8 +858,10 @@ def analyze(ctx: click.Context):
               help="Filter by edm:type (repeatable).")
 @click.option("--reuse-level", type=click.Choice(["open", "restricted", "prohibited"]),
               help="Filter by reuse level.")
-@click.option("--provider", "providers", multiple=True,
-              help="Filter by dataProvider (repeatable).")
+@click.option("--institution", "institutions", multiple=True,
+              help="Filter by institution / edm:dataProvider (repeatable).")
+@click.option("--aggregator", "aggregators", multiple=True,
+              help="Filter by aggregator / edm:provider (repeatable).")
 @click.option("--min-completeness", type=int,
               help="Minimum completeness score (1-10).")
 @click.option("--year-from", type=int, help="Minimum edm:year.")
@@ -885,7 +889,8 @@ def analyze_qlever(
     countries: tuple[str, ...],
     types: tuple[str, ...],
     reuse_level: str | None,
-    providers: tuple[str, ...],
+    institutions: tuple[str, ...],
+    aggregators: tuple[str, ...],
     min_completeness: int | None,
     year_from: int | None,
     year_to: int | None,
@@ -908,7 +913,7 @@ def analyze_qlever(
 
     all_exports = _resolve_exports(
         names, run_all, export_set,
-        countries, types, reuse_level, providers,
+        countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names,
     )
@@ -962,8 +967,10 @@ def analyze_qlever(
               help="Filter by edm:type (repeatable).")
 @click.option("--reuse-level", type=click.Choice(["open", "restricted", "prohibited"]),
               help="Filter by reuse level.")
-@click.option("--provider", "providers", multiple=True,
-              help="Filter by dataProvider (repeatable).")
+@click.option("--institution", "institutions", multiple=True,
+              help="Filter by institution / edm:dataProvider (repeatable).")
+@click.option("--aggregator", "aggregators", multiple=True,
+              help="Filter by aggregator / edm:provider (repeatable).")
 @click.option("--min-completeness", type=int,
               help="Minimum completeness score (1-10).")
 @click.option("--year-from", type=int, help="Minimum edm:year.")
@@ -983,7 +990,8 @@ def analyze_static(
     countries: tuple[str, ...],
     types: tuple[str, ...],
     reuse_level: str | None,
-    providers: tuple[str, ...],
+    institutions: tuple[str, ...],
+    aggregators: tuple[str, ...],
     min_completeness: int | None,
     year_from: int | None,
     year_to: int | None,
@@ -1002,7 +1010,7 @@ def analyze_static(
 
     all_exports = _resolve_exports(
         names, run_all, export_set,
-        countries, types, reuse_level, providers,
+        countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names,
     )
@@ -1053,8 +1061,10 @@ def analyze_static(
               help="Filter by edm:type (repeatable).")
 @click.option("--reuse-level", type=click.Choice(["open", "restricted", "prohibited"]),
               help="Filter by reuse level.")
-@click.option("--provider", "providers", multiple=True,
-              help="Filter by dataProvider (repeatable).")
+@click.option("--institution", "institutions", multiple=True,
+              help="Filter by institution / edm:dataProvider (repeatable).")
+@click.option("--aggregator", "aggregators", multiple=True,
+              help="Filter by aggregator / edm:provider (repeatable).")
 @click.option("--min-completeness", type=int,
               help="Minimum completeness score (1-10).")
 @click.option("--year-from", type=int, help="Minimum edm:year.")
@@ -1088,7 +1098,8 @@ def export(
     countries: tuple[str, ...],
     types: tuple[str, ...],
     reuse_level: str | None,
-    providers: tuple[str, ...],
+    institutions: tuple[str, ...],
+    aggregators: tuple[str, ...],
     min_completeness: int | None,
     year_from: int | None,
     year_to: int | None,
@@ -1117,7 +1128,7 @@ def export(
 
     exports = _resolve_exports(
         names, run_all, export_set,
-        countries, types, reuse_level, providers,
+        countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names, limit=limit,
     )
@@ -1452,6 +1463,8 @@ def pipeline(
               help="Filter by reuse level.")
 @click.option("--country", "countries", multiple=True,
               help="Filter by country (repeatable).")
+@click.option("--aggregator", "aggregators", multiple=True,
+              help="Filter by aggregator / edm:provider (repeatable).")
 @click.option("--has-iiif", is_flag=True, default=False,
               help="Only include items with a IIIF service.")
 @click.option("--probe-urls", is_flag=True, default=False,
@@ -1466,6 +1479,7 @@ def metrics(
     types: tuple[str, ...],
     reuse_level: str | None,
     countries: tuple[str, ...],
+    aggregators: tuple[str, ...],
     has_iiif: bool,
     probe_urls: bool,
     sample_size: int,
@@ -1490,6 +1504,7 @@ def metrics(
         types=list(types) if types else None,
         reuse_level=reuse_level,
         countries=list(countries) if countries else None,
+        aggregators=list(aggregators) if aggregators else None,
         has_iiif=True if has_iiif else None,
     )
 

@@ -298,7 +298,8 @@ SELECT
     idn.identifiers,
     dcr.dc_rights,
     i.type, i.country,
-    NULLIF(i.dataProvider, '') AS data_provider,
+    NULLIF(i.dataProvider, '') AS institution,
+    NULLIF(i.provider, '') AS aggregator,
     i.rights,
     CASE
       WHEN STARTS_WITH(i.rights, 'http://creativecommons.org/publicdomain/') THEN 'open'

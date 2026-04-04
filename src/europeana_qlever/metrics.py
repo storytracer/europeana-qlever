@@ -44,6 +44,7 @@ _FILTER_SPECS: list[_FilterSpec] = [
     ("types", "type", "in_list"),
     ("reuse_level", "reuse_level", "eq"),
     ("countries", "country", "in_list"),
+    ("aggregators", "aggregator", "in_list"),
     ("has_iiif", "has_iiif", "bool"),
 ]
 
@@ -55,6 +56,7 @@ class MetricsFilter:
     types: list[str] | None = None
     reuse_level: str | None = None
     countries: list[str] | None = None
+    aggregators: list[str] | None = None
     has_iiif: bool | None = None
 
     def where_clause(self) -> str:
@@ -117,8 +119,11 @@ def _section_volume(con: duckdb.DuckDBPyConnection) -> dict:
     by_country = con.execute(
         "SELECT country, COUNT(*) AS cnt FROM items GROUP BY country ORDER BY cnt DESC LIMIT 20"
     ).fetchall()
-    by_provider = con.execute(
-        "SELECT data_provider, COUNT(*) AS cnt FROM items GROUP BY data_provider ORDER BY cnt DESC LIMIT 20"
+    by_institution = con.execute(
+        "SELECT institution, COUNT(*) AS cnt FROM items GROUP BY institution ORDER BY cnt DESC LIMIT 20"
+    ).fetchall()
+    by_aggregator = con.execute(
+        "SELECT aggregator, COUNT(*) AS cnt FROM items GROUP BY aggregator ORDER BY cnt DESC LIMIT 20"
     ).fetchall()
     dataset_count = con.execute(
         "SELECT COUNT(DISTINCT dataset_name) FROM items WHERE dataset_name IS NOT NULL"
@@ -140,7 +145,8 @@ def _section_volume(con: duckdb.DuckDBPyConnection) -> dict:
         "total_items": total,
         "by_type": [{"type": t, "count": c, "pct": round(c / total * 100, 2) if total else 0} for t, c in by_type],
         "top_20_countries": [{"country": t, "count": c, "pct": round(c / total * 100, 2) if total else 0} for t, c in by_country],
-        "top_20_providers": [{"provider": str(t), "count": c, "pct": round(c / total * 100, 2) if total else 0} for t, c in by_provider],
+        "top_20_institutions": [{"institution": str(t), "count": c, "pct": round(c / total * 100, 2) if total else 0} for t, c in by_institution],
+        "top_20_aggregators": [{"aggregator": str(a), "count": c, "pct": round(c / total * 100, 2) if total else 0} for a, c in by_aggregator],
         "distinct_datasets": dataset_count,
         "top_20_dc_types": [{"dc_type": t, "count": c, "pct": round(c / total * 100, 2) if total else 0} for t, c in by_dc_type],
         "top_20_formats": [{"format": f, "count": c, "pct": round(c / total * 100, 2) if total else 0} for f, c in by_format],
@@ -453,6 +459,18 @@ def _render_markdown(data: dict) -> str:
         lines.append("|---------|------:|--:|")
         for row in v["top_20_countries"]:
             lines.append(f"| {row['country']} | {row['count']:,} | {row['pct']}% |")
+        if v.get("top_20_institutions"):
+            lines.append("\n### Top 20 Institutions\n")
+            lines.append("| Institution | Count | % |")
+            lines.append("|-------------|------:|--:|")
+            for row in v["top_20_institutions"]:
+                lines.append(f"| {row['institution']} | {row['count']:,} | {row['pct']}% |")
+        if v.get("top_20_aggregators"):
+            lines.append("\n### Top 20 Aggregators\n")
+            lines.append("| Aggregator | Count | % |")
+            lines.append("|------------|------:|--:|")
+            for row in v["top_20_aggregators"]:
+                lines.append(f"| {row['aggregator']} | {row['count']:,} | {row['pct']}% |")
         if v.get("top_20_dc_types"):
             lines.append("\n### Top 20 dc:type\n")
             lines.append("| dc:type | Count | % |")

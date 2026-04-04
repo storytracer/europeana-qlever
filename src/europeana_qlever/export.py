@@ -138,7 +138,8 @@ EXPORT_SETS: dict[str, ExportSet] = {
         "summary",
         "Dataset statistics — GROUP BY / COUNT aggregates",
         (
-            "items_by_country", "items_by_language", "items_by_provider",
+            "items_by_country", "items_by_language", "items_by_institution",
+            "items_by_aggregator",
             "items_by_type", "items_by_type_and_country",
             "items_by_type_and_language", "items_by_year",
             "items_by_rights_uri", "items_by_reuse_level",
@@ -163,7 +164,8 @@ EXPORT_SETS: dict[str, ExportSet] = {
             "items_identifiers", "items_dc_rights",
             "items_resolved",
             "web_resources",
-            "items_by_country", "items_by_language", "items_by_provider",
+            "items_by_country", "items_by_language", "items_by_institution",
+            "items_by_aggregator",
             "items_by_type", "items_by_type_and_country",
             "items_by_type_and_language", "items_by_year",
             "items_by_rights_uri", "items_by_reuse_level",
@@ -183,7 +185,7 @@ EXPORT_SETS: dict[str, ExportSet] = {
             "places_core", "places_links",
             "concepts_core", "concepts_links",
             "timespans_core", "timespans_links",
-            "data_providers", "geolocated_places",
+            "institutions", "geolocated_places",
         ),
     ),
     "rights": ExportSet(
