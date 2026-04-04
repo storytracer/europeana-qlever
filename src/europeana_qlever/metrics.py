@@ -119,12 +119,16 @@ def _section_volume(con: duckdb.DuckDBPyConnection) -> dict:
     by_country = con.execute(
         "SELECT country, COUNT(*) AS cnt FROM items GROUP BY country ORDER BY cnt DESC LIMIT 20"
     ).fetchall()
-    by_institution = con.execute(
-        "SELECT institution, COUNT(*) AS cnt FROM items GROUP BY institution ORDER BY cnt DESC LIMIT 20"
-    ).fetchall()
-    by_aggregator = con.execute(
-        "SELECT aggregator, COUNT(*) AS cnt FROM items GROUP BY aggregator ORDER BY cnt DESC LIMIT 20"
-    ).fetchall()
+    by_institution = con.execute("""
+        SELECT COALESCE(n.name, i.institution) AS institution, COUNT(*) AS cnt
+        FROM items i LEFT JOIN org_names n ON i.institution = n.org
+        GROUP BY 1 ORDER BY cnt DESC LIMIT 20
+    """).fetchall()
+    by_aggregator = con.execute("""
+        SELECT COALESCE(n.name, i.aggregator) AS aggregator, COUNT(*) AS cnt
+        FROM items i LEFT JOIN org_names n ON i.aggregator = n.org
+        GROUP BY 1 ORDER BY cnt DESC LIMIT 20
+    """).fetchall()
     dataset_count = con.execute(
         "SELECT COUNT(DISTINCT dataset_name) FROM items WHERE dataset_name IS NOT NULL"
     ).fetchone()[0]
@@ -634,6 +638,25 @@ def run_metrics(
         SELECT * FROM read_parquet('{resolved_path}')
         {where}
     """)
+
+    # Organisation name lookup (institution & aggregator columns hold URIs)
+    institutions_path = exports_dir / "institutions.parquet"
+    if institutions_path.exists():
+        con.execute(f"""
+            CREATE VIEW org_names AS
+            SELECT org,
+                   COALESCE(
+                       MAX(name) FILTER (WHERE lang = 'en'),
+                       MAX(name)
+                   ) AS name
+            FROM read_parquet('{institutions_path}')
+            GROUP BY org
+        """)
+    else:
+        con.execute(
+            "CREATE VIEW org_names AS "
+            "SELECT NULL::VARCHAR AS org, NULL::VARCHAR AS name WHERE false"
+        )
 
     data: dict = {}
     sections = 0
