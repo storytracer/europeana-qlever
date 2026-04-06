@@ -35,12 +35,16 @@ src/europeana_qlever/
   validate.py                     # Standalone validation + inline entry validation for merge
 EDM.md                            # Europeana Data Model reference (EDM, entities, rights)
 README.md                         # General-purpose project README
+scripts/
+  update-qlever-docs.py           # uv script: sync QLever docs from upstream GitHub repo
+  update-europeana-docs.py        # uv script: sync Europeana KB from Confluence (anonymous, incremental)
 docs/
   qlever/docs/                    # QLever documentation (MkDocs source from upstream)
     quickstart.md, qleverfile.md, qlever-control.md, text-search.md,
     geosparql.md, path-search.md, materialized-views.md, benchmarks.md,
     compliance.md, troubleshooting.md, faq.md, rebuild-index.md, update.md, ...
-  europeana/                      # Europeana Knowledge Base (scraped from Europeana docs)
+  europeana/                      # Europeana Knowledge Base (exported from Confluence)
+    confluence-lock.json           # CME lockfile for incremental updates (tracks page versions)
     Europeana Knowledge Base/
       EDM - Mapping guidelines/   # EDM class/property mapping guides (ProvidedCHO, Aggregation, WebResource, contextual classes)
       Publishing guide/           # Content/metadata tiers, rights statements, digital objects
@@ -116,7 +120,16 @@ Local documentation is available in three locations — always read from these l
 
 - **`EDM.md`** — Europeana Data Model reference (entity relationships, RDF namespaces, rights framework). Primary quick-reference for EDM questions.
 - **`docs/qlever/docs/`** — Full QLever documentation (upstream MkDocs source). Covers Qleverfile format, SPARQL compliance, text/geo/path search, materialized views, benchmarks, troubleshooting, and more. Read these when working on index configuration, Qleverfile generation, query features, or debugging QLever behavior.
-- **`docs/europeana/Europeana Knowledge Base/`** — Europeana's knowledge base. Includes EDM mapping guidelines (per-class property documentation for ProvidedCHO, Aggregation, WebResource, contextual classes), publishing guides (content/metadata tiers, rights statements), semantic enrichments, API docs, terminology, and media policy. Read these for detailed EDM field semantics, data quality rules, or Europeana-specific conventions beyond what `EDM.md` covers.
+- **`docs/europeana/Europeana Knowledge Base/`** — Europeana's knowledge base (exported from Confluence space `EF`). Includes EDM mapping guidelines (per-class property documentation for ProvidedCHO, Aggregation, WebResource, contextual classes), publishing guides (content/metadata tiers, rights statements), semantic enrichments, API docs, terminology, and media policy. Read these for detailed EDM field semantics, data quality rules, or Europeana-specific conventions beyond what `EDM.md` covers. Images embed live Confluence URLs (no local attachment files).
+
+Both doc sets are updated via standalone uv scripts:
+
+```bash
+uv run scripts/update-qlever-docs.py       # Sync QLever docs from GitHub (full replace)
+uv run scripts/update-europeana-docs.py     # Sync Europeana KB from Confluence (incremental)
+```
+
+The Europeana script uses `confluence-markdown-exporter` with anonymous access. A lockfile (`docs/europeana/confluence-lock.json`) tracks Confluence page version numbers so subsequent runs only re-export pages that changed. After export, local attachment references are rewritten to remote Confluence download URLs and the attachment files are deleted (so binary files are never committed).
 
 ## Europeana EDM domain context
 
