@@ -554,6 +554,7 @@ def tsv_to_parquet(
     row_group_size: int = 100_000,
     workers: int | None = None,
     total_hint: int | None = None,
+    static_schema: pa.Schema | None = None,
 ) -> int:
     """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow.
 
@@ -561,9 +562,11 @@ def tsv_to_parquet(
     using :class:`~concurrent.futures.ProcessPoolExecutor`, and streams
     parsed results directly to Parquet via :class:`pyarrow.parquet.ParquetWriter`.
 
-    The Parquet schema is inferred from the first batch: columns with
-    all-integer values become ``int64``, all-float become ``float64``,
-    all-boolean become ``bool``, and everything else is ``string``.
+    When *static_schema* is provided it is used directly, bypassing the
+    heuristic-based ``_infer_schema`` that guesses types from the first
+    batch.  This eliminates a class of bugs where inference produces wrong
+    types (e.g. an integer column inferred as string when the first batch
+    contains only empty values).
 
     Parameters
     ----------
@@ -580,6 +583,8 @@ def tsv_to_parquet(
     total_hint : int or None
         Approximate row count for progress display (from the TSV streaming
         step).  When ``None`` a spinner is shown instead of a progress bar.
+    static_schema : pyarrow.Schema or None
+        When provided, use this schema instead of inferring from data.
 
     Returns
     -------
@@ -636,8 +641,8 @@ def tsv_to_parquet(
                         futures.append(executor.submit(parse, next_batch))
 
                     if writer is None:
-                        # Infer schema from first batch
-                        schema = _infer_schema(col_names, parsed_rows)
+                        # Use static schema if provided, else infer from data
+                        schema = static_schema or _infer_schema(col_names, parsed_rows)
                         writer = pq.ParquetWriter(
                             str(parquet_path),
                             schema,
@@ -905,10 +910,17 @@ class ExportPipeline:
             display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
         display.console.print("  Converting to Parquet…")
+        # Use static schema when available to avoid inference heuristics
+        try:
+            from .edm_schema import pyarrow_schema
+            pq_schema = pyarrow_schema(name)
+        except (KeyError, ImportError):
+            pq_schema = None
         count = tsv_to_parquet(
             tsv_path, parquet_path,
             row_group_size=self._duckdb_row_group_size,
             total_hint=rows,
+            static_schema=pq_schema,
         )
         pq_mb = parquet_path.stat().st_size / 1e6
         display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")

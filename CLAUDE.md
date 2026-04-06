@@ -22,7 +22,8 @@ src/europeana_qlever/
   edm_schema.py                   # Schema loader: programmatic access to LinkML schema (prefixes, attributes, SQL generators)
   schema/
     __init__.py                   # Package marker
-    edm_parquet.yaml              # LinkML schema — single source of truth for all EDM metadata
+    edm.yaml                      # EDM base schema (generated from metis-schema XSD+OWL) — full EDM data model
+    edm_parquet.yaml              # Export schema — imports edm.yaml, adds pipeline annotations and Parquet column mappings
   dashboard.py                    # Live Rich dashboard (system resources, pipeline progress, log tail)
   analysis.py                     # Query performance analysis: runtime (QLever) and static (SPARQL algebra)
   display.py                      # Terminal output helpers (console setup, formatting)
@@ -39,6 +40,7 @@ src/europeana_qlever/
   validate.py                     # Standalone validation + inline entry validation for merge
 README.md                         # General-purpose project README
 scripts/
+  generate-edm-schema.py          # uv script: generate schema/edm.yaml from europeana/metis-schema (XSD+OWL)
   update-qlever-docs.py           # uv script: sync QLever docs from upstream GitHub repo
   update-europeana-docs.py        # uv script: sync Europeana KB from Confluence (anonymous, incremental)
 docs/
@@ -181,7 +183,8 @@ The provider proxy (identified by `FILTER NOT EXISTS { ?proxy edm:europeanaProxy
 
 - All data-processing logic is in the Python CLI. No bash scripts for pipeline steps.
 - CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`/`query.py`/`compose.py`/`validate.py`/`throttle.py`, schema access in `edm_schema.py`, configuration in `constants.py`, resource detection in `resources.py`, live display in `dashboard.py`/`display.py`, state tracking in `state.py`, telemetry in `telemetry.py`, post-export analytics in `report.py`.
-- **LinkML schema** (`schema/edm_parquet.yaml`) is the single source of truth for all EDM property URIs, column names, pipeline metadata, reuse level patterns, and authority patterns. Runtime code reads it via `edm_schema.py` — no property URIs or column names are hardcoded elsewhere.
+- **Two-layer LinkML schema**: `schema/edm.yaml` (generated from official Europeana metis-schema XSD+OWL) is the full EDM data model with all ~240 properties across 12 classes. `schema/edm_parquet.yaml` imports `edm.yaml` and adds pipeline-specific annotations (base_table, query_pattern, entity_resolved, sparql_variable, etc.) and Parquet column mappings. Runtime code reads the export schema via `edm_schema.py` — no property URIs or column names are hardcoded elsewhere. The base EDM schema serves as a "menu" for designing new exports; regenerate it with `uv run scripts/generate-edm-schema.py`.
+- **Static Parquet schemas**: `edm_schema.pyarrow_schema(export_name)` returns a `pyarrow.Schema` for any of the 44 registered exports. Phase 1 exports (`tsv_to_parquet`) use static schemas instead of inference heuristics when available.
 - **No unit tests.** This project does not use unit tests. Do not create test files or run pytest.
 - Use `rich.console.Console` for all terminal output (not bare `print`).
 - Click options use `Path` type with `path_type=Path`.

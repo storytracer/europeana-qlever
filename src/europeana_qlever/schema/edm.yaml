@@ -1,0 +1,1160 @@
+# =============================================================================
+# Europeana Data Model (EDM) — LinkML Base Schema
+# =============================================================================
+# GENERATED FILE — do not edit manually.
+# Regenerate with: uv run scripts/generate-edm-schema.py
+#
+# Source: https://github.com/europeana/metis-schema
+# EDM version: 5.2.4
+# =============================================================================
+
+id: https://europeana.eu/schemas/edm
+name: edm
+title: Europeana Data Model
+description: >-
+  Complete EDM schema generated from the official Europeana metis-schema repository (XSD + OWL). Covers
+  all EDM classes, properties, cardinality constraints, and enum types. Source: https://github.com/europeana/metis-schema
+version: 5.2.4
+license: https://creativecommons.org/licenses/by-sa/4.0/
+prefixes:
+  edm: http://www.europeana.eu/schemas/edm/
+  dc: http://purl.org/dc/elements/1.1/
+  dcterms: http://purl.org/dc/terms/
+  skos: http://www.w3.org/2004/02/skos/core#
+  ore: http://www.openarchives.org/ore/terms/
+  owl: http://www.w3.org/2002/07/owl#
+  rdf: http://www.w3.org/1999/02/22-rdf-syntax-ns#
+  rdfs: http://www.w3.org/2000/01/rdf-schema#
+  foaf: http://xmlns.com/foaf/0.1/
+  rdaGr2: http://rdvocab.info/ElementsGr2/
+  ebucore: http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#
+  wgs84_pos: http://www.w3.org/2003/01/geo/wgs84_pos#
+  svcs: http://rdfs.org/sioc/services#
+  doap: http://usefulinc.com/ns/doap#
+  cc: http://creativecommons.org/ns#
+  odrl: http://www.w3.org/ns/odrl/2/
+  dqv: http://www.w3.org/ns/dqv#
+  schema: https://schema.org/
+default_range: string
+imports:
+- linkml:types
+enums:
+  EdmType:
+    description: The Europeana material type classification
+    permissible_values:
+      IMAGE: {}
+      TEXT: {}
+      SOUND: {}
+      VIDEO: {}
+      3D: {}
+classes:
+  ProvidedCHO:
+    class_uri: edm:ProvidedCHO
+    description: This class comprises the Cultural Heritage objects that Europeana collects descriptions
+      about.
+    attributes:
+      dc_contributor:
+        slot_uri: dc:contributor
+        range: string
+        multivalued: true
+      dc_coverage:
+        slot_uri: dc:coverage
+        range: string
+        multivalued: true
+      dc_creator:
+        slot_uri: dc:creator
+        range: string
+        multivalued: true
+      dc_date:
+        slot_uri: dc:date
+        range: string
+        multivalued: true
+      dc_description:
+        slot_uri: dc:description
+        range: string
+        multivalued: true
+      dc_format:
+        slot_uri: dc:format
+        range: string
+        multivalued: true
+      dc_identifier:
+        slot_uri: dc:identifier
+        range: string
+        multivalued: true
+      dc_language:
+        slot_uri: dc:language
+        range: string
+        multivalued: true
+      dc_publisher:
+        slot_uri: dc:publisher
+        range: string
+        multivalued: true
+      dc_relation:
+        slot_uri: dc:relation
+        range: string
+        multivalued: true
+      dc_rights:
+        slot_uri: dc:rights
+        range: string
+        multivalued: true
+      dc_source:
+        slot_uri: dc:source
+        range: string
+        multivalued: true
+      dc_subject:
+        slot_uri: dc:subject
+        range: string
+        multivalued: true
+      dc_title:
+        slot_uri: dc:title
+        range: string
+        multivalued: true
+      dc_type:
+        slot_uri: dc:type
+        range: string
+        multivalued: true
+      dcterms_alternative:
+        slot_uri: dcterms:alternative
+        range: string
+        multivalued: true
+      dcterms_conforms_to:
+        slot_uri: dcterms:conformsTo
+        range: string
+        multivalued: true
+      dcterms_created:
+        slot_uri: dcterms:created
+        range: string
+        multivalued: true
+      dcterms_extent:
+        slot_uri: dcterms:extent
+        range: string
+        multivalued: true
+      dcterms_has_format:
+        slot_uri: dcterms:hasFormat
+        range: string
+        multivalued: true
+      dcterms_has_part:
+        slot_uri: dcterms:hasPart
+        range: string
+        multivalued: true
+      dcterms_has_version:
+        slot_uri: dcterms:hasVersion
+        range: string
+        multivalued: true
+      dcterms_is_format_of:
+        slot_uri: dcterms:isFormatOf
+        range: string
+        multivalued: true
+      dcterms_is_part_of:
+        slot_uri: dcterms:isPartOf
+        range: string
+        multivalued: true
+      dcterms_is_referenced_by:
+        slot_uri: dcterms:isReferencedBy
+        range: string
+        multivalued: true
+      dcterms_is_replaced_by:
+        slot_uri: dcterms:isReplacedBy
+        range: string
+        multivalued: true
+      dcterms_is_required_by:
+        slot_uri: dcterms:isRequiredBy
+        range: string
+        multivalued: true
+      dcterms_issued:
+        slot_uri: dcterms:issued
+        range: string
+        multivalued: true
+      dcterms_is_version_of:
+        slot_uri: dcterms:isVersionOf
+        range: string
+        multivalued: true
+      dcterms_medium:
+        slot_uri: dcterms:medium
+        range: string
+        multivalued: true
+      dcterms_provenance:
+        slot_uri: dcterms:provenance
+        range: string
+        multivalued: true
+      dcterms_references:
+        slot_uri: dcterms:references
+        range: string
+        multivalued: true
+      dcterms_replaces:
+        slot_uri: dcterms:replaces
+        range: string
+        multivalued: true
+      dcterms_requires:
+        slot_uri: dcterms:requires
+        range: string
+        multivalued: true
+      dcterms_spatial:
+        slot_uri: dcterms:spatial
+        range: string
+        multivalued: true
+      dcterms_table_of_contents:
+        slot_uri: dcterms:tableOfContents
+        range: string
+        multivalued: true
+      dcterms_temporal:
+        slot_uri: dcterms:temporal
+        range: string
+        multivalued: true
+      edm_current_location:
+        slot_uri: edm:currentLocation
+        range: string
+        description: >-
+          The geographic location and/or name of the repository, building, site, or other entity whose
+          boundaries presently include the resource.
+      edm_has_met:
+        slot_uri: edm:hasMet
+        range: uri
+        multivalued: true
+        description: >-
+          edm:hasMet relates a resource with the objects or phenomena that have happened to or have happened
+          together with the resource under consideration. We can abstractly think of history and the present
+          as a series of “meetings” between people and other things in space-time. Therefore we name this
+          rel...
+      edm_has_type:
+        slot_uri: edm:hasType
+        range: string
+        multivalued: true
+        description: |-
+          This property relates a resource with the concepts it belongs to in a suitable
+          type system such as MIME or any thesaurus that captures categories of objects in a given field (e.g., the “Objects” facet in Getty’s Art and Architecture Thesaurus). It does not capture aboutness.
+      edm_incorporates:
+        slot_uri: edm:incorporates
+        range: uri
+        multivalued: true
+        description: |-
+          This property captures the use of some resource to add value to another
+          resource. Such resources may be nested, such as performing a theater play text, and then recording the performance, or creating an artful edition of a collection of poems or just aggregating various poems in an anthology. The...
+      edm_is_derivative_of:
+        slot_uri: edm:isDerivativeOf
+        range: uri
+        multivalued: true
+        description: >-
+          This property captures a narrower notion of derivation than edm:isSimilarTo, in the sense that
+          it relates a resource to another one, obtained by reworking, reducing, expanding, parts or the
+          whole contents of the former, and possibly adding some minor parts. Versions have an even narrower
+          meaning,...
+      edm_is_next_in_sequence:
+        slot_uri: edm:isNextInSequence
+        range: uri
+        multivalued: true
+        description: >-
+          edm:isNextInSequence relates two resources S and R that are ordered parts of the same resource
+          A, and such that S comes immediately after R in the order created by their being parts of A.
+      edm_is_related_to:
+        slot_uri: edm:isRelatedTo
+        range: string
+        multivalued: true
+        description: |-
+          edm:isRelatedTo is the most general contextual property in EDM. Contextual
+          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sa...
+      edm_is_representation_of:
+        slot_uri: edm:isRepresentationOf
+        range: uri
+        description: This property associates an information resource to the resource (if any) that it
+          represents
+      edm_is_similar_to:
+        slot_uri: edm:isSimilarTo
+        range: uri
+        multivalued: true
+        description: >-
+          The most generic derivation property, covering also the case of questionable derivation. Is
+          Similar To asserts that parts of the contents of one resource exhibit common features with respect
+          to ideas, shapes, structures, colors, words, plots, topics with the contents of the related
+          resource. Thos...
+      edm_is_successor_of:
+        slot_uri: edm:isSuccessorOf
+        range: uri
+        multivalued: true
+        description: >-
+          This property captures the relation between the continuation of a resource and that resource.
+          This applies to a story, a serial, a journal etc. No content of the successor resource is identical
+          or has a similar form with that of the precursor. The similarity is only in the context, subjects
+          and f...
+      edm_realizes:
+        slot_uri: edm:realizes
+        range: uri
+        multivalued: true
+        description: >-
+          This property describes a relation between a physical thing and the information resource that
+          is contained in it, visible at it or otherwise carried by it, if applicable.
+      edm_pid:
+        slot_uri: edm:pid
+        range: string
+        multivalued: true
+      edm_type:
+        slot_uri: edm:type
+        range: EdmType
+        required: true
+        description: The Europeana material type of the resource
+      owl_same_as:
+        slot_uri: owl:sameAs
+        range: uri
+        multivalued: true
+  Proxy:
+    class_uri: ore:Proxy
+    attributes:
+      dc_contributor:
+        slot_uri: dc:contributor
+        range: string
+        multivalued: true
+      dc_coverage:
+        slot_uri: dc:coverage
+        range: string
+        multivalued: true
+      dc_creator:
+        slot_uri: dc:creator
+        range: string
+        multivalued: true
+      dc_date:
+        slot_uri: dc:date
+        range: string
+        multivalued: true
+      dc_description:
+        slot_uri: dc:description
+        range: string
+        multivalued: true
+      dc_format:
+        slot_uri: dc:format
+        range: string
+        multivalued: true
+      dc_identifier:
+        slot_uri: dc:identifier
+        range: string
+        multivalued: true
+      dc_language:
+        slot_uri: dc:language
+        range: string
+        multivalued: true
+      dc_publisher:
+        slot_uri: dc:publisher
+        range: string
+        multivalued: true
+      dc_relation:
+        slot_uri: dc:relation
+        range: string
+        multivalued: true
+      dc_rights:
+        slot_uri: dc:rights
+        range: string
+        multivalued: true
+      dc_source:
+        slot_uri: dc:source
+        range: string
+        multivalued: true
+      dc_subject:
+        slot_uri: dc:subject
+        range: string
+        multivalued: true
+      dc_title:
+        slot_uri: dc:title
+        range: string
+        multivalued: true
+      dc_type:
+        slot_uri: dc:type
+        range: string
+        multivalued: true
+      dcterms_alternative:
+        slot_uri: dcterms:alternative
+        range: string
+        multivalued: true
+      dcterms_conforms_to:
+        slot_uri: dcterms:conformsTo
+        range: string
+        multivalued: true
+      dcterms_created:
+        slot_uri: dcterms:created
+        range: string
+        multivalued: true
+      dcterms_extent:
+        slot_uri: dcterms:extent
+        range: string
+        multivalued: true
+      dcterms_has_format:
+        slot_uri: dcterms:hasFormat
+        range: string
+        multivalued: true
+      dcterms_has_part:
+        slot_uri: dcterms:hasPart
+        range: string
+        multivalued: true
+      dcterms_has_version:
+        slot_uri: dcterms:hasVersion
+        range: string
+        multivalued: true
+      dcterms_is_format_of:
+        slot_uri: dcterms:isFormatOf
+        range: string
+        multivalued: true
+      dcterms_is_part_of:
+        slot_uri: dcterms:isPartOf
+        range: string
+        multivalued: true
+      dcterms_is_referenced_by:
+        slot_uri: dcterms:isReferencedBy
+        range: string
+        multivalued: true
+      dcterms_is_replaced_by:
+        slot_uri: dcterms:isReplacedBy
+        range: string
+        multivalued: true
+      dcterms_is_required_by:
+        slot_uri: dcterms:isRequiredBy
+        range: string
+        multivalued: true
+      dcterms_issued:
+        slot_uri: dcterms:issued
+        range: string
+        multivalued: true
+      dcterms_is_version_of:
+        slot_uri: dcterms:isVersionOf
+        range: string
+        multivalued: true
+      dcterms_medium:
+        slot_uri: dcterms:medium
+        range: string
+        multivalued: true
+      dcterms_provenance:
+        slot_uri: dcterms:provenance
+        range: string
+        multivalued: true
+      dcterms_references:
+        slot_uri: dcterms:references
+        range: string
+        multivalued: true
+      dcterms_replaces:
+        slot_uri: dcterms:replaces
+        range: string
+        multivalued: true
+      dcterms_requires:
+        slot_uri: dcterms:requires
+        range: string
+        multivalued: true
+      dcterms_spatial:
+        slot_uri: dcterms:spatial
+        range: string
+        multivalued: true
+      dcterms_table_of_contents:
+        slot_uri: dcterms:tableOfContents
+        range: string
+        multivalued: true
+      dcterms_temporal:
+        slot_uri: dcterms:temporal
+        range: string
+        multivalued: true
+      edm_current_location:
+        slot_uri: edm:currentLocation
+        range: string
+        description: >-
+          The geographic location and/or name of the repository, building, site, or other entity whose
+          boundaries presently include the resource.
+      edm_has_met:
+        slot_uri: edm:hasMet
+        range: uri
+        multivalued: true
+        description: >-
+          edm:hasMet relates a resource with the objects or phenomena that have happened to or have happened
+          together with the resource under consideration. We can abstractly think of history and the present
+          as a series of “meetings” between people and other things in space-time. Therefore we name this
+          rel...
+      edm_has_type:
+        slot_uri: edm:hasType
+        range: string
+        multivalued: true
+        description: |-
+          This property relates a resource with the concepts it belongs to in a suitable
+          type system such as MIME or any thesaurus that captures categories of objects in a given field (e.g., the “Objects” facet in Getty’s Art and Architecture Thesaurus). It does not capture aboutness.
+      edm_incorporates:
+        slot_uri: edm:incorporates
+        range: uri
+        multivalued: true
+        description: |-
+          This property captures the use of some resource to add value to another
+          resource. Such resources may be nested, such as performing a theater play text, and then recording the performance, or creating an artful edition of a collection of poems or just aggregating various poems in an anthology. The...
+      edm_is_derivative_of:
+        slot_uri: edm:isDerivativeOf
+        range: uri
+        multivalued: true
+        description: >-
+          This property captures a narrower notion of derivation than edm:isSimilarTo, in the sense that
+          it relates a resource to another one, obtained by reworking, reducing, expanding, parts or the
+          whole contents of the former, and possibly adding some minor parts. Versions have an even narrower
+          meaning,...
+      edm_is_next_in_sequence:
+        slot_uri: edm:isNextInSequence
+        range: uri
+        multivalued: true
+        description: >-
+          edm:isNextInSequence relates two resources S and R that are ordered parts of the same resource
+          A, and such that S comes immediately after R in the order created by their being parts of A.
+      edm_is_related_to:
+        slot_uri: edm:isRelatedTo
+        range: string
+        multivalued: true
+        description: |-
+          edm:isRelatedTo is the most general contextual property in EDM. Contextual
+          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sa...
+      edm_is_representation_of:
+        slot_uri: edm:isRepresentationOf
+        range: uri
+        description: This property associates an information resource to the resource (if any) that it
+          represents
+      edm_is_similar_to:
+        slot_uri: edm:isSimilarTo
+        range: uri
+        multivalued: true
+        description: >-
+          The most generic derivation property, covering also the case of questionable derivation. Is
+          Similar To asserts that parts of the contents of one resource exhibit common features with respect
+          to ideas, shapes, structures, colors, words, plots, topics with the contents of the related
+          resource. Thos...
+      edm_is_successor_of:
+        slot_uri: edm:isSuccessorOf
+        range: uri
+        multivalued: true
+        description: >-
+          This property captures the relation between the continuation of a resource and that resource.
+          This applies to a story, a serial, a journal etc. No content of the successor resource is identical
+          or has a similar form with that of the precursor. The similarity is only in the context, subjects
+          and f...
+      edm_realizes:
+        slot_uri: edm:realizes
+        range: uri
+        multivalued: true
+        description: >-
+          This property describes a relation between a physical thing and the information resource that
+          is contained in it, visible at it or otherwise carried by it, if applicable.
+      edm_pid:
+        slot_uri: edm:pid
+        range: string
+        multivalued: true
+      edm_europeana_proxy:
+        slot_uri: edm:europeanaProxy
+        range: boolean
+        description: >-
+          This property serves only as a flag to indicate that a proxy is a Europeana proxy (as opposed
+          to a provider proxy).  It is for internal use only.
+      edm_user_tag:
+        slot_uri: edm:userTag
+        range: string
+        multivalued: true
+        description: This is a tag created by a user through the Europeana interface.
+      edm_year:
+        slot_uri: edm:year
+        range: string
+        multivalued: true
+        description: |-
+          A point of time associated with an event in the life of the original analog or
+          born digital object.
+      ore_proxy_for:
+        slot_uri: ore:proxyFor
+        range: uri
+      ore_proxy_in:
+        slot_uri: ore:proxyIn
+        range: uri
+        multivalued: true
+      ore_lineage:
+        slot_uri: ore:lineage
+        range: uri
+        multivalued: true
+      edm_type:
+        slot_uri: edm:type
+        range: EdmType
+        description: The Europeana material type of the resource
+      owl_same_as:
+        slot_uri: owl:sameAs
+        range: uri
+        multivalued: true
+  Aggregation:
+    class_uri: ore:Aggregation
+    attributes:
+      edm_aggregated_cho:
+        slot_uri: edm:aggregatedCHO
+        range: uri
+        required: true
+        description: >-
+          This property associates an ORE aggregation with the cultural heritage object(s) (CHO for short)
+          it is about.
+      edm_data_provider:
+        slot_uri: edm:dataProvider
+        range: string
+        description: >-
+          The name or identifier of the organisation who contributes data indirectly to an aggregation
+          service (e.g. Europeana).
+      edm_has_view:
+        slot_uri: edm:hasView
+        range: uri
+        multivalued: true
+        description: |-
+          This property relates a ORE aggregation about a CHO with a web resource
+          providing a view of that CHO. Examples of view are: a thumbnail, a textual
+          abstract and a table of contents. The ORE aggregation may be a Europeana
+          Aggregation, in which case the view is an object owned by Europeana (i.e., an...
+      edm_is_shown_at:
+        slot_uri: edm:isShownAt
+        range: uri
+        description: >-
+          An unambiguous URL reference to the digital object on the provider’s web site in its full information
+          context.
+      edm_is_shown_by:
+        slot_uri: edm:isShownBy
+        range: uri
+        description: >-
+          An unambiguous URL reference to the digital object on the provider’s web site in the best available
+          resolution/quality.
+      edm_object:
+        slot_uri: edm:object
+        range: uri
+        description: |-
+          The URL of a thumbnail representing the digital object or, if there is no such
+          thumbnail, the URL of the digital object in the best resolution available on the
+          web site of the data provider from which a thumbnail could be generated. This will often be the same URL as given in edm:isShownBy.
+      edm_provider:
+        slot_uri: edm:provider
+        range: string
+        required: true
+        description: >-
+          The name or identifier of the organization who delivers data directly to an aggregation service
+          (e.g. Europeana)
+      dc_rights:
+        slot_uri: dc:rights
+        range: string
+        multivalued: true
+      edm_rights:
+        slot_uri: edm:rights
+        range: uri
+        required: true
+        description: |-
+          Information about copyright of the digital object as specified by isShownBy
+          and isShownAt
+      edm_ugc:
+        slot_uri: edm:ugc
+        range: string
+        description: >-
+          This element is used to identify user generated content (also called user created content).  It
+          should be applied to all digitised or born digital content contributed by the general public
+          and collected by Europeana through a crowdsourcing initiative or project.
+      edm_intermediate_provider:
+        slot_uri: edm:intermediateProvider
+        range: string
+        multivalued: true
+      dqv_has_quality_annotation:
+        slot_uri: dqv:hasQualityAnnotation
+        range: string
+        multivalued: true
+      dcterms_created:
+        slot_uri: dcterms:created
+        range: string
+      dcterms_modified:
+        slot_uri: dcterms:modified
+        range: string
+  WebResource:
+    class_uri: edm:WebResource
+    description: |-
+      Information Resources that have at least one Web Representation and at least
+      a URI.
+    attributes:
+      edm_pid:
+        slot_uri: edm:pid
+        range: string
+        multivalued: true
+      dc_creator:
+        slot_uri: dc:creator
+        range: string
+        multivalued: true
+      dc_description:
+        slot_uri: dc:description
+        range: string
+        multivalued: true
+      dc_format:
+        slot_uri: dc:format
+        range: string
+        multivalued: true
+      dc_rights:
+        slot_uri: dc:rights
+        range: string
+        multivalued: true
+      dc_source:
+        slot_uri: dc:source
+        range: string
+        multivalued: true
+      dc_type:
+        slot_uri: dc:type
+        range: string
+        multivalued: true
+      dc_title:
+        slot_uri: dc:title
+        range: string
+        multivalued: true
+      dc_language:
+        slot_uri: dc:language
+        range: string
+        multivalued: true
+      dcterms_conforms_to:
+        slot_uri: dcterms:conformsTo
+        range: string
+        multivalued: true
+      dcterms_created:
+        slot_uri: dcterms:created
+        range: string
+        multivalued: true
+      dcterms_extent:
+        slot_uri: dcterms:extent
+        range: string
+        multivalued: true
+      dcterms_has_part:
+        slot_uri: dcterms:hasPart
+        range: string
+        multivalued: true
+      dcterms_is_format_of:
+        slot_uri: dcterms:isFormatOf
+        range: string
+        multivalued: true
+      dcterms_is_part_of:
+        slot_uri: dcterms:isPartOf
+        range: string
+        multivalued: true
+      dcterms_issued:
+        slot_uri: dcterms:issued
+        range: string
+        multivalued: true
+      dcterms_temporal:
+        slot_uri: dcterms:temporal
+        range: string
+        multivalued: true
+      edm_is_next_in_sequence:
+        slot_uri: edm:isNextInSequence
+        range: uri
+        description: >-
+          edm:isNextInSequence relates two resources S and R that are ordered parts of the same resource
+          A, and such that S comes immediately after R in the order created by their being parts of A.
+      edm_rights:
+        slot_uri: edm:rights
+        range: uri
+        description: |-
+          Information about copyright of the digital object as specified by isShownBy
+          and isShownAt
+      owl_same_as:
+        slot_uri: owl:sameAs
+        range: uri
+        multivalued: true
+      rdf_type:
+        slot_uri: rdf:type
+        range: uri
+      edm_codec_name:
+        slot_uri: edm:codecName
+        range: string
+      ebucore_has_mime_type:
+        slot_uri: ebucore:hasMimeType
+        range: string
+      ebucore_file_byte_size:
+        slot_uri: ebucore:fileByteSize
+        range: integer
+      ebucore_duration:
+        slot_uri: ebucore:duration
+        range: string
+      ebucore_width:
+        slot_uri: ebucore:width
+        range: integer
+      ebucore_height:
+        slot_uri: ebucore:height
+        range: integer
+      edm_spatial_resolution:
+        slot_uri: edm:spatialResolution
+        range: integer
+      ebucore_sample_size:
+        slot_uri: ebucore:sampleSize
+        range: integer
+      ebucore_sample_rate:
+        slot_uri: ebucore:sampleRate
+        range: integer
+      ebucore_bit_rate:
+        slot_uri: ebucore:bitRate
+        range: integer
+      ebucore_frame_rate:
+        slot_uri: ebucore:frameRate
+        range: float
+      edm_has_color_space:
+        slot_uri: edm:hasColorSpace
+        range: string
+      edm_component_color:
+        slot_uri: edm:componentColor
+        range: string
+        multivalued: true
+      edm_point_count:
+        slot_uri: edm:pointCount
+        range: integer
+      edm_polygon_count:
+        slot_uri: edm:polygonCount
+        range: integer
+      edm_vertex_count:
+        slot_uri: edm:vertexCount
+        range: integer
+      rdfs_see_also:
+        slot_uri: rdfs:seeAlso
+        range: uri
+        multivalued: true
+      ebucore_orientation:
+        slot_uri: ebucore:orientation
+        range: string
+      ebucore_audio_channel_number:
+        slot_uri: ebucore:audioChannelNumber
+        range: integer
+      dcterms_is_referenced_by:
+        slot_uri: dcterms:isReferencedBy
+        range: string
+        multivalued: true
+      edm_preview:
+        slot_uri: edm:preview
+        range: uri
+        description: The URL of a thumbnail representing the digital object, generated by Europeana.
+      svcs_has_service:
+        slot_uri: svcs:has_service
+        range: uri
+        multivalued: true
+      edm_type:
+        slot_uri: edm:type
+        range: EdmType
+        description: The Europeana material type of the resource
+      schema_digital_source_type:
+        slot_uri: schema:digitalSourceType
+        range: uri
+      edm_intended_usage:
+        slot_uri: edm:intendedUsage
+        range: uri
+        multivalued: true
+      edm_is_representation_of:
+        slot_uri: edm:isRepresentationOf
+        range: uri
+        multivalued: true
+        description: This property associates an information resource to the resource (if any) that it
+          represents
+  Agent:
+    class_uri: edm:Agent
+    description: |-
+      This class comprises people, either individually or in groups, who have the
+      potential to perform intentional actions for which they can be held responsible.
+    attributes:
+      skos_pref_label:
+        slot_uri: skos:prefLabel
+        range: string
+        multivalued: true
+      skos_alt_label:
+        slot_uri: skos:altLabel
+        range: string
+        multivalued: true
+      skos_hidden_label:
+        slot_uri: skos:hiddenLabel
+        range: string
+        multivalued: true
+      skos_note:
+        slot_uri: skos:note
+        range: string
+        multivalued: true
+      dc_date:
+        slot_uri: dc:date
+        range: string
+        multivalued: true
+      dc_identifier:
+        slot_uri: dc:identifier
+        range: string
+        multivalued: true
+      dcterms_has_part:
+        slot_uri: dcterms:hasPart
+        range: string
+        multivalued: true
+      dcterms_is_part_of:
+        slot_uri: dcterms:isPartOf
+        range: string
+        multivalued: true
+      edm_begin:
+        slot_uri: edm:begin
+        range: string
+        description: This property denotes the start date of a period of time.
+      edm_end:
+        slot_uri: edm:end
+        range: string
+        description: This property denotes the end date of a period of time.
+      edm_has_met:
+        slot_uri: edm:hasMet
+        range: uri
+        multivalued: true
+        description: >-
+          edm:hasMet relates a resource with the objects or phenomena that have happened to or have happened
+          together with the resource under consideration. We can abstractly think of history and the present
+          as a series of “meetings” between people and other things in space-time. Therefore we name this
+          rel...
+      edm_is_related_to:
+        slot_uri: edm:isRelatedTo
+        range: string
+        multivalued: true
+        description: |-
+          edm:isRelatedTo is the most general contextual property in EDM. Contextual
+          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sa...
+      foaf_name:
+        slot_uri: foaf:name
+        range: string
+        multivalued: true
+      rdaGr2_biographical_information:
+        slot_uri: rdaGr2:biographicalInformation
+        range: string
+        multivalued: true
+      rdaGr2_date_of_birth:
+        slot_uri: rdaGr2:dateOfBirth
+        range: string
+      rdaGr2_date_of_death:
+        slot_uri: rdaGr2:dateOfDeath
+        range: string
+      rdaGr2_date_of_establishment:
+        slot_uri: rdaGr2:dateOfEstablishment
+        range: string
+      rdaGr2_date_of_termination:
+        slot_uri: rdaGr2:dateOfTermination
+        range: string
+      rdaGr2_gender:
+        slot_uri: rdaGr2:gender
+        range: string
+      rdaGr2_place_of_birth:
+        slot_uri: rdaGr2:placeOfBirth
+        range: string
+        multivalued: true
+      rdaGr2_place_of_death:
+        slot_uri: rdaGr2:placeOfDeath
+        range: string
+        multivalued: true
+      rdaGr2_profession_or_occupation:
+        slot_uri: rdaGr2:professionOrOccupation
+        range: string
+        multivalued: true
+      owl_same_as:
+        slot_uri: owl:sameAs
+        range: uri
+        multivalued: true
+  Place:
+    class_uri: edm:Place
+    description: >-
+      An "extent in space, in particular on the surface of the earth, in the pure sense of physics: independent
+      from temporal phenomena and matter" (CIDOC CRM)
+    attributes:
+      wgs84_pos_lat:
+        slot_uri: wgs84_pos:lat
+        range: string
+      wgs84_pos_long:
+        slot_uri: wgs84_pos:long
+        range: string
+      wgs84_pos_alt:
+        slot_uri: wgs84_pos:alt
+        range: string
+      skos_pref_label:
+        slot_uri: skos:prefLabel
+        range: string
+        multivalued: true
+      skos_alt_label:
+        slot_uri: skos:altLabel
+        range: string
+        multivalued: true
+      skos_hidden_label:
+        slot_uri: skos:hiddenLabel
+        range: string
+        multivalued: true
+      skos_note:
+        slot_uri: skos:note
+        range: string
+        multivalued: true
+      dcterms_has_part:
+        slot_uri: dcterms:hasPart
+        range: string
+        multivalued: true
+      dcterms_is_part_of:
+        slot_uri: dcterms:isPartOf
+        range: string
+        multivalued: true
+      edm_is_next_in_sequence:
+        slot_uri: edm:isNextInSequence
+        range: uri
+        description: >-
+          edm:isNextInSequence relates two resources S and R that are ordered parts of the same resource
+          A, and such that S comes immediately after R in the order created by their being parts of A.
+      owl_same_as:
+        slot_uri: owl:sameAs
+        range: uri
+        multivalued: true
+  Concept:
+    class_uri: skos:Concept
+    attributes:
+      skos_pref_label:
+        slot_uri: skos:prefLabel
+        range: string
+        multivalued: true
+      skos_alt_label:
+        slot_uri: skos:altLabel
+        range: string
+        multivalued: true
+      skos_hidden_label:
+        slot_uri: skos:hiddenLabel
+        range: string
+        multivalued: true
+      skos_broader:
+        slot_uri: skos:broader
+        range: uri
+        multivalued: true
+      skos_narrower:
+        slot_uri: skos:narrower
+        range: uri
+        multivalued: true
+      skos_related:
+        slot_uri: skos:related
+        range: uri
+        multivalued: true
+      skos_broad_match:
+        slot_uri: skos:broadMatch
+        range: uri
+        multivalued: true
+      skos_narrow_match:
+        slot_uri: skos:narrowMatch
+        range: uri
+        multivalued: true
+      skos_related_match:
+        slot_uri: skos:relatedMatch
+        range: uri
+        multivalued: true
+      skos_exact_match:
+        slot_uri: skos:exactMatch
+        range: uri
+        multivalued: true
+      skos_close_match:
+        slot_uri: skos:closeMatch
+        range: uri
+        multivalued: true
+      skos_note:
+        slot_uri: skos:note
+        range: string
+        multivalued: true
+      skos_notation:
+        slot_uri: skos:notation
+        range: string
+        multivalued: true
+      skos_in_scheme:
+        slot_uri: skos:inScheme
+        range: uri
+        multivalued: true
+  TimeSpan:
+    class_uri: edm:TimeSpan
+    description: |-
+      The class of "abstract temporal extents, in the sense of Galilean physics,
+       having a beginning, an end and a duration" (CIDOC CRM)
+    attributes:
+      skos_pref_label:
+        slot_uri: skos:prefLabel
+        range: string
+        multivalued: true
+      skos_alt_label:
+        slot_uri: skos:altLabel
+        range: string
+        multivalued: true
+      skos_hidden_label:
+        slot_uri: skos:hiddenLabel
+        range: string
+        multivalued: true
+      skos_note:
+        slot_uri: skos:note
+        range: string
+        multivalued: true
+      dcterms_has_part:
+        slot_uri: dcterms:hasPart
+        range: string
+        multivalued: true
+      dcterms_is_part_of:
+        slot_uri: dcterms:isPartOf
+        range: string
+        multivalued: true
+      edm_begin:
+        slot_uri: edm:begin
+        range: string
+        description: This property denotes the start date of a period of time.
+      edm_end:
+        slot_uri: edm:end
+        range: string
+        description: This property denotes the end date of a period of time.
+      edm_is_next_in_sequence:
+        slot_uri: edm:isNextInSequence
+        range: uri
+        description: >-
+          edm:isNextInSequence relates two resources S and R that are ordered parts of the same resource
+          A, and such that S comes immediately after R in the order created by their being parts of A.
+      owl_same_as:
+        slot_uri: owl:sameAs
+        range: uri
+        multivalued: true
+      skos_notation:
+        slot_uri: skos:notation
+        range: string
+  Service:
+    class_uri: svcs:Service
+    attributes:
+      dcterms_conforms_to:
+        slot_uri: dcterms:conformsTo
+        range: string
+        multivalued: true
+        required: true
+      doap_implements:
+        slot_uri: doap:implements
+        range: uri
+        multivalued: true
+  License:
+    class_uri: cc:License
+    attributes:
+      odrl_inherit_from:
+        slot_uri: odrl:inheritFrom
+        range: uri
+        required: true
+      cc_deprecated_on:
+        slot_uri: cc:deprecatedOn
+        range: string
+  PersistentIdentifier:
+    class_uri: edm:PersistentIdentifier
+    attributes:
+      rdf_value:
+        slot_uri: rdf:value
+        range: string
+        required: true
+      skos_notation:
+        slot_uri: skos:notation
+        range: string
+        multivalued: true
+      edm_has_url:
+        slot_uri: edm:hasURL
+        range: uri
+        multivalued: true
+      dcterms_created:
+        slot_uri: dcterms:created
+        range: string
+      dcterms_creator:
+        slot_uri: dcterms:creator
+        range: string
+      odrl_has_policy:
+        slot_uri: odrl:hasPolicy
+        range: uri
+      skos_in_scheme:
+        slot_uri: skos:inScheme
+        range: uri
+      edm_equivalent_pid:
+        slot_uri: edm:equivalentPID
+        range: string
+        multivalued: true
+      edm_replaces_pid:
+        slot_uri: edm:replacesPID
+        range: string
+        multivalued: true
+  PersistentIdentifierScheme:
+    class_uri: edm:PersistentIdentifierScheme
+    attributes:
+      dcterms_title:
+        slot_uri: dcterms:title
+        range: string
+        multivalued: true
