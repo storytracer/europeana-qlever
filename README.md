@@ -370,10 +370,15 @@ Both modes produce Markdown reports in `<work-dir>/analysis/`. The `qlever` mode
 | Directory / File | Purpose |
 |-----------|---------|
 | `src/europeana_qlever/` | Python CLI source code (15 modules) |
-| `scripts/` | Standalone uv scripts for syncing documentation |
+| `src/europeana_qlever/schema/edm.yaml` | EDM base schema -- primary source of truth for the EDM data model (12 classes, 242 fully-described attributes) |
+| `src/europeana_qlever/schema/edm_parquet.yaml` | Export schema -- declares all 44 export tables as LinkML classes with SPARQL patterns and pipeline annotations |
+| `ontologies/metis-schema/` | Europeana metis-schema XSD + OWL source files (copied from GitHub) |
+| `ontologies/external/` | Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, ODRL, etc.) |
+| `scripts/` | Standalone uv scripts for schema generation and documentation sync |
+| `scripts/generate-edm-schema.py` | Generate `schema/edm.yaml` from metis-schema XSD+OWL and external ontologies |
 | `scripts/update-qlever-docs.py` | Sync QLever docs from upstream GitHub repo |
 | `scripts/update-europeana-docs.py` | Sync Europeana KB from Confluence (anonymous, incremental) |
-| `docs/europeana/EDM.md` | Europeana Data Model reference -- entity relationships, RDF namespaces, rights framework |
+| `docs/europeana/EDM.md` | Europeana Data Model reference -- narrative overview of EDM entities, namespaces, rights framework |
 | `docs/qlever/docs/` | QLever documentation (upstream MkDocs source) -- Qleverfile format, SPARQL compliance, text/geo/path search, troubleshooting |
 | `docs/europeana/Europeana Knowledge Base/` | Europeana Knowledge Base -- EDM mapping guidelines, publishing guides, semantic enrichments, API docs. Exported from Confluence with images referencing live remote URLs |
 
@@ -388,14 +393,17 @@ Both modes produce Markdown reports in `<work-dir>/analysis/`. The `qlever` mode
 | `telemetry.jsonl` | Structured JSONL telemetry log (command spans, resource samples, stage events) |
 | `pipeline_state.json` | Pipeline checkpoint for resume-on-failure |
 
-## Updating documentation
+## Updating documentation and schemas
 
-Both local doc sets are updated via standalone uv scripts:
+The EDM schema, ontology sources, and documentation are updated via standalone uv scripts:
 
 ```bash
-uv run scripts/update-qlever-docs.py       # Sync QLever docs from GitHub (full replace)
+uv run scripts/generate-edm-schema.py      # Regenerate schema/edm.yaml from ontology sources
+uv run scripts/update-qlever-docs.py        # Sync QLever docs from GitHub (full replace)
 uv run scripts/update-europeana-docs.py     # Sync Europeana KB from Confluence (incremental)
 ```
+
+The `generate-edm-schema.py` script clones the official [europeana/metis-schema](https://github.com/europeana/metis-schema) repository, copies XSD+OWL files to `ontologies/metis-schema/`, fetches external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, etc.) to `ontologies/external/`, and generates `schema/edm.yaml` with descriptions from all sources. Use `--no-external-descriptions` to skip incorporating external ontology descriptions.
 
 The Europeana script uses `confluence-markdown-exporter` with anonymous access. A lockfile (`docs/europeana/confluence-lock.json`) tracks Confluence page version numbers so subsequent runs only re-export changed pages. Local attachment references are rewritten to remote Confluence download URLs so no binary files are committed.
 

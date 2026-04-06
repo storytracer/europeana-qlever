@@ -22,7 +22,7 @@ src/europeana_qlever/
   schema_loader.py                # Schema loader: programmatic access to LinkML schema (prefixes, attributes, export discovery, PyArrow schemas)
   schema/
     __init__.py                   # Package marker
-    edm.yaml                      # EDM base schema (generated from metis-schema XSD+OWL) — full EDM data model, 12 classes, 242 attributes
+    edm.yaml                      # EDM base schema — primary source of truth for the EDM data model (12 classes, 242 fully-described attributes)
     edm_parquet.yaml              # Export schema — imports edm.yaml, declares ALL 44 export tables as LinkML classes with SPARQL patterns and pipeline annotations
   dashboard.py                    # Live Rich dashboard (system resources, pipeline progress, log tail)
   analysis.py                     # Query performance analysis: runtime (QLever) and static (SPARQL algebra)
@@ -40,16 +40,19 @@ src/europeana_qlever/
   validate.py                     # Standalone validation + inline entry validation for merge
 README.md                         # General-purpose project README
 scripts/
-  generate-edm-schema.py          # uv script: generate schema/edm.yaml from europeana/metis-schema (XSD+OWL)
+  generate-edm-schema.py          # uv script: generate schema/edm.yaml from ontology sources (XSD, OWL, external RDF)
   update-qlever-docs.py           # uv script: sync QLever docs from upstream GitHub repo
   update-europeana-docs.py        # uv script: sync Europeana KB from Confluence (anonymous, incremental)
+ontologies/
+  metis-schema/                   # Europeana metis-schema XSD + OWL files (copied from GitHub clone)
+  external/                       # Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, etc.)
 docs/
   qlever/docs/                    # QLever documentation (MkDocs source from upstream)
     quickstart.md, qleverfile.md, qlever-control.md, text-search.md,
     geosparql.md, path-search.md, materialized-views.md, benchmarks.md,
     compliance.md, troubleshooting.md, faq.md, rebuild-index.md, update.md, ...
   europeana/                      # Europeana Knowledge Base (exported from Confluence)
-    EDM.md                         # Europeana Data Model reference (EDM, entities, rights)
+    EDM.md                         # Europeana Data Model reference — narrative overview of EDM entities, namespaces, rights
     confluence-lock.json           # CME lockfile for incremental updates (tracks page versions)
     Europeana Knowledge Base/
       Europeana Knowledge Base.md                        # Space homepage / index
@@ -135,24 +138,37 @@ All commands require `-d WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Out
 
 ## Documentation
 
-Local documentation is available in three locations — always read from these local copies rather than fetching from the web:
+### EDM data model reference
 
-- **`docs/europeana/EDM.md`** — Europeana Data Model reference (entity relationships, RDF namespaces, rights framework). Primary quick-reference for EDM questions.
+The primary sources of truth for the Europeana Data Model are:
+
+- **`schema/edm.yaml`** — Machine-readable LinkML schema with all 12 EDM classes and 242 attributes. Every attribute has a description (sourced from the EDM OWL ontology, metis-schema XSD annotations, and upstream vocabulary ontologies). This is the authoritative reference for class/property structure, cardinality, ranges, and namespaces. Read this first for any EDM property question.
+- **`docs/europeana/EDM.md`** — Narrative overview of EDM entity relationships, RDF namespaces, and rights framework. Complements `edm.yaml` with context on how classes relate to each other and the overall data flow.
+
+### Other documentation
+
+Always read from these local copies rather than fetching from the web:
+
 - **`docs/qlever/docs/`** — Full QLever documentation (upstream MkDocs source). Covers Qleverfile format, SPARQL compliance, text/geo/path search, materialized views, benchmarks, troubleshooting, and more. Read these when working on index configuration, Qleverfile generation, query features, or debugging QLever behavior.
 - **`docs/europeana/Europeana Knowledge Base/`** — Europeana's knowledge base (exported from Confluence space `EF`). Includes EDM mapping guidelines (per-class property documentation for ProvidedCHO, Aggregation, WebResource, contextual classes), publishing guides (content/metadata tiers, rights statements), semantic enrichments, API docs, terminology, and media policy. Read these for detailed EDM field semantics, data quality rules, or Europeana-specific conventions beyond what `EDM.md` covers. Images embed live Confluence URLs (no local attachment files).
 
-Both doc sets are updated via standalone uv scripts:
+### Updating documentation
+
+Doc sets and ontologies are updated via standalone uv scripts:
 
 ```bash
-uv run scripts/update-qlever-docs.py       # Sync QLever docs from GitHub (full replace)
+uv run scripts/generate-edm-schema.py      # Regenerate schema/edm.yaml from ontology sources
+uv run scripts/update-qlever-docs.py        # Sync QLever docs from GitHub (full replace)
 uv run scripts/update-europeana-docs.py     # Sync Europeana KB from Confluence (incremental)
 ```
+
+The `generate-edm-schema.py` script clones europeana/metis-schema to `/tmp`, copies XSD+OWL files to `ontologies/metis-schema/`, fetches external ontology RDF files (DC, DCTERMS, SKOS, FOAF, ORE, etc.) to `ontologies/external/`, and generates `edm.yaml` with descriptions from all sources. Description priority: EDM OWL > XSD annotations > external ontologies > hardcoded fallbacks. Use `--no-external-descriptions` to skip incorporating external descriptions.
 
 The Europeana script uses `confluence-markdown-exporter` with anonymous access. A lockfile (`docs/europeana/confluence-lock.json`) tracks Confluence page version numbers so subsequent runs only re-export pages that changed. After export, local attachment references are rewritten to remote Confluence download URLs and the attachment files are deleted (so binary files are never committed).
 
 ## Europeana EDM domain context
 
-For comprehensive documentation on the Europeana Data Model, entity relationships, RDF namespaces, and rights framework, see `docs/europeana/EDM.md`. For detailed per-class property documentation and mapping guidelines, see `docs/europeana/Europeana Knowledge Base/EDM - Mapping guidelines/`. For QLever engine internals and configuration, see `docs/qlever/docs/`.
+For the complete EDM class and property reference, see `schema/edm.yaml`. For narrative context on entity relationships, RDF namespaces, and rights framework, see `docs/europeana/EDM.md`. For detailed per-class property documentation and mapping guidelines, see `docs/europeana/Europeana Knowledge Base/EDM - Mapping guidelines/`. For QLever engine internals and configuration, see `docs/qlever/docs/`.
 
 The data follows the **Europeana Data Model (EDM)**. Key entities:
 
@@ -183,7 +199,7 @@ The provider proxy (identified by `FILTER NOT EXISTS { ?proxy edm:europeanaProxy
 
 - All data-processing logic is in the Python CLI. No bash scripts for pipeline steps.
 - CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`/`query.py`/`compose.py`/`validate.py`/`throttle.py`, schema access in `schema_loader.py`, configuration in `constants.py`, resource detection in `resources.py`, live display in `dashboard.py`/`display.py`, state tracking in `state.py`, telemetry in `telemetry.py`, post-export analytics in `report.py`.
-- **Two-layer LinkML schema**: `schema/edm.yaml` (generated from official Europeana metis-schema XSD+OWL) is the full EDM data model with all ~240 properties across 12 classes. `schema/edm_parquet.yaml` imports `edm.yaml` and declares all 44 export tables as LinkML classes — each with `export_type`, `export_sets`, `sparql_pattern`, and per-column annotations. Runtime code reads the export schema via `schema_loader.py`. The base EDM schema serves as a "menu" for designing new exports; regenerate it with `uv run scripts/generate-edm-schema.py`.
+- **Two-layer LinkML schema**: `schema/edm.yaml` is the primary source of truth for the EDM data model — 12 classes, 242 fully-described attributes generated from the metis-schema XSD+OWL, XSD documentation annotations, and external vocabulary ontologies (DC, DCTERMS, SKOS, FOAF, etc.) cached in `ontologies/`. `schema/edm_parquet.yaml` imports `edm.yaml` and declares all 44 export tables as LinkML classes — each with `export_type`, `export_sets`, `sparql_pattern`, and per-column annotations. Runtime code reads the export schema via `schema_loader.py`. The base EDM schema serves as a "menu" for designing new exports; regenerate it with `uv run scripts/generate-edm-schema.py`.
 - **Fully declarative exports**: Every export (scan, summary, entity, composite, base_table) is a LinkML class in `edm_parquet.yaml` with annotations that drive SPARQL generation, DuckDB composition, PyArrow schemas, and export set membership. Adding a new export requires only editing the YAML — no Python code changes. `schema_loader.export_classes()` discovers all exports; `schema_loader.pyarrow_schema(name)` returns static PyArrow schemas; `query.py` generates SPARQL from `sparql_pattern` annotations; `export.py` builds export sets from `export_sets` annotations.
 - **No unit tests.** This project does not use unit tests. Do not create test files or run pytest.
 - Use `rich.console.Console` for all terminal output (not bare `print`).
