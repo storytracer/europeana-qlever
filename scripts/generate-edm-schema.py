@@ -350,18 +350,11 @@ def _parse_complex_type(ct: etree._Element) -> list[dict]:
 
 
 def _clean_xsd_doc(text: str) -> str:
-    """Clean up XSD documentation text: collapse whitespace, strip XML examples."""
+    """Clean up XSD documentation text: collapse whitespace, strip type suffixes."""
     import re
-    # Remove inline XML example tags like <title>...</title>
-    text = re.sub(r"<[^>]+>.*?</[^>]+>", "", text)
-    # Remove self-closing tags like <dqv:hasQualityAnnotation/>
-    text = re.sub(r"<[^>]+/>", "", text)
-    # Remove unclosed tags like <edm:intermediateProvider<
-    text = re.sub(r"<[^>]*<", "", text)
     # Collapse whitespace
     text = " ".join(text.split())
-    # Strip trailing "Example:" and "Type: String" etc.
-    text = re.sub(r"\s*Example:\s*$", "", text)
+    # Strip trailing "Type: String" etc. (not useful in LinkML context)
     text = re.sub(r"\s*Type:\s*\w+\s*$", "", text)
     return text.strip()
 
@@ -402,10 +395,15 @@ def parse_xsd_docs(xsd_dir: Path) -> dict[str, dict]:
             if ann is None:
                 continue
             doc = ann.find(f"{{{XS}}}documentation")
-            if doc is None or not doc.text:
+            if doc is None:
+                continue
+            # Use tostring(method="text") to capture full content including
+            # child elements (e.g. inline XML examples like <title>...</title>)
+            raw = etree.tostring(doc, method="text", encoding="unicode")
+            if not raw or not raw.strip():
                 continue
 
-            desc = _clean_xsd_doc(doc.text)
+            desc = _clean_xsd_doc(raw)
             if desc:
                 full_uri = f"{target_ns}{name}"
                 info[full_uri] = {"description": desc}

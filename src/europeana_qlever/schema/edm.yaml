@@ -57,7 +57,7 @@ classes:
         slot_uri: dc:contributor
         range: string
         multivalued: true
-        description: An entity responsible for making contributions to the resource.
+        description: 'An entity responsible for making contributions to the resource. Example: Maria Callas'
       dc_coverage:
         slot_uri: dc:coverage
         range: string
@@ -65,29 +65,35 @@ classes:
         description: >-
           The spatial or temporal topic of the resource, the spatial applicability of the resource, or
           the jurisdiction under which the resource is relevant. This may be a named place, a location,
-          a spatial coordinate, a period, date, date range or a named administrative entity.
+          a spatial coordinate, a period, date, date range or a named administrative entity. Example:
+          1995-1996 Boston, MA
       dc_creator:
         slot_uri: dc:creator
         range: string
         multivalued: true
         description: >-
           An entity primarily responsible for making the resource. This may be a person, organisation
-          or a service.
+          or a service. Example: Shakespeare, William
       dc_date:
         slot_uri: dc:date
         range: string
         multivalued: true
-        description: A point or period of time associated with an event in the lifecycle of the resource.
+        description: >-
+          A point or period of time associated with an event in the lifecycle of the resource. Example:
+          17th century (For example the date when an object was repaired)
       dc_description:
         slot_uri: dc:description
         range: string
         multivalued: true
-        description: An account of the resource.
+        description: >-
+          An account of the resource. Example: Illustrated guide to airport markings and lighting signals,
+          with particular reference to SMGCS (Surface Movement Guidance and Control System) for airports
+          with low visibility conditions.
       dc_format:
         slot_uri: dc:format
         range: string
         multivalued: true
-        description: The file format, physical medium or dimensions of the resource.
+        description: 'The file format, physical medium or dimensions of the resource. Example: image/jpeg'
       dc_identifier:
         slot_uri: dc:identifier
         range: string
@@ -97,50 +103,55 @@ classes:
         slot_uri: dc:language
         range: string
         multivalued: true
-        description: A language of the resource.
+        description: 'A language of the resource. Example: it'
       dc_publisher:
         slot_uri: dc:publisher
         range: string
         multivalued: true
         description: >-
           An entity responsible for making the resource available. Examples of a publisher include a person,
-          an organisation and a service.
+          an organisation and a service. Example: Oxford University Press
       dc_relation:
         slot_uri: dc:relation
         range: string
         multivalued: true
         description: >-
           A related resource. The recommended best practice is to identify the resource using a formal
-          identification scheme.
+          identification scheme. Example: maps.crace.1/33 (This is the shelf mark for a map held in the
+          British Library's Crace Collection).
       dc_rights:
         slot_uri: dc:rights
         range: string
         multivalued: true
-        description: Information about copyright of the original object.
+        description: >-
+          Information about copyright of the original object. Example: Creative Commons Attribution 3.0
+          License
       dc_source:
         slot_uri: dc:source
         range: string
         multivalued: true
-        description: A related resource from which the described resource is derived in whole or in part.
+        description: >-
+          A related resource from which the described resource is derived in whole or in part. Example:
+          Security Magazine pp 3-12 BAM portal
       dc_subject:
         slot_uri: dc:subject
         range: string
         multivalued: true
-        description: The topic of the resource.
+        description: 'The topic of the resource. Example: submarine'
       dc_title:
         slot_uri: dc:title
         range: string
         multivalued: true
         description: >-
           A name given to the resource. Typically, a Title will be a name by which the resource is formally
-          known.
+          known. Example: Taal vitaal
       dc_type:
         slot_uri: dc:type
         range: string
         multivalued: true
         description: >-
           The nature or genre of the resource. Type includes terms describing general categories, functions,
-          genres, or aggregation levels for content.
+          genres, or aggregation levels for content. Example: painting photograph coin
       dcterms_alternative:
         slot_uri: dcterms:alternative
         range: string
@@ -148,29 +159,34 @@ classes:
         description: >-
           An alternative name for the resource. This can be any form of the title that is used as a substitute
           or an alternative to the formal title of the resource including abbreviations or translations
-          of the title.
+          of the title. Example: Ocho semanas (When Eight weeks )
       dcterms_conforms_to:
         slot_uri: dcterms:conformsTo
         range: string
         multivalued: true
-        description: An established standard to which the described resource conforms.
+        description: >-
+          An established standard to which the described resource conforms. Example: W3C WCAG 2.0 (for
+          an HTML document that conforms to web content accessibility guidelines).
       dcterms_created:
         slot_uri: dcterms:created
         range: string
         multivalued: true
-        description: Date of creation of the resource
+        description: 'Date of creation of the resource Example: 1564 Iron Age'
       dcterms_extent:
         slot_uri: dcterms:extent
         range: string
         multivalued: true
-        description: The size or duration of the resource.
+        description: >-
+          The size or duration of the resource. Example: 13 cm (the width of an original object). 34 minutes
+          (the length of an audio file).
       dcterms_has_format:
         slot_uri: dcterms:hasFormat
         range: string
         multivalued: true
         description: >-
           A related resource that is substantially the same as the pre-existing described resource, but
-          in another format.
+          in another format. Example: http://upload.wikimedia.org/wikipedia/en/f/f3/Europeana _logo.png
+          where the resource being described is a tiff image file.
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
@@ -183,13 +199,16 @@ classes:
         multivalued: true
         description: >-
           A related resource that is a version, edition, or adaptation of the described resource. Changes
-          in version imply substantive changes in content rather than differences in format.
+          in version imply substantive changes in content rather than differences in format. Example:
+          The Sorcerer's Apprentice (translation by Edwin Zeydel, 1955) . In this example the 1955 translation
+          is a version of the described resource.
       dcterms_is_format_of:
         slot_uri: dcterms:isFormatOf
         range: string
         multivalued: true
-        description: A related resource that is substantially the same as the described resource, but
-          in another format.
+        description: >-
+          A related resource that is substantially the same as the described resource, but in another
+          format. Example: Europeana_logo.tiff where the resource being described is a png image file.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
@@ -199,36 +218,44 @@ classes:
         slot_uri: dcterms:isReferencedBy
         range: string
         multivalued: true
-        description: A related resource that references, cites, or otherwise points to the described resource.
+        description: >-
+          A related resource that references, cites, or otherwise points to the described resource. Example:
+          Till, Nicholas (1994) Mozart and the Enlightenment: Truth, Virtue and Beauty in Mozart's Operas,
+          W. W. Norton & Company
       dcterms_is_replaced_by:
         slot_uri: dcterms:isReplacedBy
         range: string
         multivalued: true
-        description: A related resource that supplants, displaces, or supersedes the described resource.
+        description: >-
+          A related resource that supplants, displaces, or supersedes the described resource. Example:
+          http://dublincore.org/about/2009/01/05/bylaws/ where the resource described is an older version
+          (http://dublincore.org/about/2006/01/01/bylaws/)
       dcterms_is_required_by:
         slot_uri: dcterms:isRequiredBy
         range: string
         multivalued: true
         description: >-
           A related resource that requires the described resource to support its function, delivery or
-          coherence.
+          coherence. Example: http://www.myslides.com/myslideshow.ppt where the image being described
+          is required for an online slideshow.
       dcterms_issued:
         slot_uri: dcterms:issued
         range: string
         multivalued: true
-        description: Date of formal issuance (e.g., publication) of the resource.
+        description: 'Date of formal issuance (e.g., publication) of the resource. Example: 1993'
       dcterms_is_version_of:
         slot_uri: dcterms:isVersionOf
         range: string
         multivalued: true
         description: >-
           A related resource of which the described resource is a version, edition, or adaptation. Changes
-          in version imply substantive changes in content rather than differences in format
+          in version imply substantive changes in content rather than differences in format Example: ESE
+          Version 0.5
       dcterms_medium:
         slot_uri: dcterms:medium
         range: string
         multivalued: true
-        description: The material or physical carrier of the resource.
+        description: 'The material or physical carrier of the resource. Example: metal'
       dcterms_provenance:
         slot_uri: dcterms:provenance
         range: string
@@ -236,41 +263,47 @@ classes:
         description: >-
           A statement of any changes in ownership and custody of the resource since its creation that
           are significant for its authenticity, integrity and interpretation. This may include a description
-          of any changes successive custodians made to the resource.
+          of any changes successive custodians made to the resource. Example: Donated by The National
+          Library in 1965
       dcterms_references:
         slot_uri: dcterms:references
         range: string
         multivalued: true
-        description: A related resource that is referenced, cited, or otherwise pointed to by the described
-          resource
+        description: >-
+          A related resource that is referenced, cited, or otherwise pointed to by the described resource
+          Example: Honderd jaar Noorse schilderkunst
       dcterms_replaces:
         slot_uri: dcterms:replaces
         range: string
         multivalued: true
-        description: A related resource that is supplanted, displaced, or superseded by the described
-          resource.
+        description: >-
+          A related resource that is supplanted, displaced, or superseded by the described resource. Example:
+          http://dublincore.org/about/2006/01/01/bylaws/ where the resource described is a newer version
+          (http://dublincore.org/about/2009/01/05/bylaws/)
       dcterms_requires:
         slot_uri: dcterms:requires
         range: string
         multivalued: true
         description: >-
           A related resource that is required by the described resource to support its function, delivery
-          or coherence.
+          or coherence. Example: http://ads.ahds.ac.uk/project/userinfo/css/oldbrowsers.css where the
+          resource described is a HTML file at http://ads.ahds.ac.uk/project/userinfo/digitalTextArchiving.html
       dcterms_spatial:
         slot_uri: dcterms:spatial
         range: string
         multivalued: true
-        description: Spatial characteristics of the resource.
+        description: 'Spatial characteristics of the resource. Example: Portugal'
       dcterms_table_of_contents:
         slot_uri: dcterms:tableOfContents
         range: string
         multivalued: true
-        description: A list of subunits of the resource.
+        description: 'A list of subunits of the resource. Example: Chapter 1. Introduction, Chapter 2.
+          History'
       dcterms_temporal:
         slot_uri: dcterms:temporal
         range: string
         multivalued: true
-        description: Temporal characteristics of the resource
+        description: 'Temporal characteristics of the resource Example: Roman'
       edm_current_location:
         slot_uri: edm:currentLocation
         range: string
@@ -389,7 +422,7 @@ classes:
         slot_uri: dc:contributor
         range: string
         multivalued: true
-        description: An entity responsible for making contributions to the resource.
+        description: 'An entity responsible for making contributions to the resource. Example: Maria Callas'
       dc_coverage:
         slot_uri: dc:coverage
         range: string
@@ -397,29 +430,35 @@ classes:
         description: >-
           The spatial or temporal topic of the resource, the spatial applicability of the resource, or
           the jurisdiction under which the resource is relevant. This may be a named place, a location,
-          a spatial coordinate, a period, date, date range or a named administrative entity.
+          a spatial coordinate, a period, date, date range or a named administrative entity. Example:
+          1995-1996 Boston, MA
       dc_creator:
         slot_uri: dc:creator
         range: string
         multivalued: true
         description: >-
           An entity primarily responsible for making the resource. This may be a person, organisation
-          or a service.
+          or a service. Example: Shakespeare, William
       dc_date:
         slot_uri: dc:date
         range: string
         multivalued: true
-        description: A point or period of time associated with an event in the lifecycle of the resource.
+        description: >-
+          A point or period of time associated with an event in the lifecycle of the resource. Example:
+          17th century (For example the date when an object was repaired)
       dc_description:
         slot_uri: dc:description
         range: string
         multivalued: true
-        description: An account of the resource.
+        description: >-
+          An account of the resource. Example: Illustrated guide to airport markings and lighting signals,
+          with particular reference to SMGCS (Surface Movement Guidance and Control System) for airports
+          with low visibility conditions.
       dc_format:
         slot_uri: dc:format
         range: string
         multivalued: true
-        description: The file format, physical medium or dimensions of the resource.
+        description: 'The file format, physical medium or dimensions of the resource. Example: image/jpeg'
       dc_identifier:
         slot_uri: dc:identifier
         range: string
@@ -429,50 +468,55 @@ classes:
         slot_uri: dc:language
         range: string
         multivalued: true
-        description: A language of the resource.
+        description: 'A language of the resource. Example: it'
       dc_publisher:
         slot_uri: dc:publisher
         range: string
         multivalued: true
         description: >-
           An entity responsible for making the resource available. Examples of a publisher include a person,
-          an organisation and a service.
+          an organisation and a service. Example: Oxford University Press
       dc_relation:
         slot_uri: dc:relation
         range: string
         multivalued: true
         description: >-
           A related resource. The recommended best practice is to identify the resource using a formal
-          identification scheme.
+          identification scheme. Example: maps.crace.1/33 (This is the shelf mark for a map held in the
+          British Library's Crace Collection).
       dc_rights:
         slot_uri: dc:rights
         range: string
         multivalued: true
-        description: Information about copyright of the original object.
+        description: >-
+          Information about copyright of the original object. Example: Creative Commons Attribution 3.0
+          License
       dc_source:
         slot_uri: dc:source
         range: string
         multivalued: true
-        description: A related resource from which the described resource is derived in whole or in part.
+        description: >-
+          A related resource from which the described resource is derived in whole or in part. Example:
+          Security Magazine pp 3-12 BAM portal
       dc_subject:
         slot_uri: dc:subject
         range: string
         multivalued: true
-        description: The topic of the resource.
+        description: 'The topic of the resource. Example: submarine'
       dc_title:
         slot_uri: dc:title
         range: string
         multivalued: true
         description: >-
           A name given to the resource. Typically, a Title will be a name by which the resource is formally
-          known.
+          known. Example: Taal vitaal
       dc_type:
         slot_uri: dc:type
         range: string
         multivalued: true
         description: >-
           The nature or genre of the resource. Type includes terms describing general categories, functions,
-          genres, or aggregation levels for content.
+          genres, or aggregation levels for content. Example: painting photograph coin
       dcterms_alternative:
         slot_uri: dcterms:alternative
         range: string
@@ -480,29 +524,34 @@ classes:
         description: >-
           An alternative name for the resource. This can be any form of the title that is used as a substitute
           or an alternative to the formal title of the resource including abbreviations or translations
-          of the title.
+          of the title. Example: Ocho semanas (When Eight weeks )
       dcterms_conforms_to:
         slot_uri: dcterms:conformsTo
         range: string
         multivalued: true
-        description: An established standard to which the described resource conforms.
+        description: >-
+          An established standard to which the described resource conforms. Example: W3C WCAG 2.0 (for
+          an HTML document that conforms to web content accessibility guidelines).
       dcterms_created:
         slot_uri: dcterms:created
         range: string
         multivalued: true
-        description: Date of creation of the resource
+        description: 'Date of creation of the resource Example: 1564 Iron Age'
       dcterms_extent:
         slot_uri: dcterms:extent
         range: string
         multivalued: true
-        description: The size or duration of the resource.
+        description: >-
+          The size or duration of the resource. Example: 13 cm (the width of an original object). 34 minutes
+          (the length of an audio file).
       dcterms_has_format:
         slot_uri: dcterms:hasFormat
         range: string
         multivalued: true
         description: >-
           A related resource that is substantially the same as the pre-existing described resource, but
-          in another format.
+          in another format. Example: http://upload.wikimedia.org/wikipedia/en/f/f3/Europeana _logo.png
+          where the resource being described is a tiff image file.
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
@@ -515,13 +564,16 @@ classes:
         multivalued: true
         description: >-
           A related resource that is a version, edition, or adaptation of the described resource. Changes
-          in version imply substantive changes in content rather than differences in format.
+          in version imply substantive changes in content rather than differences in format. Example:
+          The Sorcerer's Apprentice (translation by Edwin Zeydel, 1955) . In this example the 1955 translation
+          is a version of the described resource.
       dcterms_is_format_of:
         slot_uri: dcterms:isFormatOf
         range: string
         multivalued: true
-        description: A related resource that is substantially the same as the described resource, but
-          in another format.
+        description: >-
+          A related resource that is substantially the same as the described resource, but in another
+          format. Example: Europeana_logo.tiff where the resource being described is a png image file.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
@@ -531,36 +583,44 @@ classes:
         slot_uri: dcterms:isReferencedBy
         range: string
         multivalued: true
-        description: A related resource that references, cites, or otherwise points to the described resource.
+        description: >-
+          A related resource that references, cites, or otherwise points to the described resource. Example:
+          Till, Nicholas (1994) Mozart and the Enlightenment: Truth, Virtue and Beauty in Mozart's Operas,
+          W. W. Norton & Company
       dcterms_is_replaced_by:
         slot_uri: dcterms:isReplacedBy
         range: string
         multivalued: true
-        description: A related resource that supplants, displaces, or supersedes the described resource.
+        description: >-
+          A related resource that supplants, displaces, or supersedes the described resource. Example:
+          http://dublincore.org/about/2009/01/05/bylaws/ where the resource described is an older version
+          (http://dublincore.org/about/2006/01/01/bylaws/)
       dcterms_is_required_by:
         slot_uri: dcterms:isRequiredBy
         range: string
         multivalued: true
         description: >-
           A related resource that requires the described resource to support its function, delivery or
-          coherence.
+          coherence. Example: http://www.myslides.com/myslideshow.ppt where the image being described
+          is required for an online slideshow.
       dcterms_issued:
         slot_uri: dcterms:issued
         range: string
         multivalued: true
-        description: Date of formal issuance (e.g., publication) of the resource.
+        description: 'Date of formal issuance (e.g., publication) of the resource. Example: 1993'
       dcterms_is_version_of:
         slot_uri: dcterms:isVersionOf
         range: string
         multivalued: true
         description: >-
           A related resource of which the described resource is a version, edition, or adaptation. Changes
-          in version imply substantive changes in content rather than differences in format
+          in version imply substantive changes in content rather than differences in format Example: ESE
+          Version 0.5
       dcterms_medium:
         slot_uri: dcterms:medium
         range: string
         multivalued: true
-        description: The material or physical carrier of the resource.
+        description: 'The material or physical carrier of the resource. Example: metal'
       dcterms_provenance:
         slot_uri: dcterms:provenance
         range: string
@@ -568,41 +628,47 @@ classes:
         description: >-
           A statement of any changes in ownership and custody of the resource since its creation that
           are significant for its authenticity, integrity and interpretation. This may include a description
-          of any changes successive custodians made to the resource.
+          of any changes successive custodians made to the resource. Example: Donated by The National
+          Library in 1965
       dcterms_references:
         slot_uri: dcterms:references
         range: string
         multivalued: true
-        description: A related resource that is referenced, cited, or otherwise pointed to by the described
-          resource
+        description: >-
+          A related resource that is referenced, cited, or otherwise pointed to by the described resource
+          Example: Honderd jaar Noorse schilderkunst
       dcterms_replaces:
         slot_uri: dcterms:replaces
         range: string
         multivalued: true
-        description: A related resource that is supplanted, displaced, or superseded by the described
-          resource.
+        description: >-
+          A related resource that is supplanted, displaced, or superseded by the described resource. Example:
+          http://dublincore.org/about/2006/01/01/bylaws/ where the resource described is a newer version
+          (http://dublincore.org/about/2009/01/05/bylaws/)
       dcterms_requires:
         slot_uri: dcterms:requires
         range: string
         multivalued: true
         description: >-
           A related resource that is required by the described resource to support its function, delivery
-          or coherence.
+          or coherence. Example: http://ads.ahds.ac.uk/project/userinfo/css/oldbrowsers.css where the
+          resource described is a HTML file at http://ads.ahds.ac.uk/project/userinfo/digitalTextArchiving.html
       dcterms_spatial:
         slot_uri: dcterms:spatial
         range: string
         multivalued: true
-        description: Spatial characteristics of the resource.
+        description: 'Spatial characteristics of the resource. Example: Portugal'
       dcterms_table_of_contents:
         slot_uri: dcterms:tableOfContents
         range: string
         multivalued: true
-        description: A list of subunits of the resource.
+        description: 'A list of subunits of the resource. Example: Chapter 1. Introduction, Chapter 2.
+          History'
       dcterms_temporal:
         slot_uri: dcterms:temporal
         range: string
         multivalued: true
-        description: Temporal characteristics of the resource
+        description: 'Temporal characteristics of the resource Example: Roman'
       edm_current_location:
         slot_uri: edm:currentLocation
         range: string
@@ -808,7 +874,9 @@ classes:
         slot_uri: dc:rights
         range: string
         multivalued: true
-        description: Information about copyright of the original object.
+        description: >-
+          Information about copyright of the original object. Example: Creative Commons Attribution 3.0
+          License
       edm_rights:
         slot_uri: edm:rights
         range: uri
@@ -831,16 +899,17 @@ classes:
           The name or identifier of the intermediate organization that selects, collates, or curates data
           from a Data Provider that is then aggregated by a Provider from which Europeana harvests. The
           Intermedatiate Provider must be distinct from both the Data Provider and the Provider in the
-          data supply chain.
+          data supply chain. Example: <edm:intermediateProvider< Erfgoedplus.be</edm:intermediateProvider<
+          <edm:intermediateProvider rdf:resource=”www.erfgoedplus.be/”/<
       dqv_has_quality_annotation:
         slot_uri: dqv:hasQualityAnnotation
         range: string
         multivalued: true
-        description: The identifier of the Quality annotation.
+        description: 'The identifier of the Quality annotation. Example: <dqv:hasQualityAnnotation/>'
       dcterms_created:
         slot_uri: dcterms:created
         range: string
-        description: Date of creation of the resource
+        description: 'Date of creation of the resource Example: 1564 Iron Age'
       dcterms_modified:
         slot_uri: dcterms:modified
         range: string
@@ -863,61 +932,72 @@ classes:
         multivalued: true
         description: >-
           An entity primarily responsible for making the resource. This may be a person, organisation
-          or a service.
+          or a service. Example: Shakespeare, William
       dc_description:
         slot_uri: dc:description
         range: string
         multivalued: true
-        description: An account of the resource.
+        description: >-
+          An account of the resource. Example: Illustrated guide to airport markings and lighting signals,
+          with particular reference to SMGCS (Surface Movement Guidance and Control System) for airports
+          with low visibility conditions.
       dc_format:
         slot_uri: dc:format
         range: string
         multivalued: true
-        description: The file format, physical medium or dimensions of the resource.
+        description: 'The file format, physical medium or dimensions of the resource. Example: image/jpeg'
       dc_rights:
         slot_uri: dc:rights
         range: string
         multivalued: true
-        description: Information about copyright of the original object.
+        description: >-
+          Information about copyright of the original object. Example: Creative Commons Attribution 3.0
+          License
       dc_source:
         slot_uri: dc:source
         range: string
         multivalued: true
-        description: A related resource from which the described resource is derived in whole or in part.
+        description: >-
+          A related resource from which the described resource is derived in whole or in part. Example:
+          Security Magazine pp 3-12 BAM portal
       dc_type:
         slot_uri: dc:type
         range: string
         multivalued: true
         description: >-
           The nature or genre of the resource. Type includes terms describing general categories, functions,
-          genres, or aggregation levels for content.
+          genres, or aggregation levels for content. Example: painting photograph coin
       dc_title:
         slot_uri: dc:title
         range: string
         multivalued: true
         description: >-
           A name given to the resource. Typically, a Title will be a name by which the resource is formally
-          known.
+          known. Example: Taal vitaal
       dc_language:
         slot_uri: dc:language
         range: string
         multivalued: true
-        description: A language of the resource.
+        description: 'A language of the resource. Example: it'
       dcterms_conforms_to:
         slot_uri: dcterms:conformsTo
         range: string
         multivalued: true
-        description: An established standard to which the described resource conforms.
+        description: >-
+          An established standard to which the described resource conforms. Example: W3C WCAG 2.0 (for
+          an HTML document that conforms to web content accessibility guidelines).
       dcterms_created:
         slot_uri: dcterms:created
         range: string
         multivalued: true
-        description: Date of creation of the resource
+        description: 'Date of creation of the resource Example: 1564 Iron Age'
       dcterms_extent:
         slot_uri: dcterms:extent
         range: string
         multivalued: true
-        description: The size or duration of the resource.
+        description: >-
+          The size or duration of the resource. Example: 13 cm (the width of an original object). 34 minutes
+          (the length of an audio file).
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
@@ -928,8 +1008,9 @@ classes:
         slot_uri: dcterms:isFormatOf
         range: string
         multivalued: true
-        description: A related resource that is substantially the same as the described resource, but
-          in another format.
+        description: >-
+          A related resource that is substantially the same as the described resource, but in another
+          format. Example: Europeana_logo.tiff where the resource being described is a png image file.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
@@ -939,12 +1020,12 @@ classes:
         slot_uri: dcterms:issued
         range: string
         multivalued: true
-        description: Date of formal issuance (e.g., publication) of the resource.
+        description: 'Date of formal issuance (e.g., publication) of the resource. Example: 1993'
       dcterms_temporal:
         slot_uri: dcterms:temporal
         range: string
         multivalued: true
-        description: Temporal characteristics of the resource
+        description: 'Temporal characteristics of the resource Example: Roman'
       edm_is_next_in_sequence:
         slot_uri: edm:isNextInSequence
         range: uri
@@ -974,60 +1055,64 @@ classes:
         range: string
         description: >-
           The name of a device or computer program capable of encoding or decoding a digital data stream
-          or signal (i.e. coder-decoder).
+          or signal (i.e. coder-decoder). Example: mp4v
       ebucore_has_mime_type:
         slot_uri: ebucore:hasMimeType
         range: string
         description: >-
           The main MIME types as defined by IANA: e.g. audio, video, text, application, or a container
-          MIME type.
+          MIME type. Example: video/mp4
       ebucore_file_byte_size:
         slot_uri: ebucore:fileByteSize
         range: integer
-        description: The size of a Media Resource expressed in bytes.
+        description: 'The size of a Media Resource expressed in bytes. Example: 39508'
       ebucore_duration:
         slot_uri: ebucore:duration
         range: string
-        description: The duration of a track or a signal expressed in ms.
+        description: 'The duration of a track or a signal expressed in ms. Example: 270000'
       ebucore_width:
         slot_uri: ebucore:width
         range: integer
-        description: The width of e.g. a video frame typically expressed as a number of pixels.
+        description: 'The width of e.g. a video frame typically expressed as a number of pixels. Example:
+          1024'
       ebucore_height:
         slot_uri: ebucore:height
         range: integer
-        description: The height of e.g. a video frame typically expressed as a number of pixels.
+        description: 'The height of e.g. a video frame typically expressed as a number of pixels. Example:
+          768'
       edm_spatial_resolution:
         slot_uri: edm:spatialResolution
         range: integer
-        description: The spatial resolution of a media resource expressed in DPIs.
+        description: 'The spatial resolution of a media resource expressed in DPIs. Example: 300'
       ebucore_sample_size:
         slot_uri: ebucore:sampleSize
         range: integer
-        description: The size of an audio sample in bits. Also called bit depth.
+        description: 'The size of an audio sample in bits. Also called bit depth. Example: 16'
       ebucore_sample_rate:
         slot_uri: ebucore:sampleRate
         range: integer
-        description: The frequency at which an audio is sampled per second. Also called sampling rate.
+        description: 'The frequency at which an audio is sampled per second. Also called sampling rate.
+          Example: 44100'
       ebucore_bit_rate:
         slot_uri: ebucore:bitRate
         range: integer
-        description: To provide the bitrate at which the Media Resource can be played in bits per second.
+        description: 'To provide the bitrate at which the Media Resource can be played in bits per second.
+          Example: 128000'
       ebucore_frame_rate:
         slot_uri: ebucore:frameRate
         range: float
-        description: The frame rate of the video signal in frames per second.
+        description: 'The frame rate of the video signal in frames per second. Example: 300'
       edm_has_color_space:
         slot_uri: edm:hasColorSpace
         range: string
-        description: The color space of an image resource i.e. 'grayscale' or 'sRGB'.
+        description: 'The color space of an image resource i.e. ''grayscale'' or ''sRGB''. Example: grayscale'
       edm_component_color:
         slot_uri: edm:componentColor
         range: string
         multivalued: true
         description: >-
           A significant color present in an image. The colors must be taken from the CSS3 standard color
-          palette and are expressed as a hexadecimal binary value.
+          palette and are expressed as a hexadecimal binary value. Example: <spatialResolution>FF0000</spatialResolution>
       edm_point_count:
         slot_uri: edm:pointCount
         range: integer
@@ -1048,16 +1133,19 @@ classes:
       ebucore_orientation:
         slot_uri: ebucore:orientation
         range: string
-        description: The orientation of a document or an image.
+        description: 'The orientation of a document or an image. Example: landscape'
       ebucore_audio_channel_number:
         slot_uri: ebucore:audioChannelNumber
         range: integer
-        description: The total number of audio channels contained in the Media Resource.
+        description: 'The total number of audio channels contained in the Media Resource. Example: 2'
       dcterms_is_referenced_by:
         slot_uri: dcterms:isReferencedBy
         range: string
         multivalued: true
-        description: A related resource that references, cites, or otherwise points to the described resource.
+        description: >-
+          A related resource that references, cites, or otherwise points to the described resource. Example:
+          Till, Nicholas (1994) Mozart and the Enlightenment: Truth, Virtue and Beauty in Mozart's Operas,
+          W. W. Norton & Company
       edm_preview:
         slot_uri: edm:preview
         range: uri
@@ -1121,7 +1209,9 @@ classes:
         slot_uri: dc:date
         range: string
         multivalued: true
-        description: A point or period of time associated with an event in the lifecycle of the resource.
+        description: >-
+          A point or period of time associated with an event in the lifecycle of the resource. Example:
+          17th century (For example the date when an object was repaired)
       dc_identifier:
         slot_uri: dc:identifier
         range: string
@@ -1446,7 +1536,9 @@ classes:
         range: string
         multivalued: true
         required: true
-        description: An established standard to which the described resource conforms.
+        description: >-
+          An established standard to which the described resource conforms. Example: W3C WCAG 2.0 (for
+          an HTML document that conforms to web content accessibility guidelines).
       doap_implements:
         slot_uri: doap:implements
         range: uri
@@ -1454,7 +1546,7 @@ classes:
         description: >-
           A specification that a project implements. Could be a standard, API or legally defined level
           of conformance. In IIIF doap:implements refers to the the general protocol without specific
-          version.
+          version. <doap:implements rdf:resource=”http://iiif.io/api/image” />
   License:
     class_uri: cc:License
     description: >-
@@ -1496,7 +1588,7 @@ classes:
       dcterms_created:
         slot_uri: dcterms:created
         range: string
-        description: Date of creation of the resource
+        description: 'Date of creation of the resource Example: 1564 Iron Age'
       dcterms_creator:
         slot_uri: dcterms:creator
         range: string
