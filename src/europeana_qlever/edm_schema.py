@@ -425,6 +425,81 @@ def authority_sql(value_column: str = "value") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Filterable fields
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FilterFieldInfo:
+    """Metadata for a single filterable Item field.
+
+    Filter style is inferred from the schema field's range and
+    multivalued flag:
+
+    - ``in_list`` — scalar string/enum/uri: ``col IN (...)``
+    - ``eq`` — single-value enum (ReuseLevel): ``col = '...'``
+    - ``bool`` — boolean: ``col = true``
+    - ``range`` — integer: ``col >= N`` / ``col <= N``
+    - ``list_contains`` — LIST<VARCHAR>: ``list_has_any(col, [...])``
+    - ``list_struct`` — LIST<STRUCT>: label-based search inside structs
+    """
+
+    name: str
+    column: str
+    filter_style: str
+    data_type: str
+    multivalued: bool
+    required: bool
+    struct_field: str | None = None
+
+
+# Struct types whose inner ``label`` / ``name`` field is the searchable key.
+_STRUCT_LABEL_FIELD: dict[str, str] = {
+    "LabeledEntity": "label",
+    "NamedEntity": "name",
+    "LangValue": "value",
+}
+
+
+@functools.cache
+def filterable_fields() -> dict[str, FilterFieldInfo]:
+    """Return all non-identifier Item fields with inferred filter styles.
+
+    Every Item column is filterable.  The filter style is derived from
+    the field's range and multivalued flag — no schema annotations needed.
+    """
+    result: dict[str, FilterFieldInfo] = {}
+    for name, attr in item_fields().items():
+        if attr.identifier:
+            continue
+
+        if attr.multivalued:
+            if attr.range in _STRUCT_LABEL_FIELD:
+                style = "list_struct"
+            else:
+                style = "list_contains"
+        elif attr.range == "boolean":
+            style = "bool"
+        elif attr.range == "integer":
+            style = "range"
+        elif attr.range == "ReuseLevel":
+            style = "eq"
+        else:
+            style = "in_list"
+
+        result[name] = FilterFieldInfo(
+            name=name,
+            column=name,
+            filter_style=style,
+            data_type=attr.range or "string",
+            multivalued=attr.multivalued,
+            required=attr.required,
+            struct_field=_STRUCT_LABEL_FIELD.get(attr.range or ""),
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Parquet validation
 # ---------------------------------------------------------------------------
 

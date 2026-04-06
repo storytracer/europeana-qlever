@@ -1456,18 +1456,9 @@ def pipeline(
 # report
 # ---------------------------------------------------------------------------
 
-@cli.group(invoke_without_command=True)
-@click.option("--type", "types", multiple=True,
-              help="Filter by edm:type (repeatable).")
-@click.option("--reuse-level",
-              type=click.Choice(["open", "restricted", "prohibited"]),
-              help="Filter by reuse level.")
-@click.option("--country", "countries", multiple=True,
-              help="Filter by country (repeatable).")
-@click.option("--aggregator", "aggregators", multiple=True,
-              help="Filter by aggregator / edm:provider (repeatable).")
-@click.option("--has-iiif", is_flag=True, default=False,
-              help="Only include items with a IIIF service.")
+@cli.command()
+@click.option("--filters", "-f", "filter_string", default=None,
+              help='Filter expression, e.g. "country=NL,FR type=IMAGE reuse_level=open has_iiif completeness>=5"')
 @click.option("--probe-urls", is_flag=True, default=False,
               help="Sample is_shown_by URLs and test HTTP liveness.")
 @click.option("--sample-size", default=1000, show_default=True,
@@ -1477,11 +1468,7 @@ def pipeline(
 @click.pass_context
 def report(
     ctx: click.Context,
-    types: tuple[str, ...],
-    reuse_level: str | None,
-    countries: tuple[str, ...],
-    aggregators: tuple[str, ...],
-    has_iiif: bool,
+    filter_string: str | None,
     probe_urls: bool,
     sample_size: int,
     duckdb_memory: str,
@@ -1491,61 +1478,24 @@ def report(
     Reads items_resolved.parquet and entity Parquets from the exports
     directory. Produces JSON and Markdown reports in <work-dir>/reports/.
 
-    When invoked without a subcommand, runs the DuckDB-based report
-    (equivalent to ``report duckdb``).
+    Filter on any Item schema field with --filters/-f:
+
+    \b
+        report -f "country=NL,FR type=IMAGE"
+        report -f "reuse_level=open has_iiif completeness>=5"
+        report -f "subjects=History languages=en,fr width>=100"
     """
-    # Store filter params in context for subcommands
-    ctx.ensure_object(dict)
-    ctx.obj["report_types"] = types
-    ctx.obj["report_reuse_level"] = reuse_level
-    ctx.obj["report_countries"] = countries
-    ctx.obj["report_aggregators"] = aggregators
-    ctx.obj["report_has_iiif"] = has_iiif
-    ctx.obj["report_probe_urls"] = probe_urls
-    ctx.obj["report_sample_size"] = sample_size
-    ctx.obj["report_duckdb_memory"] = duckdb_memory
-
-    # If no subcommand, run duckdb report (backward compatible)
-    if ctx.invoked_subcommand is None:
-        ctx.invoke(report_duckdb)
-
-
-@report.command("duckdb")
-@click.pass_context
-def report_duckdb(ctx: click.Context):
-    """DuckDB-based report over exported Parquet files.
-
-    Runs entirely offline — no QLever server needed. Reads
-    items_resolved.parquet and entity Parquets to produce JSON and
-    Markdown reports with volume, rights, language, completeness,
-    entity enrichment, and content accessibility sections.
-    """
-    from .report import ReportFilter, run_report
+    from .report import ReportFilters, run_report
     from .telemetry import command_span
 
     telemetry = ctx.obj["telemetry"]
     exports_dir: Path = ctx.obj["exports_dir"]
     budget = ctx.obj["budget"]
 
-    types = ctx.obj.get("report_types", ())
-    reuse_level = ctx.obj.get("report_reuse_level")
-    countries = ctx.obj.get("report_countries", ())
-    aggregators = ctx.obj.get("report_aggregators", ())
-    has_iiif = ctx.obj.get("report_has_iiif", False)
-    probe_urls = ctx.obj.get("report_probe_urls", False)
-    sample_size = ctx.obj.get("report_sample_size", 1000)
-    duckdb_memory = ctx.obj.get("report_duckdb_memory", "auto")
-
     if duckdb_memory == "auto":
         duckdb_memory = budget.duckdb_memory()
 
-    filters = ReportFilter(
-        types=list(types) if types else None,
-        reuse_level=reuse_level,
-        countries=list(countries) if countries else None,
-        aggregators=list(aggregators) if aggregators else None,
-        has_iiif=True if has_iiif else None,
-    )
+    filters = ReportFilters.parse(filter_string) if filter_string else ReportFilters()
 
     with command_span(telemetry, {
         "filter": filters.description(),
@@ -1562,32 +1512,3 @@ def report_duckdb(ctx: click.Context):
         counters["sections"] = result.sections_computed
         counters["json_path"] = str(result.json_path)
         counters["markdown_path"] = str(result.markdown_path)
-
-
-@report.command("sparql")
-@click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
-              show_default=True, help="QLever HTTP endpoint.")
-@click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
-              help="Per-query timeout in seconds.")
-@click.pass_context
-def report_sparql(ctx: click.Context, qlever_url: str, timeout: int):
-    """SPARQL-based report against a live QLever server.
-
-    Runs summary queries (items_by_type, items_by_country, etc.) against
-    the QLever SPARQL endpoint and produces a lightweight report without
-    needing exported Parquet files.
-    """
-    from .report_sparql import run_sparql_report
-    from .telemetry import command_span
-
-    telemetry = ctx.obj["telemetry"]
-
-    with command_span(telemetry, {
-        "qlever_url": qlever_url,
-    }) as counters:
-        result = run_sparql_report(
-            qlever_url=qlever_url,
-            timeout=timeout,
-            output_dir=ctx.obj["work_dir"] / "reports",
-        )
-        counters["sections"] = result.sections_computed
