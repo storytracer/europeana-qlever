@@ -1,53 +1,33 @@
 [
-  "Europeana does NOT store descriptive metadata directly on the item. It flows through proxies and aggregations.",
-
-  "Each item has TWO proxies. The provider proxy has original metadata. The Europeana proxy has normalised fields (edm:type, edm:year).",
-
-  "Provider proxy pattern (for dc:title, dc:creator, dc:subject, etc.): ?proxy ore:proxyFor ?item . FILTER NOT EXISTS { ?proxy edm:europeanaProxy \"true\" . } ?proxy dc:title ?title .",
-
-  "Europeana proxy pattern (for edm:type, edm:year): ?eProxy ore:proxyFor ?item . ?eProxy edm:europeanaProxy \"true\" . ?eProxy edm:type ?type .",
-
-  "Aggregation pattern (for edm:rights, edm:dataProvider, edm:provider, edm:isShownAt, edm:isShownBy): ?agg edm:aggregatedCHO ?item . ?agg edm:rights ?rights .",
-
-  "Europeana aggregation pattern (for edm:country, edm:completeness): ?eAgg edm:aggregatedCHO ?item . ?eAgg a edm:EuropeanaAggregation . ?eAgg edm:country ?country .",
-
-  "Properties on the provider proxy (?proxy): dc:title, dc:description, dc:creator, dc:contributor, dc:publisher, dc:subject, dc:date, dc:language, dc:identifier, dc:format, dc:rights, dc:source, dc:type, dcterms:spatial, dcterms:temporal, dcterms:alternative, dcterms:isPartOf, dcterms:hasPart, dcterms:medium, dcterms:extent, dcterms:provenance.",
-
-  "Properties on the Europeana proxy (?eProxy): edm:type, edm:year, AND enriched entity URIs for dc:creator, dc:contributor, dc:subject, dcterms:spatial etc. When searching by entity URI (from search_entity), query the Europeana proxy, not the provider proxy.",
-
-  "Properties on the aggregation (?agg): edm:rights, edm:dataProvider, edm:provider, edm:isShownAt, edm:isShownBy, edm:object, edm:hasView.",
-
-  "Properties on the Europeana aggregation (?eAgg): edm:country, edm:completeness, edm:preview, edm:landingPage, edm:datasetName, edm:language.",
-
-  "IMPORTANT: dc:type and edm:type are different properties. dc:type is on the PROVIDER proxy — free-text values with millions of distinct entries (e.g. 'Preserved Specimen', 'photograph', 'newspaper'). edm:type is on the EUROPEANA proxy — exactly 5 normalised string literals: \"IMAGE\", \"TEXT\", \"SOUND\", \"VIDEO\", \"3D\". Use edm:type for broad media type filtering, dc:type for specific content types.",
-
+  "Europeana uses the EDM (Europeana Data Model). Metadata is NOT stored directly on the item (edm:ProvidedCHO). It flows through proxies (ore:Proxy) and aggregations (ore:Aggregation).",
+  "Each item has TWO proxies: (1) the PROVIDER PROXY with original metadata from the data provider, (2) the EUROPEANA PROXY with normalised/enriched metadata from Europeana. The Europeana enrichment pipeline also adds entity URIs (for dc:creator, dc:subject, dc:contributor, dcterms:spatial) to the Europeana proxy.",
+  "PROVIDER PROXY pattern (for original descriptive metadata): ?proxy ore:proxyFor ?item .\n  FILTER NOT EXISTS { ?proxy edm:europeanaProxy \"true\" . }",
+  "EUROPEANA PROXY pattern (for edm:type, edm:year, enriched entity URIs): ?eProxy ore:proxyFor ?item .\n  ?eProxy edm:europeanaProxy \"true\" .",
+  "AGGREGATION pattern (for edm:rights, edm:dataProvider, edm:provider, URLs): ?agg edm:aggregatedCHO ?item .",
+  "EUROPEANA AGGREGATION pattern (for edm:country, edm:completeness, edm:datasetName): ?eAgg edm:aggregatedCHO ?item .\n  ?eAgg a edm:EuropeanaAggregation .",
+  "WEB RESOURCE pattern (for MIME type, dimensions, file size): ?agg edm:aggregatedCHO ?item . ?agg edm:hasView ?wr .",
+  "Properties on the PROVIDER PROXY (?proxy): dc:contributor (string) [multivalued], dc:coverage (string) [multivalued], dc:creator (string) [multivalued], dc:date (string) [multivalued], dc:description (string) [multivalued], dc:format (string) [multivalued], dc:identifier (string) [multivalued], dc:language (string) [multivalued], dc:publisher (string) [multivalued], dc:relation (string) [multivalued], dc:rights (string) [multivalued], dc:source (string) [multivalued], dc:subject (string) [multivalued], dc:title (string) [multivalued], dc:type (string) [multivalued], dcterms:alternative (string) [multivalued], dcterms:conformsTo (string) [multivalued], dcterms:created (string) [multivalued], dcterms:extent (string) [multivalued], dcterms:hasFormat (string) [multivalued], dcterms:hasPart (string) [multivalued], dcterms:hasVersion (string) [multivalued], dcterms:isFormatOf (string) [multivalued], dcterms:isPartOf (string) [multivalued], dcterms:isReferencedBy (string) [multivalued], dcterms:isReplacedBy (string) [multivalued], dcterms:isRequiredBy (string) [multivalued], dcterms:isVersionOf (string) [multivalued], dcterms:issued (string) [multivalued], dcterms:medium (string) [multivalued], dcterms:provenance (string) [multivalued], dcterms:references (string) [multivalued], dcterms:replaces (string) [multivalued], dcterms:requires (string) [multivalued], dcterms:spatial (string) [multivalued], dcterms:tableOfContents (string) [multivalued], dcterms:temporal (string) [multivalued], edm:currentLocation (string), edm:hasMet (URI) [multivalued], edm:hasType (string) [multivalued], edm:incorporates (URI) [multivalued], edm:isDerivativeOf (URI) [multivalued], edm:isNextInSequence (URI) [multivalued], edm:isRelatedTo (string) [multivalued], edm:isRepresentationOf (URI), edm:isSimilarTo (URI) [multivalued], edm:isSuccessorOf (URI) [multivalued], edm:pid (string) [multivalued], edm:realizes (URI) [multivalued], edm:userTag (string) [multivalued], ore:lineage (URI) [multivalued], ore:proxyFor (URI), ore:proxyIn (URI) [multivalued], owl:sameAs (URI) [multivalued].",
+  "Properties on the EUROPEANA PROXY (?eProxy): edm:europeanaProxy (boolean), edm:type (EdmType), edm:year (string) [multivalued]. PLUS enriched entity URIs for: dc:contributor, dc:creator, dc:subject, dcterms:spatial (use Europeana proxy when searching by entity URI from search_entity).",
+  "Properties on the AGGREGATION (?agg): dc:rights (string) [multivalued], dcterms:created (string), dcterms:modified (string), dqv:hasQualityAnnotation (string) [multivalued], edm:aggregatedCHO (URI), edm:dataProvider (string), edm:hasView (URI) [multivalued], edm:intermediateProvider (string) [multivalued], edm:isShownAt (URI), edm:isShownBy (URI), edm:object (URI), edm:provider (string), edm:rights (URI), edm:ugc (string).",
+  "Properties on the EUROPEANA AGGREGATION (?eAgg): edm:country (string), edm:completeness (string), edm:preview (URI), edm:landingPage (URI), edm:datasetName (string), edm:language (string).",
+  "Properties on WEB RESOURCES (?wr): dc:creator (string) [multivalued], dc:description (string) [multivalued], dc:format (string) [multivalued], dc:language (string) [multivalued], dc:rights (string) [multivalued], dc:source (string) [multivalued], dc:title (string) [multivalued], dc:type (string) [multivalued], dcterms:conformsTo (string) [multivalued], dcterms:created (string) [multivalued], dcterms:extent (string) [multivalued], dcterms:hasPart (string) [multivalued], dcterms:isFormatOf (string) [multivalued], dcterms:isPartOf (string) [multivalued], dcterms:isReferencedBy (string) [multivalued], dcterms:issued (string) [multivalued], dcterms:temporal (string) [multivalued], ebucore:audioChannelNumber (integer), ebucore:bitRate (integer), ebucore:duration (string), ebucore:fileByteSize (integer), ebucore:frameRate (float), ebucore:hasMimeType (string), ebucore:height (integer), ebucore:orientation (string), ebucore:sampleRate (integer), ebucore:sampleSize (integer), ebucore:width (integer), edm:codecName (string), edm:componentColor (string) [multivalued], edm:hasColorSpace (string), edm:intendedUsage (URI) [multivalued], edm:isNextInSequence (URI), edm:isRepresentationOf (URI) [multivalued], edm:pid (string) [multivalued], edm:pointCount (integer), edm:polygonCount (integer), edm:preview (URI), edm:rights (URI), edm:spatialResolution (integer), edm:type (EdmType), edm:vertexCount (integer), owl:sameAs (URI) [multivalued], rdf:type (URI), rdfs:seeAlso (URI) [multivalued], schema:digitalSourceType (URI), svcs:has_service (URI) [multivalued].",
+  "edm:Agent properties: dc:date (string) [multivalued], dc:identifier (string) [multivalued], dcterms:hasPart (string) [multivalued], dcterms:isPartOf (string) [multivalued], edm:begin (string), edm:end (string), edm:hasMet (URI) [multivalued], edm:isRelatedTo (string) [multivalued], foaf:name (string) [multivalued], owl:sameAs (URI) [multivalued], rdaGr2:biographicalInformation (string) [multivalued], rdaGr2:dateOfBirth (string), rdaGr2:dateOfDeath (string), rdaGr2:dateOfEstablishment (string), rdaGr2:dateOfTermination (string), rdaGr2:gender (string), rdaGr2:placeOfBirth (string) [multivalued], rdaGr2:placeOfDeath (string) [multivalued], rdaGr2:professionOrOccupation (string) [multivalued], skos:altLabel (string) [multivalued], skos:hiddenLabel (string) [multivalued], skos:note (string) [multivalued], skos:prefLabel (string) [multivalued].",
+  "edm:Place properties: dcterms:hasPart (string) [multivalued], dcterms:isPartOf (string) [multivalued], edm:isNextInSequence (URI), owl:sameAs (URI) [multivalued], skos:altLabel (string) [multivalued], skos:hiddenLabel (string) [multivalued], skos:note (string) [multivalued], skos:prefLabel (string) [multivalued], wgs84_pos:alt (string), wgs84_pos:lat (string), wgs84_pos:long (string).",
+  "skos:Concept properties: skos:altLabel (string) [multivalued], skos:broadMatch (URI) [multivalued], skos:broader (URI) [multivalued], skos:closeMatch (URI) [multivalued], skos:exactMatch (URI) [multivalued], skos:hiddenLabel (string) [multivalued], skos:inScheme (URI) [multivalued], skos:narrowMatch (URI) [multivalued], skos:narrower (URI) [multivalued], skos:notation (string) [multivalued], skos:note (string) [multivalued], skos:prefLabel (string) [multivalued], skos:related (URI) [multivalued], skos:relatedMatch (URI) [multivalued].",
+  "edm:TimeSpan properties: dcterms:hasPart (string) [multivalued], dcterms:isPartOf (string) [multivalued], edm:begin (string), edm:end (string), edm:isNextInSequence (URI), owl:sameAs (URI) [multivalued], skos:altLabel (string) [multivalued], skos:hiddenLabel (string) [multivalued], skos:notation (string), skos:note (string) [multivalued], skos:prefLabel (string) [multivalued].",
+  "foaf:Organization properties (from EDM.md, not in edm.yaml): skos:prefLabel, edm:acronym, edm:country, edm:language, edm:europeanaRole, edm:heritageDomain, foaf:logo, owl:sameAs.",
+  "edm:type on the Europeana proxy is a string literal with exactly these values: \"IMAGE\", \"TEXT\", \"SOUND\", \"VIDEO\", \"3D\". Use edm:type for broad media type filtering.",
+  "dc:type on the provider proxy is free-text with millions of distinct values (e.g. 'Preserved Specimen', 'photograph', 'newspaper'). dc:type ≠ edm:type.",
+  "edm:rights is a URI on the ore:Aggregation (NOT on edm:EuropeanaAggregation — that has a different, incomplete copy). Always use the aggregation pattern for rights queries.",
   "edm:dataProvider and edm:country are literal strings, not URIs.",
-
+  "edm:year is on the Europeana proxy as a string. Cast with xsd:integer for range filters: FILTER(xsd:integer(?year) >= 1800 && xsd:integer(?year) <= 1900).",
+  "Rights classification — Open reuse URIs start with: \"http://creativecommons.org/publicdomain/\" OR \"http://creativecommons.org/licenses/by/\" OR \"http://creativecommons.org/licenses/by-sa/\". Filter with STRSTARTS(STR(?rights), ...) || clauses.",
+  "Restricted reuse: other CC licenses (URI contains '-nc' or '-nd'). Also: http://rightsstatements.org/vocab/NoC-NC/1.0/, http://rightsstatements.org/vocab/NoC-OKLR/1.0/, http://rightsstatements.org/vocab/InC-EDU/1.0/.",
+  "Prohibited reuse: everything else, including http://rightsstatements.org/vocab/InC/1.0/ (In Copyright), http://rightsstatements.org/vocab/CNE/1.0/ (Copyright Not Evaluated), and other rightsstatements.org URIs.",
   "Always COUNT DISTINCT ?item — items have multiple proxies and entity links.",
-
-  "Never query dc:title directly on the item URI — it is on the proxy. Always use the proxy pattern.",
-
-  "Entity types in the data: edm:Agent (people/groups), edm:Place (locations), skos:Concept (subjects/genres), edm:TimeSpan (time periods), foaf:Organization (provider organisations). All have skos:prefLabel with language tags.",
-
-  "IMPORTANT: Entity URIs (from search_entity) are on the EUROPEANA PROXY, not the provider proxy. The Europeana enrichment pipeline adds entity URIs to dc:creator, dc:subject, dc:contributor, dcterms:spatial on the Europeana proxy. The provider proxy has the original string literals. This means counting 'items with a creator' gives different results depending on which proxy you query: the Europeana proxy counts only items with enriched entity-URI creators, while the provider proxy counts all items including literal string creators (much higher count).",
-
-  "To find items by entity URI: use the EUROPEANA proxy pattern: ?eProxy ore:proxyFor ?item . ?eProxy edm:europeanaProxy \"true\" . ?eProxy dc:subject <concept-uri> .",
-
-  "To find items by text (e.g. title contains 'astronomy'): use the PROVIDER proxy pattern: ?proxy ore:proxyFor ?item . FILTER NOT EXISTS { ?proxy edm:europeanaProxy \"true\" . } ?proxy dc:title ?title . FILTER(CONTAINS(LCASE(STR(?title)), \"astronomy\")) .",
-
-  "To find items by a person: search_entity to find the agent URI, then: ?eProxy ore:proxyFor ?item . ?eProxy edm:europeanaProxy \"true\" . ?eProxy dc:creator <agent-uri> . For titles, also join with the provider proxy.",
-
-  "To find items about a subject: search_entity to find the concept URI, then: ?eProxy ore:proxyFor ?item . ?eProxy edm:europeanaProxy \"true\" . ?eProxy dc:subject <concept-uri> .",
-
-  "Rights classification — edm:rights is a URI on the ore:Aggregation (NOT on edm:EuropeanaAggregation). Do NOT use edm:EuropeanaAggregation for rights queries — it has a different, incomplete copy. Use: ?agg edm:aggregatedCHO ?item . ?agg edm:rights ?rights . Open reuse: STRSTARTS(STR(?rights), \"http://creativecommons.org/publicdomain/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by-sa/\"). Restricted: other CC licenses (containing -nc or -nd). Prohibited: rightsstatements.org URIs like http://rightsstatements.org/vocab/InC/1.0/.",
-
-  "Year/date filtering: edm:year is on the Europeana proxy as a string. Cast with xsd:integer for range filters: FILTER(xsd:integer(?year) >= 1800 && xsd:integer(?year) <= 1900).",
-
-  "WebResource pattern: ?agg edm:aggregatedCHO ?item . ?agg edm:hasView ?wr . ?wr ebucore:hasMimeType ?mime . Optional: ebucore:width, ebucore:height, ebucore:fileByteSize (all as string, cast to integer). IIIF: ?wr svcs:has_service ?service .",
-
-  "Items can have multiple values for dc:title, dc:creator, dc:subject, dc:date, dc:language, etc. Use DISTINCT in SELECT to avoid duplicates from multiple matches.",
-
-  "foaf:Organization entities represent data providers and aggregators. They have skos:prefLabel, edm:acronym, edm:country, owl:sameAs. They are NOT the same as edm:dataProvider (which is a literal string on the aggregation).",
-
-  "For classification queries (e.g. reuse level distribution), do NOT use nested BIND/IF over the full dataset — it will time out. Instead, run separate COUNT queries per category (one for open, one for restricted, one for prohibited) and combine the results."
+  "Entity URIs (from search_entity) are on the EUROPEANA PROXY. To find items by entity URI: ?eProxy ore:proxyFor ?item . ?eProxy edm:europeanaProxy \"true\" . ?eProxy dc:subject <concept-uri> .",
+  "Text search on literals (e.g. title contains 'astronomy'): use the PROVIDER PROXY. ?proxy ore:proxyFor ?item . FILTER NOT EXISTS { ?proxy edm:europeanaProxy \"true\" . } ?proxy dc:title ?title . FILTER(CONTAINS(LCASE(STR(?title)), \"astronomy\")).",
+  "For classification queries (e.g. reuse level distribution), do NOT use nested BIND/IF over the full dataset — it will time out. Run separate COUNT queries per category instead.",
+  "Items can have multiple values for dc:title, dc:creator, dc:subject, dc:date, dc:language, etc. Use DISTINCT in SELECT.",
+  "Never query dc:title or dc:creator directly on the item URI — they are on the proxy. Always use a proxy pattern."
 ]
