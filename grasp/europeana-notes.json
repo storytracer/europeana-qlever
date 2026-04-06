@@ -11,17 +11,15 @@
 
   "Europeana aggregation pattern (for edm:country, edm:completeness): ?eAgg edm:aggregatedCHO ?item . ?eAgg a edm:EuropeanaAggregation . ?eAgg edm:country ?country .",
 
-  "Properties on the provider proxy (?proxy): dc:title, dc:description, dc:creator, dc:contributor, dc:publisher, dc:subject, dc:date, dc:language, dc:identifier, dc:format, dc:rights, dc:source, dc:type, dcterms:spatial, dcterms:temporal.",
+  "Properties on the provider proxy (?proxy): dc:title, dc:description, dc:creator, dc:contributor, dc:publisher, dc:subject, dc:date, dc:language, dc:identifier, dc:format, dc:rights, dc:source, dc:type, dcterms:spatial, dcterms:temporal, dcterms:alternative, dcterms:isPartOf, dcterms:hasPart, dcterms:medium, dcterms:extent, dcterms:provenance.",
 
   "Properties on the Europeana proxy (?eProxy): edm:type, edm:year.",
 
-  "Properties on the aggregation (?agg): edm:rights, edm:dataProvider, edm:provider, edm:isShownAt, edm:isShownBy.",
+  "Properties on the aggregation (?agg): edm:rights, edm:dataProvider, edm:provider, edm:isShownAt, edm:isShownBy, edm:object, edm:hasView.",
 
-  "Properties on the Europeana aggregation (?eAgg): edm:country, edm:completeness.",
+  "Properties on the Europeana aggregation (?eAgg): edm:country, edm:completeness, edm:preview, edm:landingPage, edm:datasetName.",
 
   "edm:type is a string literal with values: \"IMAGE\", \"TEXT\", \"SOUND\", \"VIDEO\", \"3D\". Example: ?eProxy edm:type \"IMAGE\" .",
-
-  "edm:rights is a URI, not a literal. Compare with STRSTARTS(STR(?rights), \"http://creativecommons.org/\") or exact URI match.",
 
   "edm:dataProvider and edm:country are literal strings, not URIs.",
 
@@ -29,5 +27,23 @@
 
   "Never query dc:title directly on the item URI — it is on the proxy. Always use the proxy pattern.",
 
-  "Entity URIs (agents, concepts, places) appear as objects of dc:creator, dc:subject, etc. on the provider proxy. Entities have skos:prefLabel with language tags."
+  "Entity types in the data: edm:Agent (people/groups), edm:Place (locations), skos:Concept (subjects/genres), edm:TimeSpan (time periods), foaf:Organization (provider organisations). All have skos:prefLabel with language tags.",
+
+  "Entity URIs appear as objects of dc:creator, dc:subject, dc:contributor, dc:publisher, dcterms:spatial on the provider proxy. To find items by entity: search_entity to find the URI, then query the proxy pattern with that URI as object.",
+
+  "dc:creator, dc:subject, etc. can be either entity URIs or plain string literals. When filtering by a known entity, use the entity URI. When searching by text, use CONTAINS or regex on the string value.",
+
+  "To find items by a person (e.g. Van Gogh): first search_entity to find the agent URI, then: ?proxy ore:proxyFor ?item . FILTER NOT EXISTS { ?proxy edm:europeanaProxy \"true\" . } ?proxy dc:creator <agent-uri> .",
+
+  "To find items about a subject: first search_entity to find the concept URI, then: ?proxy ore:proxyFor ?item . FILTER NOT EXISTS { ?proxy edm:europeanaProxy \"true\" . } ?proxy dc:subject <concept-uri> .",
+
+  "Rights classification — edm:rights is a URI on the aggregation. Open reuse: STRSTARTS(STR(?rights), \"http://creativecommons.org/publicdomain/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by-sa/\"). Restricted: other CC licenses (containing -nc or -nd). Prohibited: rightsstatements.org URIs like http://rightsstatements.org/vocab/InC/1.0/.",
+
+  "Year/date filtering: edm:year is on the Europeana proxy as a string. Cast with xsd:integer for range filters: FILTER(xsd:integer(?year) >= 1800 && xsd:integer(?year) <= 1900).",
+
+  "WebResource pattern: ?agg edm:aggregatedCHO ?item . ?agg edm:hasView ?wr . ?wr ebucore:hasMimeType ?mime . Optional: ebucore:width, ebucore:height, ebucore:fileByteSize (all as string, cast to integer). IIIF: ?wr svcs:has_service ?service .",
+
+  "Items can have multiple values for dc:title, dc:creator, dc:subject, dc:date, dc:language, etc. Use DISTINCT in SELECT to avoid duplicates from multiple matches.",
+
+  "foaf:Organization entities represent data providers and aggregators. They have skos:prefLabel, edm:acronym, edm:country, owl:sameAs. They are NOT the same as edm:dataProvider (which is a literal string on the aggregation)."
 ]

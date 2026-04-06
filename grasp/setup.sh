@@ -31,10 +31,6 @@ mkdir -p "$GRASP_INDEX_DIR/europeana/entities" "$GRASP_INDEX_DIR/europeana/prope
 cp "$SCRIPT_DIR/entities-info.sparql" "$GRASP_INDEX_DIR/europeana/entities/info.sparql"
 cp "$SCRIPT_DIR/properties-info.sparql" "$GRASP_INDEX_DIR/europeana/properties/info.sparql"
 
-# 5. Pre-cache entity/property info
-echo "--- Step 5: Pre-caching info queries ---"
-grasp cache europeana
-
 echo "=== Setup complete ==="
 echo ""
 echo "Test with:"

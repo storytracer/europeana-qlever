@@ -1,4 +1,9 @@
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX rdaGr2: <http://rdvocab.info/ElementsGr2/>
+PREFIX wgs84_pos: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 
 SELECT ?id ?value ?type WHERE {
@@ -7,7 +12,38 @@ SELECT ?id ?value ?type WHERE {
     ?id skos:prefLabel ?value .
     BIND("label" AS ?type)
   } UNION {
+    ?id skos:altLabel ?value .
+    BIND("alias" AS ?type)
+  } UNION {
+    ?id foaf:name ?value .
+    BIND("alias" AS ?type)
+  } UNION {
     ?id rdf:type ?raw .
+    FILTER(?raw IN (edm:Agent, edm:Place, skos:Concept, edm:TimeSpan, foaf:Organization))
+    BIND(STR(?raw) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    ?id rdaGr2:dateOfBirth ?raw .
+    BIND(CONCAT("born: ", STR(?raw)) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    ?id rdaGr2:dateOfDeath ?raw .
+    BIND(CONCAT("died: ", STR(?raw)) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    ?id wgs84_pos:lat ?lat .
+    BIND(CONCAT("latitude: ", STR(?lat)) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    ?id wgs84_pos:long ?lon .
+    BIND(CONCAT("longitude: ", STR(?lon)) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    ?id edm:acronym ?acr .
+    BIND(CONCAT("acronym: ", STR(?acr)) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    ?id owl:sameAs ?raw .
     BIND(STR(?raw) AS ?value)
     BIND("info" AS ?type)
   }
