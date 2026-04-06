@@ -57,150 +57,220 @@ classes:
         slot_uri: dc:contributor
         range: string
         multivalued: true
+        description: An entity responsible for making contributions to the resource.
       dc_coverage:
         slot_uri: dc:coverage
         range: string
         multivalued: true
+        description: >-
+          The spatial or temporal topic of the resource, the spatial applicability of the resource, or
+          the jurisdiction under which the resource is relevant. This may be a named place, a location,
+          a spatial coordinate, a period, date, date range or a named administrative entity.
       dc_creator:
         slot_uri: dc:creator
         range: string
         multivalued: true
+        description: >-
+          An entity primarily responsible for making the resource. This may be a person, organisation
+          or a service.
       dc_date:
         slot_uri: dc:date
         range: string
         multivalued: true
+        description: A point or period of time associated with an event in the lifecycle of the resource.
       dc_description:
         slot_uri: dc:description
         range: string
         multivalued: true
+        description: An account of the resource.
       dc_format:
         slot_uri: dc:format
         range: string
         multivalued: true
+        description: The file format, physical medium or dimensions of the resource.
       dc_identifier:
         slot_uri: dc:identifier
         range: string
         multivalued: true
+        description: identifier
       dc_language:
         slot_uri: dc:language
         range: string
         multivalued: true
+        description: A language of the resource.
       dc_publisher:
         slot_uri: dc:publisher
         range: string
         multivalued: true
+        description: >-
+          An entity responsible for making the resource available. Examples of a publisher include a person,
+          an organisation and a service.
       dc_relation:
         slot_uri: dc:relation
         range: string
         multivalued: true
+        description: >-
+          A related resource. The recommended best practice is to identify the resource using a formal
+          identification scheme.
       dc_rights:
         slot_uri: dc:rights
         range: string
         multivalued: true
+        description: Information about copyright of the original object.
       dc_source:
         slot_uri: dc:source
         range: string
         multivalued: true
+        description: A related resource from which the described resource is derived in whole or in part.
       dc_subject:
         slot_uri: dc:subject
         range: string
         multivalued: true
+        description: The topic of the resource.
       dc_title:
         slot_uri: dc:title
         range: string
         multivalued: true
+        description: >-
+          A name given to the resource. Typically, a Title will be a name by which the resource is formally
+          known.
       dc_type:
         slot_uri: dc:type
         range: string
         multivalued: true
+        description: >-
+          The nature or genre of the resource. Type includes terms describing general categories, functions,
+          genres, or aggregation levels for content.
       dcterms_alternative:
         slot_uri: dcterms:alternative
         range: string
         multivalued: true
+        description: >-
+          An alternative name for the resource. This can be any form of the title that is used as a substitute
+          or an alternative to the formal title of the resource including abbreviations or translations
+          of the title.
       dcterms_conforms_to:
         slot_uri: dcterms:conformsTo
         range: string
         multivalued: true
+        description: An established standard to which the described resource conforms.
       dcterms_created:
         slot_uri: dcterms:created
         range: string
         multivalued: true
+        description: Date of creation of the resource
       dcterms_extent:
         slot_uri: dcterms:extent
         range: string
         multivalued: true
+        description: The size or duration of the resource.
       dcterms_has_format:
         slot_uri: dcterms:hasFormat
         range: string
         multivalued: true
+        description: >-
+          A related resource that is substantially the same as the pre-existing described resource, but
+          in another format.
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
         multivalued: true
+        description: A related resource that is included either physically or logically in the described
+          resource.
       dcterms_has_version:
         slot_uri: dcterms:hasVersion
         range: string
         multivalued: true
+        description: >-
+          A related resource that is a version, edition, or adaptation of the described resource. Changes
+          in version imply substantive changes in content rather than differences in format.
       dcterms_is_format_of:
         slot_uri: dcterms:isFormatOf
         range: string
         multivalued: true
+        description: A related resource that is substantially the same as the described resource, but
+          in another format.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
         multivalued: true
+        description: A related resource in which the described resource is physically or logically included.
       dcterms_is_referenced_by:
         slot_uri: dcterms:isReferencedBy
         range: string
         multivalued: true
+        description: A related resource that references, cites, or otherwise points to the described resource.
       dcterms_is_replaced_by:
         slot_uri: dcterms:isReplacedBy
         range: string
         multivalued: true
+        description: A related resource that supplants, displaces, or supersedes the described resource.
       dcterms_is_required_by:
         slot_uri: dcterms:isRequiredBy
         range: string
         multivalued: true
+        description: >-
+          A related resource that requires the described resource to support its function, delivery or
+          coherence.
       dcterms_issued:
         slot_uri: dcterms:issued
         range: string
         multivalued: true
+        description: Date of formal issuance (e.g., publication) of the resource.
       dcterms_is_version_of:
         slot_uri: dcterms:isVersionOf
         range: string
         multivalued: true
+        description: >-
+          A related resource of which the described resource is a version, edition, or adaptation. Changes
+          in version imply substantive changes in content rather than differences in format
       dcterms_medium:
         slot_uri: dcterms:medium
         range: string
         multivalued: true
+        description: The material or physical carrier of the resource.
       dcterms_provenance:
         slot_uri: dcterms:provenance
         range: string
         multivalued: true
+        description: >-
+          A statement of any changes in ownership and custody of the resource since its creation that
+          are significant for its authenticity, integrity and interpretation. This may include a description
+          of any changes successive custodians made to the resource.
       dcterms_references:
         slot_uri: dcterms:references
         range: string
         multivalued: true
+        description: A related resource that is referenced, cited, or otherwise pointed to by the described
+          resource
       dcterms_replaces:
         slot_uri: dcterms:replaces
         range: string
         multivalued: true
+        description: A related resource that is supplanted, displaced, or superseded by the described
+          resource.
       dcterms_requires:
         slot_uri: dcterms:requires
         range: string
         multivalued: true
+        description: >-
+          A related resource that is required by the described resource to support its function, delivery
+          or coherence.
       dcterms_spatial:
         slot_uri: dcterms:spatial
         range: string
         multivalued: true
+        description: Spatial characteristics of the resource.
       dcterms_table_of_contents:
         slot_uri: dcterms:tableOfContents
         range: string
         multivalued: true
+        description: A list of subunits of the resource.
       dcterms_temporal:
         slot_uri: dcterms:temporal
         range: string
         multivalued: true
+        description: Temporal characteristics of the resource
       edm_current_location:
         slot_uri: edm:currentLocation
         range: string
@@ -215,7 +285,8 @@ classes:
           edm:hasMet relates a resource with the objects or phenomena that have happened to or have happened
           together with the resource under consideration. We can abstractly think of history and the present
           as a series of “meetings” between people and other things in space-time. Therefore we name this
-          rel...
+          relationship as the things the object “has met” in the course of its existence. These meetings
+          are events in the proper sense, in which other people and things participate in any role.
       edm_has_type:
         slot_uri: edm:hasType
         range: string
@@ -229,7 +300,7 @@ classes:
         multivalued: true
         description: |-
           This property captures the use of some resource to add value to another
-          resource. Such resources may be nested, such as performing a theater play text, and then recording the performance, or creating an artful edition of a collection of poems or just aggregating various poems in an anthology. The...
+          resource. Such resources may be nested, such as performing a theater play text, and then recording the performance, or creating an artful edition of a collection of poems or just aggregating various poems in an anthology. There may be no single part that contains ultimately the incorporated object, which may be dispersed in the presentation. Therefore, incorporated resources do in general not form proper parts. Incorporated resources are not part of the same resource, but are taken from other resources, and have an independent history. Therefore edm:incorporates is not a sub-property of dcterm:hasPart.
       edm_is_derivative_of:
         slot_uri: edm:isDerivativeOf
         range: uri
@@ -238,7 +309,8 @@ classes:
           This property captures a narrower notion of derivation than edm:isSimilarTo, in the sense that
           it relates a resource to another one, obtained by reworking, reducing, expanding, parts or the
           whole contents of the former, and possibly adding some minor parts. Versions have an even narrower
-          meaning,...
+          meaning, in that it requires common identity between the related resources. Translations, summaries,
+          abstractions etc. do not qualify as versions, but do qualify as derivatives.
       edm_is_next_in_sequence:
         slot_uri: edm:isNextInSequence
         range: uri
@@ -252,7 +324,7 @@ classes:
         multivalued: true
         description: |-
           edm:isRelatedTo is the most general contextual property in EDM. Contextual
-          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sa...
+          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sake of simplicity, we include in the contextual relationships also the scholarly classification, which may have either to do with the role and cultural connections of the object in the past, or its kind of structure, substance or contents as it can be verified at present.
       edm_is_representation_of:
         slot_uri: edm:isRepresentationOf
         range: uri
@@ -266,7 +338,8 @@ classes:
           The most generic derivation property, covering also the case of questionable derivation. Is
           Similar To asserts that parts of the contents of one resource exhibit common features with respect
           to ideas, shapes, structures, colors, words, plots, topics with the contents of the related
-          resource. Thos...
+          resource. Those common features may be attributed to a common origin or influence (in particular
+          for derivation), but also to more generic cultural or psychological factors.
       edm_is_successor_of:
         slot_uri: edm:isSuccessorOf
         range: uri
@@ -275,7 +348,8 @@ classes:
           This property captures the relation between the continuation of a resource and that resource.
           This applies to a story, a serial, a journal etc. No content of the successor resource is identical
           or has a similar form with that of the precursor. The similarity is only in the context, subjects
-          and f...
+          and figures of a plot. Successors typically form part of a common whole – such as a trilogy,
+          a journal, etc.
       edm_realizes:
         slot_uri: edm:realizes
         range: uri
@@ -287,6 +361,8 @@ classes:
         slot_uri: edm:pid
         range: string
         multivalued: true
+        description: A persistent identifier (PID) assigned to the resource, such as a DOI, Handle, or
+          ARK.
       edm_type:
         slot_uri: edm:type
         range: EdmType
@@ -296,157 +372,237 @@ classes:
         slot_uri: owl:sameAs
         range: uri
         multivalued: true
+        description: >-
+          The built-in OWL property owl:sameAs links an individual to an individual. Such an owl:sameAs
+          statement indicates that two URI references actually refer to the same thing: the individuals
+          have the same "identity".
   Proxy:
     class_uri: ore:Proxy
+    description: >-
+      A Proxy represents an Aggregated Resource as it exists in a specific Aggregation. All assertions
+      made about an entity are globally true, not only within the context of the Aggregation. As such,
+      in order to make assertions which are only true of a resource as it exists in an Aggregation, a
+      Proxy object is required. For example, one might want to cite an article as it appears in a specific
+      journal, or assign aggregation-specific metadata to a Resource.
     attributes:
       dc_contributor:
         slot_uri: dc:contributor
         range: string
         multivalued: true
+        description: An entity responsible for making contributions to the resource.
       dc_coverage:
         slot_uri: dc:coverage
         range: string
         multivalued: true
+        description: >-
+          The spatial or temporal topic of the resource, the spatial applicability of the resource, or
+          the jurisdiction under which the resource is relevant. This may be a named place, a location,
+          a spatial coordinate, a period, date, date range or a named administrative entity.
       dc_creator:
         slot_uri: dc:creator
         range: string
         multivalued: true
+        description: >-
+          An entity primarily responsible for making the resource. This may be a person, organisation
+          or a service.
       dc_date:
         slot_uri: dc:date
         range: string
         multivalued: true
+        description: A point or period of time associated with an event in the lifecycle of the resource.
       dc_description:
         slot_uri: dc:description
         range: string
         multivalued: true
+        description: An account of the resource.
       dc_format:
         slot_uri: dc:format
         range: string
         multivalued: true
+        description: The file format, physical medium or dimensions of the resource.
       dc_identifier:
         slot_uri: dc:identifier
         range: string
         multivalued: true
+        description: identifier
       dc_language:
         slot_uri: dc:language
         range: string
         multivalued: true
+        description: A language of the resource.
       dc_publisher:
         slot_uri: dc:publisher
         range: string
         multivalued: true
+        description: >-
+          An entity responsible for making the resource available. Examples of a publisher include a person,
+          an organisation and a service.
       dc_relation:
         slot_uri: dc:relation
         range: string
         multivalued: true
+        description: >-
+          A related resource. The recommended best practice is to identify the resource using a formal
+          identification scheme.
       dc_rights:
         slot_uri: dc:rights
         range: string
         multivalued: true
+        description: Information about copyright of the original object.
       dc_source:
         slot_uri: dc:source
         range: string
         multivalued: true
+        description: A related resource from which the described resource is derived in whole or in part.
       dc_subject:
         slot_uri: dc:subject
         range: string
         multivalued: true
+        description: The topic of the resource.
       dc_title:
         slot_uri: dc:title
         range: string
         multivalued: true
+        description: >-
+          A name given to the resource. Typically, a Title will be a name by which the resource is formally
+          known.
       dc_type:
         slot_uri: dc:type
         range: string
         multivalued: true
+        description: >-
+          The nature or genre of the resource. Type includes terms describing general categories, functions,
+          genres, or aggregation levels for content.
       dcterms_alternative:
         slot_uri: dcterms:alternative
         range: string
         multivalued: true
+        description: >-
+          An alternative name for the resource. This can be any form of the title that is used as a substitute
+          or an alternative to the formal title of the resource including abbreviations or translations
+          of the title.
       dcterms_conforms_to:
         slot_uri: dcterms:conformsTo
         range: string
         multivalued: true
+        description: An established standard to which the described resource conforms.
       dcterms_created:
         slot_uri: dcterms:created
         range: string
         multivalued: true
+        description: Date of creation of the resource
       dcterms_extent:
         slot_uri: dcterms:extent
         range: string
         multivalued: true
+        description: The size or duration of the resource.
       dcterms_has_format:
         slot_uri: dcterms:hasFormat
         range: string
         multivalued: true
+        description: >-
+          A related resource that is substantially the same as the pre-existing described resource, but
+          in another format.
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
         multivalued: true
+        description: A related resource that is included either physically or logically in the described
+          resource.
       dcterms_has_version:
         slot_uri: dcterms:hasVersion
         range: string
         multivalued: true
+        description: >-
+          A related resource that is a version, edition, or adaptation of the described resource. Changes
+          in version imply substantive changes in content rather than differences in format.
       dcterms_is_format_of:
         slot_uri: dcterms:isFormatOf
         range: string
         multivalued: true
+        description: A related resource that is substantially the same as the described resource, but
+          in another format.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
         multivalued: true
+        description: A related resource in which the described resource is physically or logically included.
       dcterms_is_referenced_by:
         slot_uri: dcterms:isReferencedBy
         range: string
         multivalued: true
+        description: A related resource that references, cites, or otherwise points to the described resource.
       dcterms_is_replaced_by:
         slot_uri: dcterms:isReplacedBy
         range: string
         multivalued: true
+        description: A related resource that supplants, displaces, or supersedes the described resource.
       dcterms_is_required_by:
         slot_uri: dcterms:isRequiredBy
         range: string
         multivalued: true
+        description: >-
+          A related resource that requires the described resource to support its function, delivery or
+          coherence.
       dcterms_issued:
         slot_uri: dcterms:issued
         range: string
         multivalued: true
+        description: Date of formal issuance (e.g., publication) of the resource.
       dcterms_is_version_of:
         slot_uri: dcterms:isVersionOf
         range: string
         multivalued: true
+        description: >-
+          A related resource of which the described resource is a version, edition, or adaptation. Changes
+          in version imply substantive changes in content rather than differences in format
       dcterms_medium:
         slot_uri: dcterms:medium
         range: string
         multivalued: true
+        description: The material or physical carrier of the resource.
       dcterms_provenance:
         slot_uri: dcterms:provenance
         range: string
         multivalued: true
+        description: >-
+          A statement of any changes in ownership and custody of the resource since its creation that
+          are significant for its authenticity, integrity and interpretation. This may include a description
+          of any changes successive custodians made to the resource.
       dcterms_references:
         slot_uri: dcterms:references
         range: string
         multivalued: true
+        description: A related resource that is referenced, cited, or otherwise pointed to by the described
+          resource
       dcterms_replaces:
         slot_uri: dcterms:replaces
         range: string
         multivalued: true
+        description: A related resource that is supplanted, displaced, or superseded by the described
+          resource.
       dcterms_requires:
         slot_uri: dcterms:requires
         range: string
         multivalued: true
+        description: >-
+          A related resource that is required by the described resource to support its function, delivery
+          or coherence.
       dcterms_spatial:
         slot_uri: dcterms:spatial
         range: string
         multivalued: true
+        description: Spatial characteristics of the resource.
       dcterms_table_of_contents:
         slot_uri: dcterms:tableOfContents
         range: string
         multivalued: true
+        description: A list of subunits of the resource.
       dcterms_temporal:
         slot_uri: dcterms:temporal
         range: string
         multivalued: true
+        description: Temporal characteristics of the resource
       edm_current_location:
         slot_uri: edm:currentLocation
         range: string
@@ -461,7 +617,8 @@ classes:
           edm:hasMet relates a resource with the objects or phenomena that have happened to or have happened
           together with the resource under consideration. We can abstractly think of history and the present
           as a series of “meetings” between people and other things in space-time. Therefore we name this
-          rel...
+          relationship as the things the object “has met” in the course of its existence. These meetings
+          are events in the proper sense, in which other people and things participate in any role.
       edm_has_type:
         slot_uri: edm:hasType
         range: string
@@ -475,7 +632,7 @@ classes:
         multivalued: true
         description: |-
           This property captures the use of some resource to add value to another
-          resource. Such resources may be nested, such as performing a theater play text, and then recording the performance, or creating an artful edition of a collection of poems or just aggregating various poems in an anthology. The...
+          resource. Such resources may be nested, such as performing a theater play text, and then recording the performance, or creating an artful edition of a collection of poems or just aggregating various poems in an anthology. There may be no single part that contains ultimately the incorporated object, which may be dispersed in the presentation. Therefore, incorporated resources do in general not form proper parts. Incorporated resources are not part of the same resource, but are taken from other resources, and have an independent history. Therefore edm:incorporates is not a sub-property of dcterm:hasPart.
       edm_is_derivative_of:
         slot_uri: edm:isDerivativeOf
         range: uri
@@ -484,7 +641,8 @@ classes:
           This property captures a narrower notion of derivation than edm:isSimilarTo, in the sense that
           it relates a resource to another one, obtained by reworking, reducing, expanding, parts or the
           whole contents of the former, and possibly adding some minor parts. Versions have an even narrower
-          meaning,...
+          meaning, in that it requires common identity between the related resources. Translations, summaries,
+          abstractions etc. do not qualify as versions, but do qualify as derivatives.
       edm_is_next_in_sequence:
         slot_uri: edm:isNextInSequence
         range: uri
@@ -498,7 +656,7 @@ classes:
         multivalued: true
         description: |-
           edm:isRelatedTo is the most general contextual property in EDM. Contextual
-          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sa...
+          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sake of simplicity, we include in the contextual relationships also the scholarly classification, which may have either to do with the role and cultural connections of the object in the past, or its kind of structure, substance or contents as it can be verified at present.
       edm_is_representation_of:
         slot_uri: edm:isRepresentationOf
         range: uri
@@ -512,7 +670,8 @@ classes:
           The most generic derivation property, covering also the case of questionable derivation. Is
           Similar To asserts that parts of the contents of one resource exhibit common features with respect
           to ideas, shapes, structures, colors, words, plots, topics with the contents of the related
-          resource. Thos...
+          resource. Those common features may be attributed to a common origin or influence (in particular
+          for derivation), but also to more generic cultural or psychological factors.
       edm_is_successor_of:
         slot_uri: edm:isSuccessorOf
         range: uri
@@ -521,7 +680,8 @@ classes:
           This property captures the relation between the continuation of a resource and that resource.
           This applies to a story, a serial, a journal etc. No content of the successor resource is identical
           or has a similar form with that of the precursor. The similarity is only in the context, subjects
-          and f...
+          and figures of a plot. Successors typically form part of a common whole – such as a trilogy,
+          a journal, etc.
       edm_realizes:
         slot_uri: edm:realizes
         range: uri
@@ -533,6 +693,8 @@ classes:
         slot_uri: edm:pid
         range: string
         multivalued: true
+        description: A persistent identifier (PID) assigned to the resource, such as a DOI, Handle, or
+          ARK.
       edm_europeana_proxy:
         slot_uri: edm:europeanaProxy
         range: boolean
@@ -554,14 +716,27 @@ classes:
       ore_proxy_for:
         slot_uri: ore:proxyFor
         range: uri
+        description: >-
+          Proxy objects are used to represent a Resource as it is aggregated in a particular Aggregation.
+          The ore:proxyFor relationship is used to link the proxy to the Aggregated Resource it is a proxy
+          for. The subject of the relationship is a Proxy object, and the object of the relationship is
+          the Aggregated Resource.
       ore_proxy_in:
         slot_uri: ore:proxyIn
         range: uri
         multivalued: true
+        description: >-
+          Proxy objects must link to the Aggregation in which the resource being proxied is aggregated.
+          The ore:proxyIn relationship is used for this purpose. The subject of the relationship is a
+          Proxy object, and the object of the relationship is the Aggregation.
       ore_lineage:
         slot_uri: ore:lineage
         range: uri
         multivalued: true
+        description: >-
+          ore:lineage is a relationship between two Proxy objects, both of which MUST have the same Resource
+          for which they are proxies. The meaning is that the Resource for which the subject of the relationship
+          is a Proxy was discovered in the Aggregation in which the object Proxy's resource is aggregated.
       edm_type:
         slot_uri: edm:type
         range: EdmType
@@ -570,8 +745,16 @@ classes:
         slot_uri: owl:sameAs
         range: uri
         multivalued: true
+        description: >-
+          The built-in OWL property owl:sameAs links an individual to an individual. Such an owl:sameAs
+          statement indicates that two URI references actually refer to the same thing: the individuals
+          have the same "identity".
   Aggregation:
     class_uri: ore:Aggregation
+    description: >-
+      A set of related resources (Aggregated Resources), grouped together such that the set can be treated
+      as a single resource. This is the entity described within the ORE interoperability framework by
+      a Resource Map.
     attributes:
       edm_aggregated_cho:
         slot_uri: edm:aggregatedCHO
@@ -594,7 +777,7 @@ classes:
           This property relates a ORE aggregation about a CHO with a web resource
           providing a view of that CHO. Examples of view are: a thumbnail, a textual
           abstract and a table of contents. The ORE aggregation may be a Europeana
-          Aggregation, in which case the view is an object owned by Europeana (i.e., an...
+          Aggregation, in which case the view is an object owned by Europeana (i.e., an instance of edm:EuropeanaObject) or an aggregation contributed by a content provider. In order to capture both these cases, the domain of edm:hasView is ore:Aggregation and its range is edm:WebResource
       edm_is_shown_at:
         slot_uri: edm:isShownAt
         range: uri
@@ -625,6 +808,7 @@ classes:
         slot_uri: dc:rights
         range: string
         multivalued: true
+        description: Information about copyright of the original object.
       edm_rights:
         slot_uri: edm:rights
         range: uri
@@ -643,16 +827,24 @@ classes:
         slot_uri: edm:intermediateProvider
         range: string
         multivalued: true
+        description: >-
+          The name or identifier of the intermediate organization that selects, collates, or curates data
+          from a Data Provider that is then aggregated by a Provider from which Europeana harvests. The
+          Intermedatiate Provider must be distinct from both the Data Provider and the Provider in the
+          data supply chain.
       dqv_has_quality_annotation:
         slot_uri: dqv:hasQualityAnnotation
         range: string
         multivalued: true
+        description: The identifier of the Quality annotation.
       dcterms_created:
         slot_uri: dcterms:created
         range: string
+        description: Date of creation of the resource
       dcterms_modified:
         slot_uri: dcterms:modified
         range: string
+        description: Modified Date
   WebResource:
     class_uri: edm:WebResource
     description: |-
@@ -663,70 +855,96 @@ classes:
         slot_uri: edm:pid
         range: string
         multivalued: true
+        description: A persistent identifier (PID) assigned to the resource, such as a DOI, Handle, or
+          ARK.
       dc_creator:
         slot_uri: dc:creator
         range: string
         multivalued: true
+        description: >-
+          An entity primarily responsible for making the resource. This may be a person, organisation
+          or a service.
       dc_description:
         slot_uri: dc:description
         range: string
         multivalued: true
+        description: An account of the resource.
       dc_format:
         slot_uri: dc:format
         range: string
         multivalued: true
+        description: The file format, physical medium or dimensions of the resource.
       dc_rights:
         slot_uri: dc:rights
         range: string
         multivalued: true
+        description: Information about copyright of the original object.
       dc_source:
         slot_uri: dc:source
         range: string
         multivalued: true
+        description: A related resource from which the described resource is derived in whole or in part.
       dc_type:
         slot_uri: dc:type
         range: string
         multivalued: true
+        description: >-
+          The nature or genre of the resource. Type includes terms describing general categories, functions,
+          genres, or aggregation levels for content.
       dc_title:
         slot_uri: dc:title
         range: string
         multivalued: true
+        description: >-
+          A name given to the resource. Typically, a Title will be a name by which the resource is formally
+          known.
       dc_language:
         slot_uri: dc:language
         range: string
         multivalued: true
+        description: A language of the resource.
       dcterms_conforms_to:
         slot_uri: dcterms:conformsTo
         range: string
         multivalued: true
+        description: An established standard to which the described resource conforms.
       dcterms_created:
         slot_uri: dcterms:created
         range: string
         multivalued: true
+        description: Date of creation of the resource
       dcterms_extent:
         slot_uri: dcterms:extent
         range: string
         multivalued: true
+        description: The size or duration of the resource.
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
         multivalued: true
+        description: A related resource that is included either physically or logically in the described
+          resource.
       dcterms_is_format_of:
         slot_uri: dcterms:isFormatOf
         range: string
         multivalued: true
+        description: A related resource that is substantially the same as the described resource, but
+          in another format.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
         multivalued: true
+        description: A related resource in which the described resource is physically or logically included.
       dcterms_issued:
         slot_uri: dcterms:issued
         range: string
         multivalued: true
+        description: Date of formal issuance (e.g., publication) of the resource.
       dcterms_temporal:
         slot_uri: dcterms:temporal
         range: string
         multivalued: true
+        description: Temporal characteristics of the resource
       edm_is_next_in_sequence:
         slot_uri: edm:isNextInSequence
         range: uri
@@ -743,72 +961,103 @@ classes:
         slot_uri: owl:sameAs
         range: uri
         multivalued: true
+        description: >-
+          The built-in OWL property owl:sameAs links an individual to an individual. Such an owl:sameAs
+          statement indicates that two URI references actually refer to the same thing: the individuals
+          have the same "identity".
       rdf_type:
         slot_uri: rdf:type
         range: uri
+        description: To indicate the type of a resource. Currently not used
       edm_codec_name:
         slot_uri: edm:codecName
         range: string
+        description: >-
+          The name of a device or computer program capable of encoding or decoding a digital data stream
+          or signal (i.e. coder-decoder).
       ebucore_has_mime_type:
         slot_uri: ebucore:hasMimeType
         range: string
+        description: >-
+          The main MIME types as defined by IANA: e.g. audio, video, text, application, or a container
+          MIME type.
       ebucore_file_byte_size:
         slot_uri: ebucore:fileByteSize
         range: integer
+        description: The size of a Media Resource expressed in bytes.
       ebucore_duration:
         slot_uri: ebucore:duration
         range: string
+        description: The duration of a track or a signal expressed in ms.
       ebucore_width:
         slot_uri: ebucore:width
         range: integer
+        description: The width of e.g. a video frame typically expressed as a number of pixels.
       ebucore_height:
         slot_uri: ebucore:height
         range: integer
+        description: The height of e.g. a video frame typically expressed as a number of pixels.
       edm_spatial_resolution:
         slot_uri: edm:spatialResolution
         range: integer
+        description: The spatial resolution of a media resource expressed in DPIs.
       ebucore_sample_size:
         slot_uri: ebucore:sampleSize
         range: integer
+        description: The size of an audio sample in bits. Also called bit depth.
       ebucore_sample_rate:
         slot_uri: ebucore:sampleRate
         range: integer
+        description: The frequency at which an audio is sampled per second. Also called sampling rate.
       ebucore_bit_rate:
         slot_uri: ebucore:bitRate
         range: integer
+        description: To provide the bitrate at which the Media Resource can be played in bits per second.
       ebucore_frame_rate:
         slot_uri: ebucore:frameRate
         range: float
+        description: The frame rate of the video signal in frames per second.
       edm_has_color_space:
         slot_uri: edm:hasColorSpace
         range: string
+        description: The color space of an image resource i.e. 'grayscale' or 'sRGB'.
       edm_component_color:
         slot_uri: edm:componentColor
         range: string
         multivalued: true
+        description: >-
+          A significant color present in an image. The colors must be taken from the CSS3 standard color
+          palette and are expressed as a hexadecimal binary value.
       edm_point_count:
         slot_uri: edm:pointCount
         range: integer
+        description: the number of points in the 3D model
       edm_polygon_count:
         slot_uri: edm:polygonCount
         range: integer
+        description: the number of polygons in the 3D model
       edm_vertex_count:
         slot_uri: edm:vertexCount
         range: integer
+        description: the number of vertices in the 3D model
       rdfs_see_also:
         slot_uri: rdfs:seeAlso
         range: uri
         multivalued: true
+        description: A resource that provides further information about the subject resource.
       ebucore_orientation:
         slot_uri: ebucore:orientation
         range: string
+        description: The orientation of a document or an image.
       ebucore_audio_channel_number:
         slot_uri: ebucore:audioChannelNumber
         range: integer
+        description: The total number of audio channels contained in the Media Resource.
       dcterms_is_referenced_by:
         slot_uri: dcterms:isReferencedBy
         range: string
         multivalued: true
+        description: A related resource that references, cites, or otherwise points to the described resource.
       edm_preview:
         slot_uri: edm:preview
         range: uri
@@ -817,6 +1066,8 @@ classes:
         slot_uri: svcs:has_service
         range: uri
         multivalued: true
+        description: >-
+          The identifier of the Service require to consume the WebResource. <svcs:has_service rdf:resource=“http://www.example.org/Service/IIIF”>
       edm_type:
         slot_uri: edm:type
         range: EdmType
@@ -824,10 +1075,14 @@ classes:
       schema_digital_source_type:
         slot_uri: schema:digitalSourceType
         range: uri
+        description: >-
+          The type of digital source used to create the digital object. Indicates whether the content
+          is digitised from an analogue original, born-digital, or created through other digital processes.
       edm_intended_usage:
         slot_uri: edm:intendedUsage
         range: uri
         multivalued: true
+        description: The intended usage context for a web resource, such as thumbnail or full resolution.
       edm_is_representation_of:
         slot_uri: edm:isRepresentationOf
         range: uri
@@ -844,34 +1099,45 @@ classes:
         slot_uri: skos:prefLabel
         range: string
         multivalued: true
+        description: >-
+          A resource has no more than one value of skos:prefLabel per language tag, and no more than one
+          value of skos:prefLabel without language tag.
       skos_alt_label:
         slot_uri: skos:altLabel
         range: string
         multivalued: true
+        description: The range of skos:altLabel is the class of RDF plain literals.
       skos_hidden_label:
         slot_uri: skos:hiddenLabel
         range: string
         multivalued: true
+        description: The range of skos:hiddenLabel is the class of RDF plain literals.
       skos_note:
         slot_uri: skos:note
         range: string
         multivalued: true
+        description: A general note, for any purpose.
       dc_date:
         slot_uri: dc:date
         range: string
         multivalued: true
+        description: A point or period of time associated with an event in the lifecycle of the resource.
       dc_identifier:
         slot_uri: dc:identifier
         range: string
         multivalued: true
+        description: identifier
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
         multivalued: true
+        description: A related resource that is included either physically or logically in the described
+          resource.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
         multivalued: true
+        description: A related resource in which the described resource is physically or logically included.
       edm_begin:
         slot_uri: edm:begin
         range: string
@@ -888,53 +1154,68 @@ classes:
           edm:hasMet relates a resource with the objects or phenomena that have happened to or have happened
           together with the resource under consideration. We can abstractly think of history and the present
           as a series of “meetings” between people and other things in space-time. Therefore we name this
-          rel...
+          relationship as the things the object “has met” in the course of its existence. These meetings
+          are events in the proper sense, in which other people and things participate in any role.
       edm_is_related_to:
         slot_uri: edm:isRelatedTo
         range: string
         multivalued: true
         description: |-
           edm:isRelatedTo is the most general contextual property in EDM. Contextual
-          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sa...
+          properties have typically to do either with the things that have happened to or together with the object under consideration, or what the object refers to by its shape, form or features in a figural or encoded form. For sake of simplicity, we include in the contextual relationships also the scholarly classification, which may have either to do with the role and cultural connections of the object in the past, or its kind of structure, substance or contents as it can be verified at present.
       foaf_name:
         slot_uri: foaf:name
         range: string
         multivalued: true
+        description: A name for some thing.
       rdaGr2_biographical_information:
         slot_uri: rdaGr2:biographicalInformation
         range: string
         multivalued: true
+        description: An account of the life of the person.
       rdaGr2_date_of_birth:
         slot_uri: rdaGr2:dateOfBirth
         range: string
+        description: The date of birth of the person.
       rdaGr2_date_of_death:
         slot_uri: rdaGr2:dateOfDeath
         range: string
+        description: The date of death of the person.
       rdaGr2_date_of_establishment:
         slot_uri: rdaGr2:dateOfEstablishment
         range: string
+        description: The date of establishment of the corporate body.
       rdaGr2_date_of_termination:
         slot_uri: rdaGr2:dateOfTermination
         range: string
+        description: The date of termination of the corporate body.
       rdaGr2_gender:
         slot_uri: rdaGr2:gender
         range: string
+        description: The gender with which a person identifies.
       rdaGr2_place_of_birth:
         slot_uri: rdaGr2:placeOfBirth
         range: string
         multivalued: true
+        description: The town, city, province, state, and/or country in which a person was born.
       rdaGr2_place_of_death:
         slot_uri: rdaGr2:placeOfDeath
         range: string
         multivalued: true
+        description: The town, city, province, state, and/or country in which a person died.
       rdaGr2_profession_or_occupation:
         slot_uri: rdaGr2:professionOrOccupation
         range: string
         multivalued: true
+        description: A profession or occupation in which the person works or has worked.
       owl_same_as:
         slot_uri: owl:sameAs
         range: uri
         multivalued: true
+        description: >-
+          The built-in OWL property owl:sameAs links an individual to an individual. Such an owl:sameAs
+          statement indicates that two URI references actually refer to the same thing: the individuals
+          have the same "identity".
   Place:
     class_uri: edm:Place
     description: >-
@@ -944,36 +1225,49 @@ classes:
       wgs84_pos_lat:
         slot_uri: wgs84_pos:lat
         range: string
+        description: The WGS84 latitude of a SpatialThing (decimal degrees).
       wgs84_pos_long:
         slot_uri: wgs84_pos:long
         range: string
+        description: The WGS84 longitude of a SpatialThing (decimal degrees).
       wgs84_pos_alt:
         slot_uri: wgs84_pos:alt
         range: string
+        description: "The WGS84 altitude of a SpatialThing (decimal meters \nabove the local reference\
+          \ ellipsoid)."
       skos_pref_label:
         slot_uri: skos:prefLabel
         range: string
         multivalued: true
+        description: >-
+          A resource has no more than one value of skos:prefLabel per language tag, and no more than one
+          value of skos:prefLabel without language tag.
       skos_alt_label:
         slot_uri: skos:altLabel
         range: string
         multivalued: true
+        description: The range of skos:altLabel is the class of RDF plain literals.
       skos_hidden_label:
         slot_uri: skos:hiddenLabel
         range: string
         multivalued: true
+        description: The range of skos:hiddenLabel is the class of RDF plain literals.
       skos_note:
         slot_uri: skos:note
         range: string
         multivalued: true
+        description: A general note, for any purpose.
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
         multivalued: true
+        description: A related resource that is included either physically or logically in the described
+          resource.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
         multivalued: true
+        description: A related resource in which the described resource is physically or logically included.
       edm_is_next_in_sequence:
         slot_uri: edm:isNextInSequence
         range: uri
@@ -984,65 +1278,98 @@ classes:
         slot_uri: owl:sameAs
         range: uri
         multivalued: true
+        description: >-
+          The built-in OWL property owl:sameAs links an individual to an individual. Such an owl:sameAs
+          statement indicates that two URI references actually refer to the same thing: the individuals
+          have the same "identity".
   Concept:
     class_uri: skos:Concept
+    description: An idea or notion; a unit of thought.
     attributes:
       skos_pref_label:
         slot_uri: skos:prefLabel
         range: string
         multivalued: true
+        description: >-
+          A resource has no more than one value of skos:prefLabel per language tag, and no more than one
+          value of skos:prefLabel without language tag.
       skos_alt_label:
         slot_uri: skos:altLabel
         range: string
         multivalued: true
+        description: The range of skos:altLabel is the class of RDF plain literals.
       skos_hidden_label:
         slot_uri: skos:hiddenLabel
         range: string
         multivalued: true
+        description: The range of skos:hiddenLabel is the class of RDF plain literals.
       skos_broader:
         slot_uri: skos:broader
         range: uri
         multivalued: true
+        description: Broader concepts are typically rendered as parents in a concept hierarchy (tree).
       skos_narrower:
         slot_uri: skos:narrower
         range: uri
         multivalued: true
+        description: Narrower concepts are typically rendered as children in a concept hierarchy (tree).
       skos_related:
         slot_uri: skos:related
         range: uri
         multivalued: true
+        description: skos:related is disjoint with skos:broaderTransitive
       skos_broad_match:
         slot_uri: skos:broadMatch
         range: uri
         multivalued: true
+        description: >-
+          skos:broadMatch is used to state a hierarchical mapping link between two conceptual resources
+          in different concept schemes.
       skos_narrow_match:
         slot_uri: skos:narrowMatch
         range: uri
         multivalued: true
+        description: >-
+          skos:narrowMatch is used to state a hierarchical mapping link between two conceptual resources
+          in different concept schemes.
       skos_related_match:
         slot_uri: skos:relatedMatch
         range: uri
         multivalued: true
+        description: >-
+          skos:relatedMatch is used to state an associative mapping link between two conceptual resources
+          in different concept schemes.
       skos_exact_match:
         slot_uri: skos:exactMatch
         range: uri
         multivalued: true
+        description: skos:exactMatch is disjoint with each of the properties skos:broadMatch and skos:relatedMatch.
       skos_close_match:
         slot_uri: skos:closeMatch
         range: uri
         multivalued: true
+        description: >-
+          skos:closeMatch is used to link two concepts that are sufficiently similar that they can be
+          used interchangeably in some information retrieval applications. In order to avoid the possibility
+          of "compound errors" when combining mappings across more than two concept schemes, skos:closeMatch
+          is not declared to be a transitive property.
       skos_note:
         slot_uri: skos:note
         range: string
         multivalued: true
+        description: A general note, for any purpose.
       skos_notation:
         slot_uri: skos:notation
         range: string
         multivalued: true
+        description: >-
+          A notation, also known as classification code, is a string of characters such as "T58.5" or
+          "303.4833" used to uniquely identify a concept within the scope of a given concept scheme.
       skos_in_scheme:
         slot_uri: skos:inScheme
         range: uri
         multivalued: true
+        description: Relates a resource (for example a concept) to a concept scheme in which it is included.
   TimeSpan:
     class_uri: edm:TimeSpan
     description: |-
@@ -1053,26 +1380,35 @@ classes:
         slot_uri: skos:prefLabel
         range: string
         multivalued: true
+        description: >-
+          A resource has no more than one value of skos:prefLabel per language tag, and no more than one
+          value of skos:prefLabel without language tag.
       skos_alt_label:
         slot_uri: skos:altLabel
         range: string
         multivalued: true
+        description: The range of skos:altLabel is the class of RDF plain literals.
       skos_hidden_label:
         slot_uri: skos:hiddenLabel
         range: string
         multivalued: true
+        description: The range of skos:hiddenLabel is the class of RDF plain literals.
       skos_note:
         slot_uri: skos:note
         range: string
         multivalued: true
+        description: A general note, for any purpose.
       dcterms_has_part:
         slot_uri: dcterms:hasPart
         range: string
         multivalued: true
+        description: A related resource that is included either physically or logically in the described
+          resource.
       dcterms_is_part_of:
         slot_uri: dcterms:isPartOf
         range: string
         multivalued: true
+        description: A related resource in which the described resource is physically or logically included.
       edm_begin:
         slot_uri: edm:begin
         range: string
@@ -1091,31 +1427,49 @@ classes:
         slot_uri: owl:sameAs
         range: uri
         multivalued: true
+        description: >-
+          The built-in OWL property owl:sameAs links an individual to an individual. Such an owl:sameAs
+          statement indicates that two URI references actually refer to the same thing: the individuals
+          have the same "identity".
       skos_notation:
         slot_uri: skos:notation
         range: string
+        description: >-
+          A notation, also known as classification code, is a string of characters such as "T58.5" or
+          "303.4833" used to uniquely identify a concept within the scope of a given concept scheme.
   Service:
     class_uri: svcs:Service
+    description: A Service is web service associated with a Site or part of it.
     attributes:
       dcterms_conforms_to:
         slot_uri: dcterms:conformsTo
         range: string
         multivalued: true
         required: true
+        description: An established standard to which the described resource conforms.
       doap_implements:
         slot_uri: doap:implements
         range: uri
         multivalued: true
+        description: >-
+          A specification that a project implements. Could be a standard, API or legally defined level
+          of conformance. In IIIF doap:implements refers to the the general protocol without specific
+          version.
   License:
     class_uri: cc:License
+    description: >-
+      a set of requests/permissions to users of a Work, e.g. a copyright license, the public domain, information
+      for distributors
     attributes:
       odrl_inherit_from:
         slot_uri: odrl:inheritFrom
         range: uri
         required: true
+        description: Relates a (child) policy to another (parent) policy from which terms are inherited.
       cc_deprecated_on:
         slot_uri: cc:deprecatedOn
         range: string
+        description: The date on which the license was deprecated.
   PersistentIdentifier:
     class_uri: edm:PersistentIdentifier
     attributes:
@@ -1123,34 +1477,53 @@ classes:
         slot_uri: rdf:value
         range: string
         required: true
+        description: Idiomatic property used for structured values. The principal value of a structured
+          resource.
       skos_notation:
         slot_uri: skos:notation
         range: string
         multivalued: true
+        description: >-
+          A notation, also known as classification code, is a string of characters such as "T58.5" or
+          "303.4833" used to uniquely identify a concept within the scope of a given concept scheme.
       edm_has_url:
         slot_uri: edm:hasURL
         range: uri
         multivalued: true
+        description: >-
+          A URL representation of the PID that can be used for resolving the PID. In some PID schemes,
+          the URL form may be the canonical form.
       dcterms_created:
         slot_uri: dcterms:created
         range: string
+        description: Date of creation of the resource
       dcterms_creator:
         slot_uri: dcterms:creator
         range: string
+        description: An entity responsible for making the resource.
       odrl_has_policy:
         slot_uri: odrl:hasPolicy
         range: uri
+        description: Identifies an ODRL Policy for which the identified Asset is the target Asset to all
+          the Rules.
       skos_in_scheme:
         slot_uri: skos:inScheme
         range: uri
+        description: Relates a resource (for example a concept) to a concept scheme in which it is included.
       edm_equivalent_pid:
         slot_uri: edm:equivalentPID
         range: string
         multivalued: true
+        description: >-
+          A PID from another PID Scheme that identifies the same resource. When the value is a literal,
+          the PID should be in the canonical form.
       edm_replaces_pid:
         slot_uri: edm:replacesPID
         range: string
         multivalued: true
+        description: >-
+          A PID from the same PID Scheme that identifies the same resource but has been deprecated in
+          favor of this PID. The value must be in the canonical form.
   PersistentIdentifierScheme:
     class_uri: edm:PersistentIdentifierScheme
     attributes:
@@ -1158,3 +1531,4 @@ classes:
         slot_uri: dcterms:title
         range: string
         multivalued: true
+        description: A name given to the resource.

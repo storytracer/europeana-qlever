@@ -9,15 +9,23 @@ OWL ontology (descriptions, domain/range, property types) from the europeana/
 metis-schema GitHub repository, and produces a LinkML YAML schema at
 ``src/europeana_qlever/schema/edm.yaml``.
 
+External ontology files (DC, DCTERMS, SKOS, FOAF, etc.) are fetched to provide
+descriptions for non-EDM properties. All ontology files are cached in the
+``ontologies/`` directory. Use ``--no-external-descriptions`` to skip
+incorporating external descriptions into the schema.
+
 The script is idempotent — re-run it whenever Europeana publishes a new EDM
 version to regenerate the schema.
 
 Usage:
     uv run scripts/generate-edm-schema.py
+    uv run scripts/generate-edm-schema.py --no-external-descriptions
 """
 
 from __future__ import annotations
 
+import argparse
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -113,6 +121,125 @@ ELEMENT_CLASS_DEFS: dict[str, tuple[str, str]] = {
     "skos:Concept": ("Concept", "skos:Concept"),
     "svcs:Service": ("Service", "svcs:Service"),
     "cc:License": ("License", "cc:License"),
+}
+
+# Ontology cache directory (project root)
+ONTOLOGIES_DIR = PROJECT_ROOT / "ontologies"
+METIS_SCHEMA_DIR = ONTOLOGIES_DIR / "metis-schema"
+
+# External ontology sources: prefix → (URL, rdflib format, filename)
+EXTERNAL_ONTOLOGIES: dict[str, tuple[str, str, str]] = {
+    "dc": ("http://purl.org/dc/elements/1.1/", "xml", "dc.rdf"),
+    "dcterms": ("http://purl.org/dc/terms/", "xml", "dcterms.rdf"),
+    "skos": ("https://www.w3.org/2009/08/skos-reference/skos.rdf", "xml", "skos.rdf"),
+    "foaf": ("http://xmlns.com/foaf/0.1/index.rdf", "xml", "foaf.rdf"),
+    "wgs84_pos": ("http://www.w3.org/2003/01/geo/wgs84_pos", "xml", "wgs84_pos.rdf"),
+    "ore": ("http://www.openarchives.org/ore/terms/", "xml", "ore.rdf"),
+    # ebucore: ontology not available as downloadable RDF — use hardcoded fallbacks
+    "cc": ("https://creativecommons.org/schema.rdf", "xml", "cc.rdf"),
+    "odrl": ("https://www.w3.org/ns/odrl/2/ODRL22.ttl", "turtle", "odrl.ttl"),
+    "dqv": ("https://www.w3.org/ns/dqv.ttl", "turtle", "dqv.ttl"),
+    "doap": (
+        "https://raw.githubusercontent.com/ewilderj/doap/master/schema/doap.rdf",
+        "xml",
+        "doap.rdf",
+    ),
+    "svcs": ("http://rdfs.org/sioc/services", "xml", "svcs.rdf"),
+}
+
+# Hardcoded fallback descriptions for namespaces without fetchable ontologies
+FALLBACK_DESCRIPTIONS: dict[str, str] = {
+    # rdaGr2 — namespace retired, no RDF endpoint
+    "http://rdvocab.info/ElementsGr2/biographicalInformation":
+        "An account of the life of the person.",
+    "http://rdvocab.info/ElementsGr2/dateOfBirth":
+        "The date of birth of the person.",
+    "http://rdvocab.info/ElementsGr2/dateOfDeath":
+        "The date of death of the person.",
+    "http://rdvocab.info/ElementsGr2/dateOfEstablishment":
+        "The date of establishment of the corporate body.",
+    "http://rdvocab.info/ElementsGr2/dateOfTermination":
+        "The date of termination of the corporate body.",
+    "http://rdvocab.info/ElementsGr2/gender":
+        "The gender with which a person identifies.",
+    "http://rdvocab.info/ElementsGr2/placeOfBirth":
+        "The town, city, province, state, and/or country in which a person was born.",
+    "http://rdvocab.info/ElementsGr2/placeOfDeath":
+        "The town, city, province, state, and/or country in which a person died.",
+    "http://rdvocab.info/ElementsGr2/professionOrOccupation":
+        "A profession or occupation in which the person works or has worked.",
+    # ebucore — ontology not available as downloadable RDF
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#audioChannelNumber":
+        "The total number of audio channels contained in the media resource.",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#bitRate":
+        "The bit rate of the media resource, expressed in bits per second.",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#duration":
+        "The duration of the media resource, typically expressed as a time value.",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#fileByteSize":
+        "The file size of the media resource in bytes.",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#frameRate":
+        "The frame rate of the video resource, expressed in frames per second.",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#hasMimeType":
+        "The MIME type of the media resource (e.g. image/jpeg, audio/mp3, video/mp4).",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#height":
+        "The height of the media resource in pixels.",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#orientation":
+        "The orientation of the image or video resource (e.g. landscape, portrait).",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#sampleRate":
+        "The audio sample rate of the media resource in Hz.",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#sampleSize":
+        "The audio sample size (bit depth) of the media resource in bits.",
+    "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#width":
+        "The width of the media resource in pixels.",
+    # cc
+    "http://creativecommons.org/ns#deprecatedOn":
+        "The date on which the license was deprecated.",
+    # edm properties not in the OWL ontology (newer additions)
+    "http://www.europeana.eu/schemas/edm/intermediateProvider":
+        "The name or identifier of an intermediate organization that acts between the data "
+        "provider and Europeana in the aggregation chain.",
+    "http://www.europeana.eu/schemas/edm/pid":
+        "A persistent identifier (PID) assigned to the resource, such as a DOI, Handle, or ARK.",
+    "http://www.europeana.eu/schemas/edm/equivalentPID":
+        "A persistent identifier that is considered equivalent to another PID for the same resource.",
+    "http://www.europeana.eu/schemas/edm/hasURL":
+        "The URL associated with a persistent identifier, providing access to the identified resource.",
+    "http://www.europeana.eu/schemas/edm/replacesPID":
+        "A persistent identifier that this PID replaces, indicating a superseded identifier.",
+    "http://www.europeana.eu/schemas/edm/codecName":
+        "The name of the codec used to encode the media resource (e.g. H.264, VP9, FLAC).",
+    "http://www.europeana.eu/schemas/edm/componentColor":
+        "A dominant colour component detected in the digital representation of the object, "
+        "expressed as a hex RGB value.",
+    "http://www.europeana.eu/schemas/edm/hasColorSpace":
+        "The colour space of the digital representation (e.g. sRGB, Adobe RGB, CMYK).",
+    "http://www.europeana.eu/schemas/edm/intendedUsage":
+        "The intended usage context for a web resource, such as thumbnail or full resolution.",
+    "http://www.europeana.eu/schemas/edm/pointCount":
+        "The number of points in a 3D point cloud representation of the object.",
+    "http://www.europeana.eu/schemas/edm/polygonCount":
+        "The number of polygons in a 3D mesh representation of the object.",
+    "http://www.europeana.eu/schemas/edm/spatialResolution":
+        "The spatial resolution of the digital representation, typically in DPI or PPI.",
+    "http://www.europeana.eu/schemas/edm/vertexCount":
+        "The number of vertices in a 3D mesh representation of the object.",
+    # owl — well-known properties
+    "http://www.w3.org/2002/07/owl#sameAs":
+        "The property that determines that two given individuals are equal. "
+        "This is used to link an entity to its equivalent in another dataset or authority file.",
+    # rdf
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#type":
+        "The subject is an instance of a class. States that the resource is a member of the given class.",
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#value":
+        "Idiomatic property used for structured values. The principal value of a structured resource.",
+    # rdfs
+    "http://www.w3.org/2000/01/rdf-schema#seeAlso":
+        "A resource that provides further information about the subject resource.",
+    # schema.org — avoid parsing 3MB TTL for one property
+    "https://schema.org/digitalSourceType":
+        "The type of digital source used to create the digital object. "
+        "Indicates whether the content is digitised from an analogue original, born-digital, "
+        "or created through other digital processes.",
 }
 
 
@@ -220,6 +347,70 @@ def _collect_elements(
 def _parse_complex_type(ct: etree._Element) -> list[dict]:
     """Parse a complexType element and return its property elements."""
     return _collect_elements(ct)
+
+
+def _clean_xsd_doc(text: str) -> str:
+    """Clean up XSD documentation text: collapse whitespace, strip XML examples."""
+    import re
+    # Remove inline XML example tags like <title>...</title>
+    text = re.sub(r"<[^>]+>.*?</[^>]+>", "", text)
+    # Remove self-closing tags like <dqv:hasQualityAnnotation/>
+    text = re.sub(r"<[^>]+/>", "", text)
+    # Remove unclosed tags like <edm:intermediateProvider<
+    text = re.sub(r"<[^>]*<", "", text)
+    # Collapse whitespace
+    text = " ".join(text.split())
+    # Strip trailing "Example:" and "Type: String" etc.
+    text = re.sub(r"\s*Example:\s*$", "", text)
+    text = re.sub(r"\s*Type:\s*\w+\s*$", "", text)
+    return text.strip()
+
+
+def parse_xsd_docs(xsd_dir: Path) -> dict[str, dict]:
+    """Extract documentation from XSD element annotations.
+
+    Scans all XSD files for global ``<element>`` declarations that contain
+    ``<annotation><documentation>`` and returns
+    ``{full_uri: {"description": ...}}``.
+    """
+    _SKIP = {"EDM-INTERNAL-MAIN.xsd", "EDM-INTERNAL.xsd", "ENRICHMENT.xsd"}
+    info: dict[str, dict] = {}
+
+    for xsd_path in sorted(xsd_dir.glob("*.xsd")):
+        if xsd_path.name in _SKIP:
+            continue
+        try:
+            tree = etree.parse(str(xsd_path))
+        except etree.XMLSyntaxError:
+            continue
+
+        root = tree.getroot()
+        target_ns = root.get("targetNamespace", "")
+
+        for el in root.findall(f"{{{XS}}}element"):
+            name = el.get("name")
+            if not name:
+                continue
+
+            # Extract documentation
+            ann = el.find(f"{{{XS}}}annotation")
+            if ann is None:
+                # Check inside inline complexType
+                ct = el.find(f"{{{XS}}}complexType")
+                if ct is not None:
+                    ann = ct.find(f"{{{XS}}}annotation")
+            if ann is None:
+                continue
+            doc = ann.find(f"{{{XS}}}documentation")
+            if doc is None or not doc.text:
+                continue
+
+            desc = _clean_xsd_doc(doc.text)
+            if desc:
+                full_uri = f"{target_ns}{name}"
+                info[full_uri] = {"description": desc}
+
+    return info
 
 
 def _resolve_element_type(
@@ -397,6 +588,95 @@ def parse_owl(owl_path: Path) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
+# External ontology descriptions
+# ---------------------------------------------------------------------------
+
+
+def _best_description(g: Graph, subject, predicates: list) -> str:
+    """Get the best description for a subject, preferring English."""
+    for pred in predicates:
+        values = list(g.objects(subject, pred))
+        if not values:
+            continue
+        # Prefer English
+        for v in values:
+            if hasattr(v, "language") and v.language == "en":
+                return str(v).strip()
+        # Fall back to untagged
+        for v in values:
+            if hasattr(v, "language") and v.language is None:
+                return str(v).strip()
+        # Fall back to first
+        return str(values[0]).strip()
+    return ""
+
+
+def _fetch_ontology(url: str, dest: Path, accept: str = "application/rdf+xml") -> bool:
+    """Download an ontology file via curl if not already cached."""
+    if dest.exists() and dest.stat().st_size > 0:
+        return True
+    try:
+        subprocess.run(
+            ["curl", "-sL", "-o", str(dest), "-H", f"Accept: {accept}", url],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        return dest.exists() and dest.stat().st_size > 0
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        print(f"    WARNING: Failed to fetch {url}: {e}")
+        return False
+
+
+def fetch_external_ontologies(ontologies_dir: Path) -> dict[str, dict]:
+    """Fetch external ontology files and extract property descriptions.
+
+    Downloads RDF/OWL/TTL files for non-EDM namespaces and parses
+    rdfs:comment, skos:definition, and dcterms:description.
+
+    Returns {property_uri: {"description": ...}}.
+    """
+    ontologies_dir.mkdir(parents=True, exist_ok=True)
+    info: dict[str, dict] = {}
+
+    # Apply hardcoded fallbacks first (lowest priority)
+    for uri, desc in FALLBACK_DESCRIPTIONS.items():
+        info[uri] = {"description": desc}
+
+    # Description predicates in priority order
+    desc_predicates = [RDFS.comment, SKOS.definition, DCTERMS.description, DC.description]
+
+    for prefix, (url, fmt, filename) in EXTERNAL_ONTOLOGIES.items():
+        cache_path = ontologies_dir / filename
+        accept = "text/turtle" if fmt == "turtle" else "application/rdf+xml"
+        print(f"  Fetching {prefix} ontology from {url}...")
+        if not _fetch_ontology(url, cache_path, accept):
+            continue
+
+        try:
+            g = Graph()
+            g.parse(str(cache_path), format=fmt)
+
+            ns_uri = PREFIXES.get(prefix, "")
+            count = 0
+            for s in g.subjects():
+                uri = str(s)
+                if not uri.startswith(ns_uri):
+                    continue
+                desc = _best_description(g, s, desc_predicates)
+                if desc:
+                    # Only fill gaps — don't overwrite existing descriptions
+                    if uri not in info or not info[uri].get("description"):
+                        info[uri] = {"description": desc}
+                        count += 1
+            print(f"    Found {count} descriptions for {prefix}")
+        except Exception as e:
+            print(f"    WARNING: Could not parse {filename}: {e}")
+
+    return info
+
+
+# ---------------------------------------------------------------------------
 # Schema generation
 # ---------------------------------------------------------------------------
 
@@ -439,9 +719,6 @@ def _prop_to_slot(
     if full_uri in owl_info:
         desc = owl_info[full_uri].get("description", "")
         if desc:
-            # Truncate very long descriptions
-            if len(desc) > 300:
-                desc = desc[:297] + "..."
             slot_def["description"] = desc
 
     return slot_name, slot_def
@@ -484,9 +761,6 @@ def generate_schema(
         cls_desc = ""
         if full_cls_uri in owl_info:
             cls_desc = owl_info[full_cls_uri].get("description", "")
-            if cls_desc and len(cls_desc) > 300:
-                cls_desc = cls_desc[:297] + "..."
-
         cls_def: dict = {"class_uri": cls_uri}
         if cls_desc:
             cls_def["description"] = cls_desc
@@ -591,60 +865,142 @@ def _write_yaml(schema: dict, path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _ensure_metis_schema() -> Path:
+    """Clone metis-schema to /tmp and copy XSD/OWL files to ontologies/.
+
+    Returns the metis-schema directory under ontologies/.
+    """
+    import sys
+
+    dest = METIS_SCHEMA_DIR
+    xsd_dest = dest / XSD_SUBDIR
+    owl_dest = dest / OWL_FILE
+
+    # If already copied, reuse
+    if xsd_dest.is_dir() and owl_dest.is_file():
+        print(f"Using cached metis-schema at {dest}")
+        return dest
+
+    # Clone to /tmp first
+    cached = Path("/tmp/metis-schema")
+    if not (cached.is_dir() and (cached / XSD_SUBDIR).is_dir()):
+        print(f"Cloning {REPO_URL} to /tmp...")
+        if cached.exists():
+            shutil.rmtree(cached)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", REPO_URL, str(cached)],
+            check=True,
+            capture_output=True,
+        )
+
+    src_xsd = cached / XSD_SUBDIR
+    src_owl = cached / OWL_FILE
+    if not src_xsd.is_dir():
+        print(f"ERROR: XSD directory not found at {src_xsd}", file=sys.stderr)
+        sys.exit(1)
+    if not src_owl.is_file():
+        print(f"ERROR: OWL file not found at {src_owl}", file=sys.stderr)
+        sys.exit(1)
+
+    # Copy needed files to ontologies/metis-schema/
+    print(f"Copying metis-schema files to {dest}...")
+    dest.mkdir(parents=True, exist_ok=True)
+    if xsd_dest.exists():
+        shutil.rmtree(xsd_dest)
+    xsd_dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(str(src_xsd), str(xsd_dest))
+    owl_dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(src_owl), str(owl_dest))
+
+    return dest
+
+
 def main() -> None:
     import sys
 
-    # Clone metis-schema
-    with tempfile.TemporaryDirectory() as tmp:
-        repo_dir = Path(tmp) / "metis-schema"
-        # Check if already cloned in /tmp
-        cached = Path("/tmp/metis-schema")
-        if cached.is_dir() and (cached / XSD_SUBDIR).is_dir():
-            repo_dir = cached
-            print(f"Using cached metis-schema at {repo_dir}")
-        else:
-            print(f"Cloning {REPO_URL}...")
-            subprocess.run(
-                ["git", "clone", "--depth", "1", REPO_URL, str(repo_dir)],
-                check=True,
-                capture_output=True,
-            )
+    parser = argparse.ArgumentParser(
+        description="Generate LinkML EDM base schema from metis-schema.",
+    )
+    parser.add_argument(
+        "--no-external-descriptions",
+        action="store_true",
+        help="Skip incorporating external ontology descriptions into the schema. "
+        "Ontologies are still downloaded to ontologies/.",
+    )
+    args = parser.parse_args()
 
-        xsd_dir = repo_dir / XSD_SUBDIR
-        owl_path = repo_dir / OWL_FILE
+    # Ensure metis-schema files are in ontologies/
+    metis_dir = _ensure_metis_schema()
+    xsd_dir = metis_dir / XSD_SUBDIR
+    owl_path = metis_dir / OWL_FILE
 
-        if not xsd_dir.is_dir():
-            print(f"ERROR: XSD directory not found at {xsd_dir}", file=sys.stderr)
-            sys.exit(1)
-        if not owl_path.is_file():
-            print(f"ERROR: OWL file not found at {owl_path}", file=sys.stderr)
-            sys.exit(1)
+    # Parse sources
+    print("Parsing XSD files...")
+    xsd_classes = parse_all_xsds(xsd_dir)
+    print(f"  Found {len(xsd_classes)} classes: {', '.join(xsd_classes)}")
+    for cls_name, props in xsd_classes.items():
+        print(f"    {cls_name}: {len(props)} properties")
 
-        # Parse sources
-        print("Parsing XSD files...")
-        xsd_classes = parse_all_xsds(xsd_dir)
-        print(f"  Found {len(xsd_classes)} classes: {', '.join(xsd_classes)}")
-        for cls_name, props in xsd_classes.items():
-            print(f"    {cls_name}: {len(props)} properties")
+    print("Parsing XSD documentation annotations...")
+    xsd_docs = parse_xsd_docs(xsd_dir)
+    print(f"  Found {len(xsd_docs)} element descriptions from XSD annotations")
 
-        print("Parsing OWL ontology...")
-        owl_info = parse_owl(owl_path)
-        print(f"  Found {len(owl_info)} class/property descriptions")
+    print("Parsing EDM OWL ontology...")
+    owl_info = parse_owl(owl_path)
+    print(f"  Found {len(owl_info)} class/property descriptions")
 
-        # Generate schema
-        print("Generating LinkML schema...")
-        schema = generate_schema(xsd_classes, owl_info)
+    # Fetch external ontologies (always downloaded, descriptions optional)
+    external_dir = ONTOLOGIES_DIR / "external"
+    print("Fetching external ontologies...")
+    external_info = fetch_external_ontologies(external_dir)
+    print(f"  Found {len(external_info)} external descriptions total")
 
-        # Count total attributes
-        total_attrs = sum(
-            len(c.get("attributes", {}))
-            for c in schema.get("classes", {}).values()
-        )
-        print(f"  {len(schema['classes'])} classes, {total_attrs} attributes total")
+    # Build merged description index.
+    # Priority (highest first): EDM OWL > XSD docs > external ontologies > hardcoded fallbacks
+    # EDM OWL descriptions are curated and specific to EDM semantics.
+    # XSD docs come from metis-schema and are EDM-contextualised with examples.
+    # External ontologies provide generic definitions from upstream vocabularies.
+    # Hardcoded fallbacks cover namespaces without fetchable sources.
+    if not args.no_external_descriptions:
+        # Merge in priority order: XSD docs first, then external fills remaining gaps.
+        # EDM OWL (already in owl_info) is never overwritten.
+        for uri, data in xsd_docs.items():
+            desc = data.get("description", "")
+            if not desc:
+                continue
+            if uri not in owl_info:
+                owl_info[uri] = data
+            elif not owl_info[uri].get("description"):
+                owl_info[uri]["description"] = desc
 
-        # Write output
-        _write_yaml(schema, OUTPUT_PATH)
-        print(f"Wrote {OUTPUT_PATH}")
+        for uri, data in external_info.items():
+            if uri not in owl_info:
+                owl_info[uri] = data
+            elif not owl_info[uri].get("description"):
+                owl_info[uri]["description"] = data.get("description", "")
+
+        print("  Merged XSD + external descriptions into schema")
+    else:
+        print("  Skipping external descriptions (--no-external-descriptions)")
+
+    # Generate schema
+    print("Generating LinkML schema...")
+    schema = generate_schema(xsd_classes, owl_info)
+
+    # Count total attributes and description coverage
+    total_attrs = 0
+    with_desc = 0
+    for c in schema.get("classes", {}).values():
+        for a in c.get("attributes", {}).values():
+            total_attrs += 1
+            if a.get("description"):
+                with_desc += 1
+    print(f"  {len(schema['classes'])} classes, {total_attrs} attributes total")
+    print(f"  {with_desc}/{total_attrs} attributes have descriptions ({100 * with_desc // total_attrs}%)")
+
+    # Write output
+    _write_yaml(schema, OUTPUT_PATH)
+    print(f"Wrote {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
