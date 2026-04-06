@@ -129,7 +129,7 @@ def scan_prefixes_cmd(ttl_dir: Path, sample_size: int, files_per_zip: int):
     table.add_column("Namespace URI")
     table.add_column("Source", style="dim")
 
-    from .edm_schema import prefixes as edm_prefixes
+    from .schema_loader import prefixes as edm_prefixes
     canonical = edm_prefixes()
     for p, u in sorted(prefixes.items()):
         source = "EDM canonical" if p in canonical else "[bold green]discovered[/]"

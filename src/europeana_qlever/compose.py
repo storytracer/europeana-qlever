@@ -10,14 +10,14 @@ SQL templates use ``{exports_dir}`` as a placeholder — replaced at
 execution time with the actual path to the exports directory.
 
 All column names, aggregation patterns, and entity resolution are derived
-from the LinkML schema via :mod:`edm_schema`.
+from the LinkML schema via :mod:`schema_loader`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .edm_schema import (
+from .schema_loader import (
     item_fields,
     reuse_level_sql,
     sparql_var,
@@ -177,13 +177,14 @@ CREATE TEMP TABLE wr_agg AS
     GROUP BY item"""))
 
         # Build the final SELECT from schema
-        # Scalar columns from items_core (those with sparql_variable annotations
-        # need aliasing: e.g. dataProvider→institution, provider→aggregator)
         select_parts = ["i.item"]
+
+        # Generate unique aliases for all agg tables
+        aliases = _make_aliases([col for _, col in agg_tables])
 
         # Multi-valued columns from agg tables
         for agg_name, col_name in agg_tables:
-            alias = _short_alias(col_name)
+            alias = aliases[col_name]
             select_parts.append(f"{alias}.{col_name}")
 
         # Scalar columns from items_core
@@ -206,14 +207,15 @@ CREATE TEMP TABLE wr_agg AS
         reuse_sql = reuse_level_sql("i.rights")
         select_parts.append(f"{reuse_sql} AS reuse_level")
 
-        # Web resource columns
-        for wr_col in ("mime_type", "width", "height", "file_bytes", "has_iiif"):
-            select_parts.append(f"wr.{wr_col}")
+        # Web resource columns — derived from Item fields with rdf_source=web_resource
+        for col_name, attr in fields.items():
+            if attr.annotations.get("rdf_source") == "web_resource":
+                select_parts.append(f"wr.{col_name}")
 
         # Build JOIN clauses
         join_parts = []
         for agg_name, col_name in agg_tables:
-            alias = _short_alias(col_name)
+            alias = aliases[col_name]
             join_parts.append(f"LEFT JOIN {agg_name} {alias} USING (item)")
         join_parts.append("LEFT JOIN wr_agg wr USING (item)")
 
@@ -229,16 +231,18 @@ FROM read_parquet('{_DIR}/items_core.parquet') i
         return steps
 
 
-# Short alias for agg table names in the final JOIN
-_ALIAS_MAP = {
-    "titles": "t", "descriptions": "d", "creators": "cr",
-    "contributors": "con", "publishers": "pub", "subjects": "s",
-    "dc_types": "dct", "formats": "fmt", "dates": "dt",
-    "years": "y", "languages": "l", "identifiers": "idn",
-    "dc_rights": "dcr",
-}
-
-
-def _short_alias(col_name: str) -> str:
-    """Return a short SQL alias for an aggregation table."""
-    return _ALIAS_MAP.get(col_name, col_name[:3])
+def _make_aliases(col_names: list[str]) -> dict[str, str]:
+    """Generate unique short SQL aliases for a list of column names."""
+    aliases: dict[str, str] = {}
+    used: set[str] = {"i", "wr"}  # reserved for items_core and web resources
+    for col in col_names:
+        # Try progressively longer prefixes until unique
+        for length in range(3, len(col) + 1):
+            candidate = col[:length]
+            if candidate not in used:
+                aliases[col] = candidate
+                used.add(candidate)
+                break
+        else:
+            aliases[col] = col
+    return aliases

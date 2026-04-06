@@ -45,7 +45,7 @@ from rich.progress import (
 
 from . import display
 from .constants import DEFAULT_COPY_BUF_SIZE
-from .edm_schema import prefixes as edm_prefixes
+from .schema_loader import prefixes as edm_prefixes
 from .state import MergeResult
 from .validate import validate_entry, verify_one_checksum
 

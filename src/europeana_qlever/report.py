@@ -5,7 +5,7 @@ and entity ``*_core`` / ``*_links`` Parquets to produce JSON + Markdown reports.
 
 Filtering is schema-driven: :class:`ReportFilters` accepts any Item field name
 from the LinkML schema and generates the appropriate DuckDB SQL using metadata
-from :func:`~europeana_qlever.edm_schema.filterable_fields`.
+from :func:`~europeana_qlever.schema_loader.filterable_fields`.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import duckdb
 import httpx
 
 from . import display
-from .edm_schema import authority_sql, entity_id_column, filterable_fields
+from .schema_loader import authority_sql, entity_id_column, filterable_fields
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ class ReportFilters:
     Every non-identifier Item field in the LinkML schema is filterable.
     The SQL generation style (``IN``, ``=``, ``>=``, ``list_has_any``, …)
     is inferred from the field's range and multivalued flag via
-    :func:`~europeana_qlever.edm_schema.filterable_fields`.
+    :func:`~europeana_qlever.schema_loader.filterable_fields`.
 
     Parse from a CLI string::
 

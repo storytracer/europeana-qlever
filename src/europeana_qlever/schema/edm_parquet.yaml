@@ -2,12 +2,13 @@ id: https://europeana.eu/schemas/edm-parquet
 name: edm_parquet
 title: Europeana EDM → Parquet Export Schema
 description: >-
-  Declarative schema for the europeana-qlever pipeline.  Defines all EDM
-  classes, properties, Parquet column mappings, and pipeline metadata as a
-  single source of truth.  Runtime code reads this via linkml-runtime
-  SchemaView — no property URIs or column names are hardcoded elsewhere.
+  Fully declarative export schema for the europeana-qlever pipeline.
+  Every export table is a LinkML class with annotations that specify
+  SPARQL generation, DuckDB composition, PyArrow types, and export set
+  membership.  Adding a new export requires only editing this file —
+  no Python code changes.
 
-version: "0.1.0"
+version: "0.2.0"
 
 prefixes:
   linkml: https://w3id.org/linkml/
@@ -74,6 +75,7 @@ enums:
 # ===================================================================
 
 classes:
+
   LangValue:
     description: >-
       A string value with its language tag. Used for titles and descriptions.
@@ -110,7 +112,7 @@ classes:
         range: uri
 
   # =================================================================
-  # Item — the items_resolved Parquet schema
+  # Item — the items_resolved Parquet schema (composite export)
   # =================================================================
 
   Item:
@@ -118,6 +120,10 @@ classes:
       Fully resolved one-row-per-item export. This is the schema of
       items_resolved.parquet — the flagship denormalized export.
     class_uri: edm:ProvidedCHO
+    annotations:
+      export_name: items_resolved
+      export_type: composite
+      export_sets: "pipeline,items"
 
     attributes:
       # -- Identifier --
@@ -390,6 +396,10 @@ classes:
     description: Contextual entity representing a person or organisation.
     class_uri: edm:Agent
     annotations:
+      export_type: entity
+      export_name_core: agents_core
+      export_name_links: agents_links
+      export_sets: "pipeline,entities"
       id_column: agent
       link_properties: >-
         alt_label=skos:altLabel+lang,
@@ -432,6 +442,10 @@ classes:
     description: Contextual entity representing a SKOS concept.
     class_uri: skos:Concept
     annotations:
+      export_type: entity
+      export_name_core: concepts_core
+      export_name_links: concepts_links
+      export_sets: "pipeline,entities"
       id_column: concept
       link_properties: >-
         alt_label=skos:altLabel+lang,
@@ -463,6 +477,10 @@ classes:
     description: Contextual entity representing a geographic location.
     class_uri: edm:Place
     annotations:
+      export_type: entity
+      export_name_core: places_core
+      export_name_links: places_links
+      export_sets: "pipeline,entities"
       id_column: place
       link_properties: >-
         alt_label=skos:altLabel+lang,
@@ -494,6 +512,10 @@ classes:
     description: Contextual entity representing a time period.
     class_uri: edm:TimeSpan
     annotations:
+      export_type: entity
+      export_name_core: timespans_core
+      export_name_links: timespans_links
+      export_sets: "pipeline,entities"
       id_column: timespan
       link_properties: >-
         alt_label=skos:altLabel,
@@ -516,10 +538,6 @@ classes:
         slot_uri: edm:end
       notation:
         slot_uri: skos:notation
-
-  # =================================================================
-  # Institution / Organisation
-  # =================================================================
 
   Organization:
     description: Data provider or aggregator organisation.
@@ -547,13 +565,615 @@ classes:
         range: uri
         description: Filtered to Wikidata entity URIs only.
 
+  # =================================================================
+  # Scan exports — flat SPARQL with custom patterns
+  # =================================================================
+
+  ItemsCoreRow:
+    description: >-
+      One row per item with single-valued scalar properties.
+      Base table for items_resolved composition.
+    annotations:
+      export_name: items_core
+      export_type: scan
+      export_sets: "pipeline,items"
+      required_prefixes: "edm,ore,xsd"
+      sparql_pattern: |
+        {
+          SELECT ?item ?agg ?eAgg ?type ?rights ?dataProvider ?provider ?country
+          WHERE {
+            ?eProxy ore:proxyFor ?item .
+            ?eProxy edm:europeanaProxy "true" .
+            ?eProxy edm:type ?type .
+            ?agg edm:aggregatedCHO ?item .
+            ?agg edm:rights ?rights ;
+                 edm:dataProvider ?dataProvider ;
+                 edm:provider ?provider .
+            ?eAgg edm:aggregatedCHO ?item .
+            ?eAgg a edm:EuropeanaAggregation .
+            ?eAgg edm:country ?country .
+            {filters}
+          }
+        }
+      supports_filters: "true"
+    attributes:
+      item:
+        range: uri
+        required: true
+        annotations:
+          sparql_binding: "?item"
+      type:
+        range: EdmType
+        annotations:
+          sparql_binding: "?type"
+      rights:
+        range: uri
+        annotations:
+          sparql_binding: "?rights"
+      country:
+        annotations:
+          sparql_binding: "?country"
+      dataProvider:
+        annotations:
+          sparql_binding: "?dataProvider"
+      provider:
+        annotations:
+          sparql_binding: "?provider"
+      isShownAt:
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?agg edm:isShownAt ?isShownAt }"
+      isShownBy:
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?agg edm:isShownBy ?isShownBy }"
+      completeness:
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?eAgg edm:completeness ?completeness }"
+      preview:
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?eAgg edm:preview ?preview }"
+      landingPage:
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?eAgg edm:landingPage ?landingPage }"
+      datasetName:
+        annotations:
+          sparql_binding: "OPTIONAL { ?eAgg edm:datasetName ?datasetName }"
+
+  WebResourceRow:
+    description: >-
+      Digital representations with technical metadata.
+      One row per web resource per item.
+    annotations:
+      export_name: web_resources
+      export_type: scan
+      export_sets: "pipeline,items"
+      required_prefixes: "edm,ebucore,svcs"
+      sparql_pattern: |
+        ?agg edm:aggregatedCHO ?item ;
+             edm:isShownBy ?url .
+    attributes:
+      item:
+        range: uri
+        required: true
+        annotations:
+          sparql_binding: "?item"
+      url:
+        range: uri
+        annotations:
+          sparql_binding: "?url"
+      mime:
+        annotations:
+          sparql_binding: "OPTIONAL { ?url ebucore:hasMimeType ?mime }"
+      width:
+        annotations:
+          sparql_binding: "OPTIONAL { ?url ebucore:width ?width }"
+      height:
+        annotations:
+          sparql_binding: "OPTIONAL { ?url ebucore:height ?height }"
+      bytes:
+        annotations:
+          sparql_binding: "OPTIONAL { ?url ebucore:fileByteSize ?bytes }"
+      wr_rights:
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?url edm:rights ?wr_rights }"
+      has_service:
+        range: boolean
+        annotations:
+          sparql_binding: |
+            OPTIONAL { ?url svcs:has_service ?_svc }
+            BIND(BOUND(?_svc) AS ?has_service)
+
+  InstitutionsRow:
+    description: >-
+      Organisations with multilingual labels, acronym, country, role,
+      and Wikidata links.
+    annotations:
+      export_name: institutions
+      export_type: scan
+      export_sets: "pipeline,entities"
+      required_prefixes: "edm,foaf,skos,owl"
+      sparql_pattern: |
+        ?org a foaf:Organization ;
+             skos:prefLabel ?name .
+        BIND(LANG(?name) AS ?lang)
+    attributes:
+      org:
+        range: uri
+        required: true
+        annotations:
+          sparql_binding: "?org"
+      name:
+        annotations:
+          sparql_binding: "?name"
+      lang:
+        annotations:
+          sparql_binding: "?lang"
+      acronym:
+        annotations:
+          sparql_binding: "OPTIONAL { ?org edm:acronym ?acronym }"
+      country:
+        annotations:
+          sparql_binding: "OPTIONAL { ?org edm:country ?country }"
+      role:
+        annotations:
+          sparql_binding: "OPTIONAL { ?org edm:europeanaRole ?role }"
+      wikidata:
+        range: uri
+        annotations:
+          sparql_binding: >-
+            OPTIONAL { ?org owl:sameAs ?wikidata .
+              FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/")) }
+
+  # =================================================================
+  # Summary exports — SPARQL GROUP BY aggregates
+  # =================================================================
+
+  ItemsByType:
+    description: Item counts grouped by edm:type.
+    annotations:
+      export_name: items_by_type
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,ore"
+      sparql_pattern: |
+        ?eProxy ore:proxyFor ?item .
+        ?eProxy edm:europeanaProxy "true" .
+        ?eProxy edm:type ?type .
+      order_by: "DESC(?count)"
+    attributes:
+      type:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByCountry:
+    description: Item counts grouped by country.
+    annotations:
+      export_name: items_by_country
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm"
+      sparql_pattern: |
+        ?eAgg edm:aggregatedCHO ?item .
+        ?eAgg a edm:EuropeanaAggregation .
+        ?eAgg edm:country ?country .
+      order_by: "DESC(?count)"
+    attributes:
+      country:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByTypeAndCountry:
+    description: Item counts grouped by edm:type and country.
+    annotations:
+      export_name: items_by_type_and_country
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,ore"
+      sparql_pattern: |
+        ?eProxy ore:proxyFor ?item .
+        ?eProxy edm:europeanaProxy "true" .
+        ?eProxy edm:type ?type .
+        ?eAgg edm:aggregatedCHO ?item .
+        ?eAgg a edm:EuropeanaAggregation .
+        ?eAgg edm:country ?country .
+      order_by: "?type DESC(?count)"
+    attributes:
+      type:
+        annotations: { group_by: "true" }
+      country:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByLanguage:
+    description: Item counts grouped by edm:language.
+    annotations:
+      export_name: items_by_language
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm"
+      sparql_pattern: |
+        ?eAgg edm:aggregatedCHO ?item .
+        ?eAgg a edm:EuropeanaAggregation .
+        ?eAgg edm:language ?language .
+      order_by: "DESC(?count)"
+    attributes:
+      language:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByTypeAndLanguage:
+    description: Item counts grouped by edm:type and edm:language.
+    annotations:
+      export_name: items_by_type_and_language
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,ore"
+      sparql_pattern: |
+        ?eProxy ore:proxyFor ?item .
+        ?eProxy edm:europeanaProxy "true" .
+        ?eProxy edm:type ?type .
+        ?eAgg edm:aggregatedCHO ?item .
+        ?eAgg a edm:EuropeanaAggregation .
+        ?eAgg edm:language ?language .
+      order_by: "?type DESC(?count)"
+    attributes:
+      type:
+        annotations: { group_by: "true" }
+      language:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByInstitution:
+    description: Item counts grouped by institution (edm:dataProvider) with resolved name.
+    annotations:
+      export_name: items_by_institution
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,skos"
+      sparql_pattern: |
+        ?agg edm:aggregatedCHO ?item .
+        ?agg edm:dataProvider ?dataProvider .
+        OPTIONAL { ?dataProvider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }
+        OPTIONAL { ?dataProvider skos:prefLabel ?anyName }
+      order_by: "DESC(?count)"
+    attributes:
+      dataProvider:
+        annotations: { group_by: "true" }
+      institutionName:
+        annotations: { aggregation: "SAMPLE(COALESCE(?enName, ?anyName))" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(DISTINCT ?item)" }
+
+  ItemsByAggregator:
+    description: Item counts grouped by aggregator (edm:provider) with resolved name.
+    annotations:
+      export_name: items_by_aggregator
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,skos"
+      sparql_pattern: |
+        ?agg edm:aggregatedCHO ?item .
+        ?agg edm:provider ?provider .
+        OPTIONAL { ?provider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }
+        OPTIONAL { ?provider skos:prefLabel ?anyName }
+      order_by: "DESC(?count)"
+    attributes:
+      provider:
+        annotations: { group_by: "true" }
+      aggregatorName:
+        annotations: { aggregation: "SAMPLE(COALESCE(?enName, ?anyName))" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(DISTINCT ?item)" }
+
+  ItemsByYear:
+    description: Item counts grouped by edm:year.
+    annotations:
+      export_name: items_by_year
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,ore"
+      sparql_pattern: |
+        ?eProxy ore:proxyFor ?item .
+        ?eProxy edm:europeanaProxy "true" .
+        ?eProxy edm:year ?year .
+      order_by: "DESC(?count)"
+    attributes:
+      year:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByRightsUri:
+    description: Item counts grouped by rights URI.
+    annotations:
+      export_name: items_by_rights_uri
+      export_type: summary
+      export_sets: "pipeline,summary,rights"
+      required_prefixes: "edm"
+      sparql_pattern: |
+        ?agg edm:aggregatedCHO ?item ;
+             edm:rights ?rights .
+      order_by: "DESC(?count)"
+    attributes:
+      rights:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByReuseLevel:
+    description: Item counts grouped by reuse level (open, restricted, prohibited).
+    annotations:
+      export_name: items_by_reuse_level
+      export_type: summary
+      export_sets: "pipeline,summary,rights"
+      required_prefixes: "edm"
+      sparql_pattern: |
+        ?agg edm:aggregatedCHO ?item ;
+             edm:rights ?rights .
+        {reuse_bind}
+      order_by: "DESC(?count)"
+    attributes:
+      reuse_level:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByTypeAndReuseLevel:
+    description: Item counts grouped by edm:type and reuse level.
+    annotations:
+      export_name: items_by_type_and_reuse_level
+      export_type: summary
+      export_sets: "pipeline,summary,rights"
+      required_prefixes: "edm,ore"
+      sparql_pattern: |
+        ?eProxy ore:proxyFor ?item .
+        ?eProxy edm:europeanaProxy "true" .
+        ?eProxy edm:type ?type .
+        ?agg edm:aggregatedCHO ?item ;
+             edm:rights ?rights .
+        {reuse_bind}
+      order_by: "?type DESC(?count)"
+    attributes:
+      type:
+        annotations: { group_by: "true" }
+      reuse_level:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByCountryAndReuseLevel:
+    description: Item counts grouped by country and reuse level.
+    annotations:
+      export_name: items_by_country_and_reuse_level
+      export_type: summary
+      export_sets: "pipeline,summary,rights"
+      required_prefixes: "edm"
+      sparql_pattern: |
+        ?agg edm:aggregatedCHO ?item ;
+             edm:rights ?rights .
+        ?eAgg edm:aggregatedCHO ?item .
+        ?eAgg a edm:EuropeanaAggregation .
+        ?eAgg edm:country ?country .
+        {reuse_bind}
+      order_by: "?country DESC(?count)"
+    attributes:
+      country:
+        annotations: { group_by: "true" }
+      reuse_level:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByLanguageAndReuseLevel:
+    description: Item counts grouped by dc:language and reuse level.
+    annotations:
+      export_name: items_by_language_and_reuse_level
+      export_type: summary
+      export_sets: "pipeline,summary,rights"
+      required_prefixes: "dc,edm,ore"
+      sparql_pattern: |
+        ?proxy ore:proxyFor ?item .
+        FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" . }
+        ?proxy dc:language ?language .
+        ?agg edm:aggregatedCHO ?item ;
+             edm:rights ?rights .
+        {reuse_bind}
+      order_by: "?language DESC(?count)"
+    attributes:
+      language:
+        annotations: { group_by: "true" }
+      reuse_level:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ItemsByCompleteness:
+    description: Item counts grouped by completeness score and edm:type.
+    annotations:
+      export_name: items_by_completeness
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,ore"
+      sparql_pattern: |
+        ?eProxy ore:proxyFor ?item .
+        ?eProxy edm:europeanaProxy "true" .
+        ?eProxy edm:type ?type .
+        ?eAgg edm:aggregatedCHO ?item .
+        ?eAgg a edm:EuropeanaAggregation .
+        ?eAgg edm:completeness ?completeness .
+      order_by: "?completeness ?type"
+    attributes:
+      completeness:
+        range: integer
+        annotations: { group_by: "true" }
+      type:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  ContentAvailability:
+    description: >-
+      Item counts by edm:type, reuse level, and content access method
+      (direct URL, IIIF).
+    annotations:
+      export_name: content_availability
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,ore,svcs"
+      sparql_pattern: |
+        ?eProxy ore:proxyFor ?item .
+        ?eProxy edm:europeanaProxy "true" .
+        ?eProxy edm:type ?type .
+        ?agg edm:aggregatedCHO ?item ;
+             edm:rights ?rights .
+        {reuse_bind}
+        OPTIONAL { ?agg edm:isShownBy ?_isb }
+        BIND(BOUND(?_isb) AS ?has_direct_url)
+        OPTIONAL {
+          ?agg edm:isShownBy ?_wr .
+          ?_wr svcs:has_service ?_svc .
+        }
+        BIND(BOUND(?_svc) AS ?has_iiif)
+      order_by: "?type ?reuse_level DESC(?count)"
+    attributes:
+      type:
+        annotations: { group_by: "true" }
+      reuse_level:
+        annotations: { group_by: "true" }
+      has_direct_url:
+        range: boolean
+        annotations: { group_by: "true" }
+      has_iiif:
+        range: boolean
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  MimeTypeDistribution:
+    description: Item counts grouped by MIME type.
+    annotations:
+      export_name: mime_type_distribution
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,ebucore"
+      sparql_pattern: |
+        ?agg edm:aggregatedCHO ?item .
+        ?agg edm:isShownBy ?url .
+        ?url ebucore:hasMimeType ?mime .
+      order_by: "DESC(?count)"
+    attributes:
+      mime:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+  GeolocatedPlaces:
+    description: Places with coordinates and English labels.
+    annotations:
+      export_name: geolocated_places
+      export_type: scan
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,skos,wgs84_pos"
+      sparql_pattern: |
+        ?place a edm:Place ;
+               wgs84_pos:lat ?lat ;
+               wgs84_pos:long ?lon ;
+               skos:prefLabel ?name .
+        FILTER(LANG(?name) = "en")
+    attributes:
+      place:
+        range: uri
+        annotations:
+          sparql_binding: "?place"
+      name:
+        annotations:
+          sparql_binding: "?name"
+      lat:
+        range: float
+        annotations:
+          sparql_binding: "?lat"
+      lon:
+        range: float
+        annotations:
+          sparql_binding: "?lon"
+
+  IiifAvailability:
+    description: IIIF-enabled items grouped by institution.
+    annotations:
+      export_name: iiif_availability
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,skos,svcs"
+      sparql_pattern: |
+        ?agg edm:aggregatedCHO ?item ;
+             edm:dataProvider ?dataProvider ;
+             edm:isShownBy ?url .
+        ?url svcs:has_service ?service .
+        OPTIONAL { ?dataProvider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }
+        OPTIONAL { ?dataProvider skos:prefLabel ?anyName }
+      order_by: "DESC(?iiif_items)"
+    attributes:
+      dataProvider:
+        annotations: { group_by: "true" }
+      institutionName:
+        annotations: { aggregation: "SAMPLE(COALESCE(?enName, ?anyName))" }
+      iiif_items:
+        range: integer
+        annotations: { aggregation: "COUNT(DISTINCT ?item)" }
+
+  TextsByType:
+    description: dc:type value distribution for TEXT items.
+    annotations:
+      export_name: texts_by_type
+      export_type: summary
+      export_sets: "summary"
+      required_prefixes: "dc,edm,ore"
+      sparql_pattern: |
+        ?proxy ore:proxyFor ?item .
+        FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" . }
+        ?proxy edm:type "TEXT" .
+        ?proxy dc:type ?dcType .
+      order_by: "DESC(?count)"
+    attributes:
+      dcType:
+        annotations: { group_by: "true" }
+      count:
+        range: integer
+        annotations: { aggregation: "COUNT(?item)" }
+
+
 # ===================================================================
-# Pipeline metadata (not LinkML classes — stored as top-level annotations)
+# Pipeline metadata (top-level annotations)
 # ===================================================================
 
 annotations:
   # Reuse level classification patterns (URI prefix → level).
-  # Used to generate both DuckDB CASE/WHEN and SPARQL BIND expressions.
   reuse_level_open_prefixes: >-
     http://creativecommons.org/publicdomain/,
     http://creativecommons.org/licenses/by/,
@@ -564,7 +1184,6 @@ annotations:
     http://rightsstatements.org/vocab/NoC-NC/1.0/,
     http://rightsstatements.org/vocab/NoC-OKLR/1.0/,
     http://rightsstatements.org/vocab/InC-EDU/1.0/
-  # Everything else is "prohibited".
 
   # Authority patterns for classifying owl:sameAs links in entity reports.
   authority_patterns: >-

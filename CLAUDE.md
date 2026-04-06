@@ -19,11 +19,11 @@ src/europeana_qlever/
   __init__.py                     # Package version
   cli.py                          # Click command definitions (all commands)
   constants.py                    # QLever settings, directory layout, throttle/monitor thresholds
-  edm_schema.py                   # Schema loader: programmatic access to LinkML schema (prefixes, attributes, SQL generators)
+  schema_loader.py                # Schema loader: programmatic access to LinkML schema (prefixes, attributes, export discovery, PyArrow schemas)
   schema/
     __init__.py                   # Package marker
-    edm.yaml                      # EDM base schema (generated from metis-schema XSD+OWL) — full EDM data model
-    edm_parquet.yaml              # Export schema — imports edm.yaml, adds pipeline annotations and Parquet column mappings
+    edm.yaml                      # EDM base schema (generated from metis-schema XSD+OWL) — full EDM data model, 12 classes, 242 attributes
+    edm_parquet.yaml              # Export schema — imports edm.yaml, declares ALL 44 export tables as LinkML classes with SPARQL patterns and pipeline annotations
   dashboard.py                    # Live Rich dashboard (system resources, pipeline progress, log tail)
   analysis.py                     # Query performance analysis: runtime (QLever) and static (SPARQL algebra)
   display.py                      # Terminal output helpers (console setup, formatting)
@@ -182,9 +182,9 @@ The provider proxy (identified by `FILTER NOT EXISTS { ?proxy edm:europeanaProxy
 ## Conventions
 
 - All data-processing logic is in the Python CLI. No bash scripts for pipeline steps.
-- CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`/`query.py`/`compose.py`/`validate.py`/`throttle.py`, schema access in `edm_schema.py`, configuration in `constants.py`, resource detection in `resources.py`, live display in `dashboard.py`/`display.py`, state tracking in `state.py`, telemetry in `telemetry.py`, post-export analytics in `report.py`.
-- **Two-layer LinkML schema**: `schema/edm.yaml` (generated from official Europeana metis-schema XSD+OWL) is the full EDM data model with all ~240 properties across 12 classes. `schema/edm_parquet.yaml` imports `edm.yaml` and adds pipeline-specific annotations (base_table, query_pattern, entity_resolved, sparql_variable, etc.) and Parquet column mappings. Runtime code reads the export schema via `edm_schema.py` — no property URIs or column names are hardcoded elsewhere. The base EDM schema serves as a "menu" for designing new exports; regenerate it with `uv run scripts/generate-edm-schema.py`.
-- **Static Parquet schemas**: `edm_schema.pyarrow_schema(export_name)` returns a `pyarrow.Schema` for any of the 44 registered exports. Phase 1 exports (`tsv_to_parquet`) use static schemas instead of inference heuristics when available.
+- CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`/`query.py`/`compose.py`/`validate.py`/`throttle.py`, schema access in `schema_loader.py`, configuration in `constants.py`, resource detection in `resources.py`, live display in `dashboard.py`/`display.py`, state tracking in `state.py`, telemetry in `telemetry.py`, post-export analytics in `report.py`.
+- **Two-layer LinkML schema**: `schema/edm.yaml` (generated from official Europeana metis-schema XSD+OWL) is the full EDM data model with all ~240 properties across 12 classes. `schema/edm_parquet.yaml` imports `edm.yaml` and declares all 44 export tables as LinkML classes — each with `export_type`, `export_sets`, `sparql_pattern`, and per-column annotations. Runtime code reads the export schema via `schema_loader.py`. The base EDM schema serves as a "menu" for designing new exports; regenerate it with `uv run scripts/generate-edm-schema.py`.
+- **Fully declarative exports**: Every export (scan, summary, entity, composite, base_table) is a LinkML class in `edm_parquet.yaml` with annotations that drive SPARQL generation, DuckDB composition, PyArrow schemas, and export set membership. Adding a new export requires only editing the YAML — no Python code changes. `schema_loader.export_classes()` discovers all exports; `schema_loader.pyarrow_schema(name)` returns static PyArrow schemas; `query.py` generates SPARQL from `sparql_pattern` annotations; `export.py` builds export sets from `export_sets` annotations.
 - **No unit tests.** This project does not use unit tests. Do not create test files or run pytest.
 - Use `rich.console.Console` for all terminal output (not bare `print`).
 - Click options use `Path` type with `path_type=Path`.

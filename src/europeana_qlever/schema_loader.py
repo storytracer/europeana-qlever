@@ -553,207 +553,226 @@ def edm_class_properties(cls_name: str) -> dict[str, AttributeInfo]:
 
 
 # ---------------------------------------------------------------------------
-# PyArrow schema generation
+# Export class discovery — reads export_type / export_name annotations
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExportClassInfo:
+    """Metadata for a single export discovered from schema annotations."""
+
+    cls_name: str
+    export_name: str
+    export_type: str  # "scan", "summary", "composite", "entity"
+    export_sets: list[str]
+    attributes: dict[str, AttributeInfo]
+    annotations: dict[str, str]
+
+
+@functools.cache
+def export_classes() -> dict[str, ExportClassInfo]:
+    """Discover all export classes from schema annotations.
+
+    Returns a dict mapping export_name → ExportClassInfo.
+    Entity classes produce two entries (``*_core`` and ``*_links``).
+    """
+    sv = schema_view()
+    result: dict[str, ExportClassInfo] = {}
+    for cls_name in sv.all_classes():
+        cls = sv.get_class(cls_name)
+        annots = _annots(cls)
+        et = annots.get("export_type", "")
+        if not et:
+            continue
+
+        sets_str = annots.get("export_sets", "")
+        sets = [s.strip() for s in sets_str.split(",") if s.strip()]
+
+        attrs = class_attributes(cls_name)
+
+        if et == "entity":
+            # Entity classes produce two exports: *_core and *_links
+            for suffix in ("core", "links"):
+                en = annots.get(f"export_name_{suffix}", "")
+                if en:
+                    result[en] = ExportClassInfo(
+                        cls_name=cls_name,
+                        export_name=en,
+                        export_type=et,
+                        export_sets=sets,
+                        attributes=attrs,
+                        annotations=annots,
+                    )
+        else:
+            en = annots.get("export_name", "")
+            if en:
+                result[en] = ExportClassInfo(
+                    cls_name=cls_name,
+                    export_name=en,
+                    export_type=et,
+                    export_sets=sets,
+                    attributes=attrs,
+                    annotations=annots,
+                )
+
+    # Also register base table exports driven by Item field annotations
+    for col_name, attr in item_fields().items():
+        bt = attr.annotations.get("base_table")
+        if bt and bt not in result:
+            result[bt] = ExportClassInfo(
+                cls_name="Item",
+                export_name=bt,
+                export_type="base_table",
+                export_sets=["pipeline", "items"],
+                attributes=item_fields(),
+                annotations={"query_pattern": attr.annotations.get("query_pattern", "")},
+            )
+
+    return result
+
+
+@functools.cache
+def export_sets() -> dict[str, list[str]]:
+    """Build export sets from schema annotations.
+
+    Returns a dict mapping set name → list of export names.
+    """
+    sets: dict[str, list[str]] = {}
+    for en, info in export_classes().items():
+        for s in info.export_sets:
+            sets.setdefault(s, []).append(en)
+    # Sort each set for deterministic ordering
+    return {k: sorted(v) for k, v in sets.items()}
+
+
+def export_sparql_pattern(export_name: str) -> str | None:
+    """Return the SPARQL WHERE pattern for an export, or None."""
+    info = export_classes().get(export_name)
+    if info is None:
+        return None
+    return info.annotations.get("sparql_pattern")
+
+
+# ---------------------------------------------------------------------------
+# PyArrow schema generation — fully derived from schema annotations
+# ---------------------------------------------------------------------------
+
+# Range → PyArrow type mappings (module-level for reuse)
+_PA_SCALAR: dict[str, str] = {
+    "string": "string",
+    "uri": "string",
+    "integer": "int64",
+    "float": "float64",
+    "boolean": "bool_",
+    "EdmType": "string",
+    "ReuseLevel": "string",
+}
+
+_PA_MULTIVALUED: dict[str, str] = {
+    "LangValue": "list_struct_value_lang",
+    "LabeledEntity": "list_struct_label_uri",
+    "NamedEntity": "list_struct_name_uri",
+    "string": "list_string",
+}
+
+
+def _pa_type(range_name: str | None, multivalued: bool):
+    """Convert a LinkML range + multivalued flag to a PyArrow type."""
+    import pyarrow as pa
+
+    rng = range_name or "string"
+    if multivalued:
+        key = _PA_MULTIVALUED.get(rng, "list_string")
+        if key == "list_struct_value_lang":
+            return pa.list_(pa.struct([("value", pa.string()), ("lang", pa.string())]))
+        if key == "list_struct_label_uri":
+            return pa.list_(pa.struct([("label", pa.string()), ("uri", pa.string())]))
+        if key == "list_struct_name_uri":
+            return pa.list_(pa.struct([("name", pa.string()), ("uri", pa.string())]))
+        return pa.list_(pa.string())
+    type_name = _PA_SCALAR.get(rng, "string")
+    return getattr(pa, type_name)()
 
 
 @functools.cache
 def pyarrow_schema(export_name: str):
     """Return a static ``pyarrow.Schema`` for the given export.
 
-    Covers all registered exports: items_resolved, items_core, all
-    items_* base tables, entity core/links, web_resources, institutions,
-    and summary exports.  Raises ``KeyError`` if the export is unknown.
+    Derives schemas from schema class annotations.  Covers all registered
+    exports.  Raises ``KeyError`` if the export is unknown.
     """
     import pyarrow as pa
 
-    # --- Range → PyArrow type mappings ---
-    _SCALAR: dict[str, pa.DataType] = {
-        "string": pa.string(),
-        "uri": pa.string(),
-        "integer": pa.int64(),
-        "float": pa.float64(),
-        "boolean": pa.bool_(),
-        "EdmType": pa.string(),
-        "ReuseLevel": pa.string(),
-    }
+    info = export_classes().get(export_name)
+    if info is None:
+        raise KeyError(f"Unknown export: {export_name!r}")
 
-    _MULTIVALUED: dict[str, pa.DataType] = {
-        "LangValue": pa.list_(
-            pa.struct([("value", pa.string()), ("lang", pa.string())])
-        ),
-        "LabeledEntity": pa.list_(
-            pa.struct([("label", pa.string()), ("uri", pa.string())])
-        ),
-        "NamedEntity": pa.list_(
-            pa.struct([("name", pa.string()), ("uri", pa.string())])
-        ),
-        "string": pa.list_(pa.string()),
-    }
-
-    def _field_type(attr: AttributeInfo) -> pa.DataType:
-        rng = attr.range or "string"
-        if attr.multivalued:
-            return _MULTIVALUED.get(rng, pa.list_(pa.string()))
-        return _SCALAR.get(rng, pa.string())
-
-    # --- 1. items_resolved ---
-    if export_name == "items_resolved":
+    # --- composite (items_resolved) ---
+    if info.export_type == "composite":
         fields = item_fields()
-        return pa.schema([pa.field(n, _field_type(a)) for n, a in fields.items()])
+        return pa.schema([
+            pa.field(n, _pa_type(a.range, a.multivalued))
+            for n, a in fields.items()
+        ])
 
-    # --- 2. items_core (scalar Item fields, SPARQL variable names) ---
-    if export_name == "items_core":
-        fields = item_fields()
-        cols = []
-        for name, attr in fields.items():
-            if attr.multivalued or attr.annotations.get("computed") == "true":
-                continue
-            # Exclude web_resource-sourced fields (those come from web_resources export)
-            if attr.annotations.get("rdf_source") == "web_resource":
-                continue
-            # In the base table, column names are SPARQL variable names
-            col_name = sparql_var("Item", name)
-            cols.append(pa.field(col_name, _SCALAR.get(attr.range or "string", pa.string())))
-        return pa.schema(cols)
+    # --- base_table (items_titles, items_subjects, etc.) ---
+    if info.export_type == "base_table":
+        # Derive from the Item field that has this base_table
+        for name, attr in item_fields().items():
+            if attr.annotations.get("base_table") == export_name:
+                pattern = attr.annotations.get("query_pattern", "")
+                curie = slot_curie("Item", name)
+                local = curie.split(":")[1] if curie and ":" in curie else name
+                if pattern == "lang_tagged":
+                    return pa.schema([
+                        pa.field("item", pa.string()),
+                        pa.field(local, pa.string()),
+                        pa.field("lang", pa.string()),
+                    ])
+                elif pattern == "iri_or_literal":
+                    stem = name.rstrip("s")
+                    return pa.schema([
+                        pa.field("item", pa.string()),
+                        pa.field(f"{stem}_value", pa.string()),
+                        pa.field("is_iri", pa.bool_()),
+                    ])
+                elif pattern == "simple_literal":
+                    var_name = name.rstrip("s") if name != "dc_rights" else "dc_rights"
+                    return pa.schema([
+                        pa.field("item", pa.string()),
+                        pa.field(var_name, pa.string()),
+                    ])
 
-    # --- 3. items_* base tables (derived from query_pattern) ---
-    fields = item_fields()
-    for name, attr in fields.items():
-        bt = attr.annotations.get("base_table")
-        if bt == export_name:
-            pattern = attr.annotations.get("query_pattern", "")
-            # SPARQL variable names follow the query.py conventions:
-            curie = slot_curie("Item", name)
-            local = curie.split(":")[1] if curie and ":" in curie else name
-            if pattern == "lang_tagged":
-                # Variable is the DC local name (e.g., 'title' from dc:title)
-                return pa.schema([
-                    pa.field("item", pa.string()),
-                    pa.field(local, pa.string()),
-                    pa.field("lang", pa.string()),
-                ])
-            elif pattern == "iri_or_literal":
-                # Variable is {singular}_value (e.g., 'subject_value')
-                stem = name.rstrip("s")
-                return pa.schema([
-                    pa.field("item", pa.string()),
-                    pa.field(f"{stem}_value", pa.string()),
-                    pa.field("is_iri", pa.bool_()),
-                ])
-            elif pattern == "simple_literal":
-                # Variable is singular form, except dc_rights stays as-is
-                var_name = name.rstrip("s") if name != "dc_rights" else "dc_rights"
-                return pa.schema([
-                    pa.field("item", pa.string()),
-                    pa.field(var_name, pa.string()),
-                ])
-
-    # --- 4. Entity core exports (*_core) ---
-    for etype in entity_classes():
-        plural = etype.lower() + "s"
-        if export_name == f"{plural}_core":
-            id_col = entity_id_column(plural)
-            core = entity_core_fields(plural)
-            cols = [pa.field(id_col, pa.string())]
-            cols.append(pa.field("pref_label", pa.string()))
-            cols.append(pa.field("pref_label_lang", pa.string()))
-            for fname, fattr in core.items():
-                if fname in ("pref_label", "pref_label_lang"):
-                    continue
-                cols.append(pa.field(fname, _SCALAR.get(fattr.range or "string", pa.string())))
-            return pa.schema(cols)
-
-    # --- 5. Entity links exports (*_links) ---
-    for etype in entity_classes():
-        plural = etype.lower() + "s"
-        if export_name == f"{plural}_links":
-            id_col = entity_id_column(plural)
+    # --- entity (*_core, *_links) ---
+    if info.export_type == "entity":
+        id_col = info.annotations.get("id_column", "id")
+        if export_name.endswith("_links"):
             return pa.schema([
                 pa.field(id_col, pa.string()),
                 pa.field("property", pa.string()),
                 pa.field("value", pa.string()),
                 pa.field("lang", pa.string()),
             ])
+        else:
+            # *_core: id + pref_label + pref_label_lang + core fields
+            cols = [pa.field(id_col, pa.string())]
+            cols.append(pa.field("pref_label", pa.string()))
+            cols.append(pa.field("pref_label_lang", pa.string()))
+            for fname, fattr in info.attributes.items():
+                if fname in (id_col, "pref_label", "pref_label_lang"):
+                    continue
+                if fattr.identifier:
+                    continue
+                cols.append(pa.field(fname, _pa_type(fattr.range, fattr.multivalued)))
+            return pa.schema(cols)
 
-    # --- 6. web_resources ---
-    if export_name == "web_resources":
-        return pa.schema([
-            pa.field("item", pa.string()),
-            pa.field("url", pa.string()),
-            pa.field("mime", pa.string()),
-            pa.field("width", pa.string()),
-            pa.field("height", pa.string()),
-            pa.field("bytes", pa.string()),
-            pa.field("wr_rights", pa.string()),
-            pa.field("has_service", pa.bool_()),
-        ])
-
-    # --- 7. institutions ---
-    if export_name == "institutions":
-        return pa.schema([
-            pa.field("org", pa.string()),
-            pa.field("name", pa.string()),
-            pa.field("lang", pa.string()),
-            pa.field("acronym", pa.string()),
-            pa.field("country", pa.string()),
-            pa.field("role", pa.string()),
-            pa.field("wikidata", pa.string()),
-        ])
-
-    # --- 8. Summary and misc exports ---
-    _SUMMARY_SCHEMAS: dict[str, list[tuple[str, pa.DataType]]] = {
-        "items_by_country": [("country", pa.string()), ("count", pa.int64())],
-        "items_by_type": [("type", pa.string()), ("count", pa.int64())],
-        "items_by_type_and_country": [
-            ("type", pa.string()), ("country", pa.string()), ("count", pa.int64()),
-        ],
-        "items_by_type_and_language": [
-            ("type", pa.string()), ("language", pa.string()), ("count", pa.int64()),
-        ],
-        "items_by_language": [("language", pa.string()), ("count", pa.int64())],
-        "items_by_institution": [
-            ("dataProvider", pa.string()), ("institutionName", pa.string()),
-            ("count", pa.int64()),
-        ],
-        "items_by_aggregator": [
-            ("provider", pa.string()), ("aggregatorName", pa.string()),
-            ("count", pa.int64()),
-        ],
-        "items_by_year": [("year", pa.string()), ("count", pa.int64())],
-        "items_by_rights_uri": [("rights", pa.string()), ("count", pa.int64())],
-        "items_by_reuse_level": [("reuse_level", pa.string()), ("count", pa.int64())],
-        "items_by_type_and_reuse_level": [
-            ("type", pa.string()), ("reuse_level", pa.string()), ("count", pa.int64()),
-        ],
-        "items_by_country_and_reuse_level": [
-            ("country", pa.string()), ("reuse_level", pa.string()), ("count", pa.int64()),
-        ],
-        "items_by_language_and_reuse_level": [
-            ("language", pa.string()), ("reuse_level", pa.string()), ("count", pa.int64()),
-        ],
-        "items_by_completeness": [
-            ("completeness", pa.int64()), ("type", pa.string()), ("count", pa.int64()),
-        ],
-        "content_availability": [
-            ("type", pa.string()), ("reuse_level", pa.string()),
-            ("has_direct_url", pa.bool_()), ("has_iiif", pa.bool_()),
-            ("count", pa.int64()),
-        ],
-        "mime_type_distribution": [("mime", pa.string()), ("count", pa.int64())],
-        "geolocated_places": [
-            ("place", pa.string()), ("name", pa.string()),
-            ("lat", pa.float64()), ("lon", pa.float64()),
-        ],
-        "iiif_availability": [
-            ("dataProvider", pa.string()), ("institutionName", pa.string()),
-            ("iiif_items", pa.int64()),
-        ],
-        "texts_by_type": [("dcType", pa.string()), ("count", pa.int64())],
-    }
-
-    if export_name in _SUMMARY_SCHEMAS:
-        cols = _SUMMARY_SCHEMAS[export_name]
-        return pa.schema([pa.field(n, t) for n, t in cols])
-
-    raise KeyError(f"Unknown export: {export_name!r}")
+    # --- scan and summary: derive from class attributes ---
+    cols = []
+    for attr_name, attr in info.attributes.items():
+        agg = attr.annotations.get("aggregation", "")
+        if agg:
+            # Aggregation column: use the attribute name and derive type
+            cols.append(pa.field(attr_name, _pa_type(attr.range, attr.multivalued)))
+        else:
+            cols.append(pa.field(attr_name, _pa_type(attr.range, attr.multivalued)))
+    return pa.schema(cols)

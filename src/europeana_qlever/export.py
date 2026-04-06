@@ -44,7 +44,7 @@ from .constants import (
     QLEVER_QUERY_TIMEOUT,
 )
 from .compose import ComposeStep
-from .edm_schema import item_fields
+from .schema_loader import export_sets as _schema_export_sets, item_fields
 from .query import Query, QueryFilters, QueryRegistry
 from .state import ExportResult
 
@@ -116,90 +116,27 @@ class ExportSet:
         return {n: registry[n] for n in self.members if n in registry}
 
 
-EXPORT_SETS: dict[str, ExportSet] = {
-    "pipeline": ExportSet(
-        "pipeline",
-        "Full Parquet export pipeline (entity + component + composite)",
-        (
-            "web_resources",
-            "agents_core", "agents_links",
-            "places_core", "places_links",
-            "concepts_core", "concepts_links",
-            "timespans_core", "timespans_links",
-            "items_core", "items_titles", "items_descriptions",
-            "items_subjects", "items_dates", "items_languages",
-            "items_years", "items_creators",
-            "items_contributors", "items_publishers",
-            "items_dc_types", "items_formats",
-            "items_identifiers", "items_dc_rights",
-            "items_resolved",
-        ),
-    ),
-    "summary": ExportSet(
-        "summary",
-        "Dataset statistics — GROUP BY / COUNT aggregates",
-        (
-            "items_by_country", "items_by_language", "items_by_institution",
-            "items_by_aggregator",
-            "items_by_type", "items_by_type_and_country",
-            "items_by_type_and_language", "items_by_year",
-            "items_by_rights_uri", "items_by_reuse_level",
-            "items_by_type_and_reuse_level",
-            "items_by_country_and_reuse_level",
-            "items_by_language_and_reuse_level",
-            "items_by_completeness",
-            "content_availability",
-            "mime_type_distribution", "geolocated_places",
-            "iiif_availability", "texts_by_type",
-        ),
-    ),
-    "items": ExportSet(
-        "items",
-        "All item-related exports",
-        (
-            "items_core", "items_titles", "items_descriptions",
-            "items_subjects", "items_dates", "items_languages",
-            "items_years", "items_creators",
-            "items_contributors", "items_publishers",
-            "items_dc_types", "items_formats",
-            "items_identifiers", "items_dc_rights",
-            "items_resolved",
-            "web_resources",
-            "items_by_country", "items_by_language", "items_by_institution",
-            "items_by_aggregator",
-            "items_by_type", "items_by_type_and_country",
-            "items_by_type_and_language", "items_by_year",
-            "items_by_rights_uri", "items_by_reuse_level",
-            "items_by_type_and_reuse_level",
-            "items_by_country_and_reuse_level",
-            "items_by_language_and_reuse_level",
-            "items_by_completeness",
-            "content_availability",
-            "iiif_availability", "mime_type_distribution", "texts_by_type",
-        ),
-    ),
-    "entities": ExportSet(
-        "entities",
-        "Contextual entity exports with full linked data",
-        (
-            "agents_core", "agents_links",
-            "places_core", "places_links",
-            "concepts_core", "concepts_links",
-            "timespans_core", "timespans_links",
-            "institutions", "geolocated_places",
-        ),
-    ),
-    "rights": ExportSet(
-        "rights",
-        "Rights and licensing exports",
-        (
-            "items_by_rights_uri", "items_by_reuse_level",
-            "items_by_type_and_reuse_level",
-            "items_by_country_and_reuse_level",
-            "items_by_language_and_reuse_level",
-        ),
-    ),
-}
+def _build_export_sets() -> dict[str, ExportSet]:
+    """Build export sets from schema annotations (export_sets on each class)."""
+    schema_sets = _schema_export_sets()
+    result: dict[str, ExportSet] = {}
+    _DESCRIPTIONS = {
+        "pipeline": "Full Parquet export pipeline (entity + component + composite)",
+        "summary": "Dataset statistics — GROUP BY / COUNT aggregates",
+        "items": "All item-related exports",
+        "entities": "Contextual entity exports with full linked data",
+        "rights": "Rights and licensing exports",
+    }
+    for name, members in schema_sets.items():
+        result[name] = ExportSet(
+            name=name,
+            description=_DESCRIPTIONS.get(name, f"{name} exports"),
+            members=tuple(members),
+        )
+    return result
+
+
+EXPORT_SETS: dict[str, ExportSet] = _build_export_sets()
 
 
 # ---------------------------------------------------------------------------
@@ -912,7 +849,7 @@ class ExportPipeline:
         display.console.print("  Converting to Parquet…")
         # Use static schema when available to avoid inference heuristics
         try:
-            from .edm_schema import pyarrow_schema
+            from .schema_loader import pyarrow_schema
             pq_schema = pyarrow_schema(name)
         except (KeyError, ImportError):
             pq_schema = None
