@@ -1,0 +1,8 @@
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+SELECT ?id (STR(?lbl) AS ?main_label) ("" AS ?aliases)
+WHERE {
+  ?id a skos:Concept ;
+      skos:prefLabel ?lbl .
+  FILTER(LANG(?lbl) = "en")
+}

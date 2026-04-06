@@ -1,0 +1,14 @@
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+SELECT ?id ?value ?type WHERE {
+  VALUES ?id { {IDS} }
+  {
+    ?id skos:prefLabel ?value .
+    BIND("label" AS ?type)
+  } UNION {
+    ?id rdf:type ?raw .
+    BIND(STR(?raw) AS ?value)
+    BIND("info" AS ?type)
+  }
+}

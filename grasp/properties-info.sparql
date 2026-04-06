@@ -1,0 +1,9 @@
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?id ?value ?type WHERE {
+  VALUES ?id { {IDS} }
+  {
+    ?id rdfs:label ?value .
+    BIND("label" AS ?type)
+  }
+}

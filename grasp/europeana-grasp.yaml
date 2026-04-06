@@ -1,0 +1,23 @@
+# Local vLLM model (uncomment to use):
+# model: "hosted_vllm/nvidia/Qwen3-32B-NVFP4"
+# model_endpoint: "http://localhost:8080/v1"
+# temperature: 0.0
+
+model: "openai/gpt-4.1-mini"
+api: "completions"
+temperature: 0.0
+
+knowledge_graphs:
+  - kg: "europeana"
+    endpoint: "http://localhost:7001"
+    entities_type: "fuzzy"
+    properties_type: "fuzzy"
+    notes_file: "europeana-notes.json"
+
+notes_file: null
+
+search_top_k: 5
+sparql_query_timeout: 60.0
+completion_timeout: 120.0
+
+port: 6789

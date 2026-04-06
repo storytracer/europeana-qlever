@@ -1,0 +1,20 @@
+{
+  "edm": "http://www.europeana.eu/schemas/edm/",
+  "dc": "http://purl.org/dc/elements/1.1/",
+  "dcterms": "http://purl.org/dc/terms/",
+  "skos": "http://www.w3.org/2004/02/skos/core#",
+  "ore": "http://www.openarchives.org/ore/terms/",
+  "owl": "http://www.w3.org/2002/07/owl#",
+  "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+  "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+  "foaf": "http://xmlns.com/foaf/0.1/",
+  "rdaGr2": "http://rdvocab.info/ElementsGr2/",
+  "ebucore": "http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#",
+  "wgs84_pos": "http://www.w3.org/2003/01/geo/wgs84_pos#",
+  "svcs": "http://rdfs.org/sioc/services#",
+  "doap": "http://usefulinc.com/ns/doap#",
+  "cc": "http://creativecommons.org/ns#",
+  "odrl": "http://www.w3.org/ns/odrl/2/",
+  "dqv": "http://www.w3.org/ns/dqv#",
+  "schema": "https://schema.org/"
+}
