@@ -2,8 +2,7 @@ PREFIX edm: <http://www.europeana.eu/schemas/edm/>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 
-SELECT ?id (SAMPLE(?lbl_str) AS ?main_label) ("" AS ?aliases)
-WHERE {
+SELECT ?id (SAMPLE(?lbl_str) AS ?value) WHERE {
   VALUES ?cls { edm:Agent edm:Place skos:Concept edm:TimeSpan foaf:Organization }
   ?id a ?cls ;
       skos:prefLabel ?lbl .
