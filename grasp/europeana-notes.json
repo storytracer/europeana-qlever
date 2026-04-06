@@ -39,7 +39,7 @@
 
   "To find items about a subject: search_entity to find the concept URI, then: ?eProxy ore:proxyFor ?item . ?eProxy edm:europeanaProxy \"true\" . ?eProxy dc:subject <concept-uri> .",
 
-  "Rights classification — edm:rights is a URI on the aggregation. Open reuse: STRSTARTS(STR(?rights), \"http://creativecommons.org/publicdomain/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by-sa/\"). Restricted: other CC licenses (containing -nc or -nd). Prohibited: rightsstatements.org URIs like http://rightsstatements.org/vocab/InC/1.0/.",
+  "Rights classification — edm:rights is a URI on the ore:Aggregation (NOT on edm:EuropeanaAggregation). Do NOT use edm:EuropeanaAggregation for rights queries — it has a different, incomplete copy. Use: ?agg edm:aggregatedCHO ?item . ?agg edm:rights ?rights . Open reuse: STRSTARTS(STR(?rights), \"http://creativecommons.org/publicdomain/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by-sa/\"). Restricted: other CC licenses (containing -nc or -nd). Prohibited: rightsstatements.org URIs like http://rightsstatements.org/vocab/InC/1.0/.",
 
   "Year/date filtering: edm:year is on the Europeana proxy as a string. Cast with xsd:integer for range filters: FILTER(xsd:integer(?year) >= 1800 && xsd:integer(?year) <= 1900).",
 
