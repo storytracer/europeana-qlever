@@ -44,7 +44,8 @@ from rich.progress import (
 )
 
 from . import display
-from .constants import DEFAULT_COPY_BUF_SIZE, EDM_PREFIXES
+from .constants import DEFAULT_COPY_BUF_SIZE
+from .edm_schema import prefixes as edm_prefixes
 from .state import MergeResult
 from .validate import validate_entry, verify_one_checksum
 
@@ -95,7 +96,8 @@ def scan_prefixes_from_sample(
     dict[str, str]
         Merged prefix → namespace URI mapping.
     """
-    discovered: dict[str, str] = dict(EDM_PREFIXES)
+    canonical = edm_prefixes()
+    discovered: dict[str, str] = dict(canonical)
     known_uris = set(discovered.values())
 
     zip_files = sorted(ttl_dir.glob("*.zip"))
@@ -155,10 +157,10 @@ def scan_prefixes_from_sample(
 
             progress.advance(task)
 
-    extra = len(discovered) - len(EDM_PREFIXES)
+    extra = len(discovered) - len(canonical)
     display.console.print(
         f"[green]Prefix scan complete.[/green] "
-        f"{len(EDM_PREFIXES)} canonical + {extra} extra = {len(discovered)} total"
+        f"{len(canonical)} canonical + {extra} extra = {len(discovered)} total"
     )
     if parse_errors:
         display.console.print(

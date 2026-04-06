@@ -1,0 +1,577 @@
+id: https://europeana.eu/schemas/edm-parquet
+name: edm_parquet
+title: Europeana EDM → Parquet Export Schema
+description: >-
+  Declarative schema for the europeana-qlever pipeline.  Defines all EDM
+  classes, properties, Parquet column mappings, and pipeline metadata as a
+  single source of truth.  Runtime code reads this via linkml-runtime
+  SchemaView — no property URIs or column names are hardcoded elsewhere.
+
+version: "0.1.0"
+
+prefixes:
+  linkml: https://w3id.org/linkml/
+  cc: http://creativecommons.org/ns#
+  dcat: http://www.w3.org/ns/dcat#
+  dc: http://purl.org/dc/elements/1.1/
+  dcterms: http://purl.org/dc/terms/
+  doap: http://usefulinc.com/ns/doap#
+  dqv: http://www.w3.org/ns/dqv#
+  ebucore: http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#
+  edm: http://www.europeana.eu/schemas/edm/
+  foaf: http://xmlns.com/foaf/0.1/
+  odrl: http://www.w3.org/ns/odrl/2/
+  ore: http://www.openarchives.org/ore/terms/
+  owl: http://www.w3.org/2002/07/owl#
+  rdf: http://www.w3.org/1999/02/22-rdf-syntax-ns#
+  rdfs: http://www.w3.org/2000/01/rdf-schema#
+  rdaGr2: http://rdvocab.info/ElementsGr2/
+  schema: http://schema.org/
+  skos: http://www.w3.org/2004/02/skos/core#
+  svcs: http://rdfs.org/sioc/services#
+  wgs84_pos: http://www.w3.org/2003/01/geo/wgs84_pos#
+  xsd: http://www.w3.org/2001/XMLSchema#
+
+default_range: string
+
+imports:
+  - linkml:types
+
+# ===================================================================
+# Enums
+# ===================================================================
+
+enums:
+  ProxyType:
+    permissible_values:
+      provider: { description: "Provider proxy (original metadata)" }
+      europeana: { description: "Europeana proxy (normalised enrichments)" }
+
+  RdfSource:
+    permissible_values:
+      proxy: { description: "ore:Proxy triple pattern" }
+      aggregation: { description: "ore:Aggregation triple pattern" }
+      europeana_aggregation: { description: "edm:EuropeanaAggregation triple pattern" }
+      web_resource: { description: "edm:WebResource triple pattern" }
+
+  ReuseLevel:
+    permissible_values:
+      open: { description: "CC0, CC-BY, CC-BY-SA, CC public domain" }
+      restricted: { description: "CC-NC/ND variants, select RightsStatements.org" }
+      prohibited: { description: "InC, CNE, NKC, UND, and other non-reuse" }
+
+  EdmType:
+    permissible_values:
+      IMAGE: {}
+      TEXT: {}
+      SOUND: {}
+      VIDEO: {}
+      3D: {}
+
+# ===================================================================
+# Structured types (nested Parquet column types)
+# ===================================================================
+
+classes:
+  LangValue:
+    description: >-
+      A string value with its language tag. Used for titles and descriptions.
+      Maps to Parquet STRUCT<value VARCHAR, lang VARCHAR>.
+    attributes:
+      value:
+        range: string
+        required: true
+      lang:
+        range: string
+
+  LabeledEntity:
+    description: >-
+      An entity reference with a resolved label and its URI.
+      Maps to Parquet STRUCT<label VARCHAR, uri VARCHAR>.
+      Used for subjects, dc_types, formats.
+    attributes:
+      label:
+        range: string
+        required: true
+      uri:
+        range: uri
+
+  NamedEntity:
+    description: >-
+      An agent/person reference with a resolved display name and its URI.
+      Maps to Parquet STRUCT<name VARCHAR, uri VARCHAR>.
+      Used for creators, contributors, publishers.
+    attributes:
+      name:
+        range: string
+        required: true
+      uri:
+        range: uri
+
+  # =================================================================
+  # Item — the items_resolved Parquet schema
+  # =================================================================
+
+  Item:
+    description: >-
+      Fully resolved one-row-per-item export. This is the schema of
+      items_resolved.parquet — the flagship denormalized export.
+    class_uri: edm:ProvidedCHO
+
+    attributes:
+      # -- Identifier --
+      item:
+        slot_uri: edm:ProvidedCHO
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          rdf_source: aggregation
+
+      # -- Single-valued from Europeana proxy --
+      type:
+        slot_uri: edm:type
+        range: EdmType
+        required: true
+        annotations:
+          rdf_source: proxy
+          proxy_source: europeana
+
+      # -- Single-valued from aggregation --
+      country:
+        slot_uri: edm:country
+        required: true
+        annotations:
+          rdf_source: europeana_aggregation
+
+      institution:
+        slot_uri: edm:dataProvider
+        required: true
+        annotations:
+          sparql_variable: dataProvider
+          rdf_source: aggregation
+
+      aggregator:
+        slot_uri: edm:provider
+        required: true
+        annotations:
+          sparql_variable: provider
+          rdf_source: aggregation
+
+      rights:
+        slot_uri: edm:rights
+        range: uri
+        required: true
+        annotations:
+          rdf_source: aggregation
+
+      reuse_level:
+        range: ReuseLevel
+        annotations:
+          computed: "true"
+        description: >-
+          Derived from edm:rights URI via pattern matching.
+          open / restricted / prohibited.
+
+      completeness:
+        slot_uri: edm:completeness
+        range: integer
+        annotations:
+          rdf_source: europeana_aggregation
+
+      is_shown_at:
+        slot_uri: edm:isShownAt
+        range: uri
+        annotations:
+          sparql_variable: isShownAt
+          rdf_source: aggregation
+
+      is_shown_by:
+        slot_uri: edm:isShownBy
+        range: uri
+        annotations:
+          sparql_variable: isShownBy
+          rdf_source: aggregation
+
+      preview:
+        slot_uri: edm:preview
+        range: uri
+        annotations:
+          rdf_source: europeana_aggregation
+
+      landing_page:
+        slot_uri: edm:landingPage
+        range: uri
+        annotations:
+          sparql_variable: landingPage
+          rdf_source: europeana_aggregation
+
+      dataset_name:
+        slot_uri: edm:datasetName
+        annotations:
+          sparql_variable: datasetName
+          rdf_source: europeana_aggregation
+
+      # -- Multi-valued: lang-tagged (LangValue) --
+      titles:
+        slot_uri: dc:title
+        range: LangValue
+        multivalued: true
+        annotations:
+          base_table: items_titles
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: lang_tagged
+
+      descriptions:
+        slot_uri: dc:description
+        range: LangValue
+        multivalued: true
+        annotations:
+          base_table: items_descriptions
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: lang_tagged
+
+      # -- Multi-valued: NamedEntity (agent-resolved) --
+      creators:
+        slot_uri: dc:creator
+        range: NamedEntity
+        multivalued: true
+        annotations:
+          base_table: items_creators
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: iri_or_literal
+          entity_resolved: agents
+
+      contributors:
+        slot_uri: dc:contributor
+        range: NamedEntity
+        multivalued: true
+        annotations:
+          base_table: items_contributors
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: iri_or_literal
+          entity_resolved: agents
+
+      publishers:
+        slot_uri: dc:publisher
+        range: NamedEntity
+        multivalued: true
+        annotations:
+          base_table: items_publishers
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: iri_or_literal
+          entity_resolved: agents
+
+      # -- Multi-valued: LabeledEntity (concept-resolved) --
+      subjects:
+        slot_uri: dc:subject
+        range: LabeledEntity
+        multivalued: true
+        annotations:
+          base_table: items_subjects
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: iri_or_literal
+          entity_resolved: concepts
+
+      dc_types:
+        slot_uri: dc:type
+        range: LabeledEntity
+        multivalued: true
+        annotations:
+          base_table: items_dc_types
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: iri_or_literal
+          entity_resolved: concepts
+
+      formats:
+        slot_uri: dc:format
+        range: LabeledEntity
+        multivalued: true
+        annotations:
+          base_table: items_formats
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: iri_or_literal
+          entity_resolved: concepts
+
+      # -- Multi-valued: simple string lists --
+      dates:
+        slot_uri: dc:date
+        multivalued: true
+        annotations:
+          base_table: items_dates
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: simple_literal
+
+      years:
+        slot_uri: edm:year
+        multivalued: true
+        annotations:
+          base_table: items_years
+          rdf_source: proxy
+          proxy_source: europeana
+          query_pattern: simple_literal
+
+      languages:
+        slot_uri: dc:language
+        multivalued: true
+        annotations:
+          base_table: items_languages
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: simple_literal
+
+      identifiers:
+        slot_uri: dc:identifier
+        multivalued: true
+        annotations:
+          base_table: items_identifiers
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: simple_literal
+
+      dc_rights:
+        slot_uri: dc:rights
+        multivalued: true
+        annotations:
+          base_table: items_dc_rights
+          rdf_source: proxy
+          proxy_source: provider
+          query_pattern: simple_literal
+
+      # -- Web resource scalars --
+      mime_type:
+        slot_uri: ebucore:hasMimeType
+        annotations:
+          sparql_variable: mime
+          rdf_source: web_resource
+
+      width:
+        slot_uri: ebucore:width
+        range: integer
+        annotations:
+          rdf_source: web_resource
+
+      height:
+        slot_uri: ebucore:height
+        range: integer
+        annotations:
+          rdf_source: web_resource
+
+      file_bytes:
+        slot_uri: ebucore:fileByteSize
+        range: integer
+        annotations:
+          sparql_variable: bytes
+          rdf_source: web_resource
+
+      has_iiif:
+        slot_uri: svcs:has_service
+        range: boolean
+        annotations:
+          sparql_variable: has_service
+          rdf_source: web_resource
+          computed: "true"
+
+  # =================================================================
+  # Entity classes
+  # =================================================================
+
+  Agent:
+    description: Contextual entity representing a person or organisation.
+    class_uri: edm:Agent
+    annotations:
+      id_column: agent
+      link_properties: >-
+        alt_label=skos:altLabel+lang,
+        same_as=owl:sameAs,
+        profession=rdaGr2:professionOrOccupation+lang,
+        note=skos:note+lang,
+        identifier=dc:identifier,
+        name=foaf:name+lang,
+        biographical_info=rdaGr2:biographicalInformation+lang
+    attributes:
+      agent:
+        range: uri
+        required: true
+        identifier: true
+      pref_label:
+        slot_uri: skos:prefLabel
+        required: true
+      pref_label_lang:
+        description: Language tag of pref_label
+      date_of_birth:
+        slot_uri: rdaGr2:dateOfBirth
+      date_of_death:
+        slot_uri: rdaGr2:dateOfDeath
+      date_of_establishment:
+        slot_uri: rdaGr2:dateOfEstablishment
+      date_of_termination:
+        slot_uri: rdaGr2:dateOfTermination
+      gender:
+        slot_uri: rdaGr2:gender
+      place_of_birth:
+        slot_uri: rdaGr2:placeOfBirth
+      place_of_death:
+        slot_uri: rdaGr2:placeOfDeath
+      begin:
+        slot_uri: edm:begin
+      end:
+        slot_uri: edm:end
+
+  Concept:
+    description: Contextual entity representing a SKOS concept.
+    class_uri: skos:Concept
+    annotations:
+      id_column: concept
+      link_properties: >-
+        alt_label=skos:altLabel+lang,
+        broader=skos:broader,
+        narrower=skos:narrower,
+        related=skos:related,
+        exact_match=skos:exactMatch,
+        close_match=skos:closeMatch,
+        broad_match=skos:broadMatch,
+        narrow_match=skos:narrowMatch,
+        related_match=skos:relatedMatch,
+        note=skos:note+lang,
+        notation=skos:notation
+    attributes:
+      concept:
+        range: uri
+        required: true
+        identifier: true
+      pref_label:
+        slot_uri: skos:prefLabel
+        required: true
+      pref_label_lang:
+        description: Language tag of pref_label
+      scheme:
+        slot_uri: skos:inScheme
+        range: uri
+
+  Place:
+    description: Contextual entity representing a geographic location.
+    class_uri: edm:Place
+    annotations:
+      id_column: place
+      link_properties: >-
+        alt_label=skos:altLabel+lang,
+        same_as=owl:sameAs,
+        note=skos:note+lang,
+        is_part_of=dcterms:isPartOf,
+        has_part=dcterms:hasPart
+    attributes:
+      place:
+        range: uri
+        required: true
+        identifier: true
+      pref_label:
+        slot_uri: skos:prefLabel
+        required: true
+      pref_label_lang:
+        description: Language tag of pref_label
+      lat:
+        slot_uri: wgs84_pos:lat
+        range: float
+      lon:
+        slot_uri: wgs84_pos:long
+        range: float
+      alt:
+        slot_uri: wgs84_pos:alt
+        range: float
+
+  TimeSpan:
+    description: Contextual entity representing a time period.
+    class_uri: edm:TimeSpan
+    annotations:
+      id_column: timespan
+      link_properties: >-
+        alt_label=skos:altLabel,
+        same_as=owl:sameAs,
+        is_part_of=dcterms:isPartOf,
+        has_part=dcterms:hasPart
+    attributes:
+      timespan:
+        range: uri
+        required: true
+        identifier: true
+      pref_label:
+        slot_uri: skos:prefLabel
+        required: true
+      pref_label_lang:
+        description: Language tag of pref_label
+      begin:
+        slot_uri: edm:begin
+      end:
+        slot_uri: edm:end
+      notation:
+        slot_uri: skos:notation
+
+  # =================================================================
+  # Institution / Organisation
+  # =================================================================
+
+  Organization:
+    description: Data provider or aggregator organisation.
+    class_uri: foaf:Organization
+    annotations:
+      id_column: org
+    attributes:
+      org:
+        range: uri
+        required: true
+        identifier: true
+      name:
+        slot_uri: skos:prefLabel
+        required: true
+      lang:
+        description: Language tag of name
+      acronym:
+        slot_uri: edm:acronym
+      country:
+        slot_uri: edm:country
+      role:
+        slot_uri: edm:europeanaRole
+      wikidata:
+        slot_uri: owl:sameAs
+        range: uri
+        description: Filtered to Wikidata entity URIs only.
+
+# ===================================================================
+# Pipeline metadata (not LinkML classes — stored as top-level annotations)
+# ===================================================================
+
+annotations:
+  # Reuse level classification patterns (URI prefix → level).
+  # Used to generate both DuckDB CASE/WHEN and SPARQL BIND expressions.
+  reuse_level_open_prefixes: >-
+    http://creativecommons.org/publicdomain/,
+    http://creativecommons.org/licenses/by/,
+    http://creativecommons.org/licenses/by-sa/
+  reuse_level_restricted_prefixes: >-
+    http://creativecommons.org/licenses/
+  reuse_level_restricted_uris: >-
+    http://rightsstatements.org/vocab/NoC-NC/1.0/,
+    http://rightsstatements.org/vocab/NoC-OKLR/1.0/,
+    http://rightsstatements.org/vocab/InC-EDU/1.0/
+  # Everything else is "prohibited".
+
+  # Authority patterns for classifying owl:sameAs links in entity reports.
+  authority_patterns: >-
+    wikidata=http://www.wikidata.org/,
+    viaf=http://viaf.org/,
+    gnd=http://d-nb.info/gnd/,
+    ulan=http://vocab.getty.edu/ulan/,
+    isni=http://isni.org/,
+    loc=http://id.loc.gov/,
+    bnf=http://data.bnf.fr/,
+    geonames=http://sws.geonames.org/

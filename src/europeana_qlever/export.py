@@ -44,6 +44,7 @@ from .constants import (
     QLEVER_QUERY_TIMEOUT,
 )
 from .compose import ComposeStep
+from .edm_schema import item_fields
 from .query import Query, QueryFilters, QueryRegistry
 from .state import ExportResult
 
@@ -250,7 +251,7 @@ class ExportRegistry:
         for name, query in self._query_registry.queries.items():
             exports[name] = QueryExport.from_query(query, self._filters)
 
-        # Composite exports
+        # Composite exports — dependencies derived from schema
         exports["items_resolved"] = CompositeExport(
             name="items_resolved",
             description=(
@@ -259,19 +260,33 @@ class ExportRegistry:
                 "web resource metadata joined, reuse level computed"
             ),
             compose_steps=ComposeStep.items_resolved_steps(),
-            depends_on=[
-                "items_core", "items_titles", "items_descriptions",
-                "items_subjects", "items_dates", "items_languages",
-                "items_years", "items_creators",
-                "items_contributors", "items_publishers",
-                "items_dc_types", "items_formats",
-                "items_identifiers", "items_dc_rights",
-                "agents_core", "concepts_core",
-                "web_resources",
-            ],
+            depends_on=_items_resolved_deps(),
         )
 
         return exports
+
+def _items_resolved_deps() -> list[str]:
+    """Derive ``items_resolved`` dependencies from the schema.
+
+    Includes ``items_core``, all multi-valued base tables, entity core
+    tables needed for label resolution, and ``web_resources``.
+    """
+    deps = ["items_core"]
+    entity_cores: set[str] = set()
+    for attr in item_fields().values():
+        if not attr.multivalued:
+            continue
+        bt = attr.annotations.get("base_table")
+        if bt:
+            deps.append(bt)
+        # Entity-resolved fields need entity core exports for label lookup
+        entity_resolved = attr.annotations.get("entity_resolved")
+        if entity_resolved:
+            entity_cores.add(f"{entity_resolved}_core")
+    deps.extend(sorted(entity_cores))
+    deps.append("web_resources")
+    return deps
+
 
 _TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
 

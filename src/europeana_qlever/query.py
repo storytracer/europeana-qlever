@@ -14,7 +14,17 @@ import textwrap
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from .constants import EDM_PREFIXES
+from .edm_schema import (
+    prefixes as edm_prefixes,
+    entity_classes,
+    entity_class_uri,
+    entity_core_fields,
+    entity_id_column,
+    entity_link_property_details,
+    entity_prefixes,
+    item_fields,
+    slot_curie,
+)
 from .rights import sparql_reuse_level_bind, sparql_reuse_level_filter
 
 
@@ -28,9 +38,10 @@ class SparqlHelpers:
     @staticmethod
     def prefix_block(needed: set[str]) -> str:
         """Generate SPARQL PREFIX declarations for the given namespace keys."""
+        pfx = edm_prefixes()
         return "\n".join(
-            f"PREFIX {p}: <{EDM_PREFIXES[p]}>"
-            for p in sorted(needed) if p in EDM_PREFIXES
+            f"PREFIX {p}: <{pfx[p]}>"
+            for p in sorted(needed) if p in pfx
         )
 
     @staticmethod
@@ -215,83 +226,62 @@ class QueryRegistry:
 
     def _build(self) -> dict[str, Query]:
         q = Query
-        return {
-            # Pipeline — standalone exports
-            "web_resources": q("web_resources",
-                "Digital representations with MIME type, dimensions, file size, rights, and IIIF service detection",
-                self._web_resources),
-            # Entity exports — core (single-valued) + links (multi-valued)
-            "agents_core": q("agents_core",
-                "Agents: prefLabels with birth/death, gender, places, begin/end",
-                self._agents_core),
-            "agents_links": q("agents_links",
-                "Agents: altLabels, all owl:sameAs, professions, notes, identifiers, names",
-                self._agents_links),
-            "places_core": q("places_core",
-                "Places: prefLabels with coordinates and altitude",
-                self._places_core),
-            "places_links": q("places_links",
-                "Places: altLabels, all owl:sameAs, notes, hierarchy (isPartOf/hasPart)",
-                self._places_links),
-            "concepts_core": q("concepts_core",
-                "Concepts: prefLabels with scheme",
-                self._concepts_core),
-            "concepts_links": q("concepts_links",
-                "Concepts: altLabels, all SKOS mappings (exact/close/broad/narrow/related), notes, notations",
-                self._concepts_links),
-            "timespans_core": q("timespans_core",
-                "Timespans: prefLabels with begin/end dates and notation",
-                self._timespans_core),
-            "timespans_links": q("timespans_links",
-                "Timespans: altLabels, all owl:sameAs, hierarchy",
-                self._timespans_links),
-            "institutions": q("institutions",
-                "Organisations with multilingual labels, acronym, country, role, and Wikidata links",
-                self._institutions),
-            # Pipeline — component exports
-            "items_core": q("items_core",
-                "One row per item: type, rights, country, institution, aggregator, and single-valued aggregation properties",
-                self._items_core),
-            "items_titles": q("items_titles",
-                "All title values with language tags (multi-row per item)",
-                self._items_titles),
-            "items_descriptions": q("items_descriptions",
-                "All description values with language tags (multi-row per item)",
-                self._items_descriptions),
-            "items_subjects": q("items_subjects",
-                "Subject values per item (multi-row)",
-                self._items_subjects),
-            "items_dates": q("items_dates",
-                "Date values per item (multi-row)",
-                self._items_dates),
-            "items_languages": q("items_languages",
-                "Language codes per item (multi-row)",
-                self._items_languages),
-            "items_years": q("items_years",
-                "Normalised edm:year values from Europeana proxy (multi-row per item)",
-                self._items_years),
-            "items_creators": q("items_creators",
-                "Creator URIs and literals per item with IRI flag (multi-row)",
-                self._items_creators),
-            "items_contributors": q("items_contributors",
-                "Contributor URIs and literals per item with IRI flag (multi-row)",
-                self._items_contributors),
-            "items_publishers": q("items_publishers",
-                "Publisher URIs and literals per item with IRI flag (multi-row)",
-                self._items_publishers),
-            "items_dc_types": q("items_dc_types",
-                "dc:type values per item with IRI flag (multi-row)",
-                self._items_dc_types),
-            "items_formats": q("items_formats",
-                "dc:format values per item with IRI flag (multi-row)",
-                self._items_formats),
-            "items_identifiers": q("items_identifiers",
-                "dc:identifier values per item (multi-row)",
-                self._items_identifiers),
-            "items_dc_rights": q("items_dc_rights",
-                "dc:rights (rights holder) values per item (multi-row)",
-                self._items_dc_rights),
-            # Summary queries
+        queries: dict[str, Query] = {}
+
+        # Pipeline — standalone exports
+        queries["web_resources"] = q("web_resources",
+            "Digital representations with MIME type, dimensions, file size, rights, and IIIF service detection",
+            self._web_resources)
+
+        # Entity exports — generated from schema (core + links per entity type)
+        _entity_meta = {
+            "agents": ("Agent", "Agents"),
+            "places": ("Place", "Places"),
+            "concepts": ("Concept", "Concepts"),
+            "timespans": ("TimeSpan", "Timespans"),
+        }
+        for etype, (cls_name, label) in _entity_meta.items():
+            queries[f"{etype}_core"] = q(f"{etype}_core",
+                f"{label}: prefLabels with core single-valued properties",
+                lambda f, _et=etype: self._entity_core(_et, f))
+            queries[f"{etype}_links"] = q(f"{etype}_links",
+                f"{label}: altLabels, sameAs, and all multi-valued link properties",
+                lambda f, _et=etype: self._entity_links(_et, f))
+
+        queries["institutions"] = q("institutions",
+            "Organisations with multilingual labels, acronym, country, role, and Wikidata links",
+            self._institutions)
+
+        # Pipeline — component exports
+        queries["items_core"] = q("items_core",
+            "One row per item: type, rights, country, institution, aggregator, and single-valued aggregation properties",
+            self._items_core)
+
+        # Multi-valued item queries — generated from schema
+        for col_name, attr in item_fields().items():
+            if not attr.multivalued:
+                continue
+            pattern = attr.annotations.get("query_pattern")
+            bt = attr.annotations.get("base_table")
+            if not pattern or not bt:
+                continue
+            curie = slot_curie("Item", col_name)
+            proxy_source = attr.annotations.get("proxy_source", "provider")
+            if pattern == "lang_tagged":
+                queries[bt] = q(bt,
+                    f"All {col_name} values with language tags (multi-row per item)",
+                    lambda f, _c=curie, _ps=proxy_source: self._items_lang_tagged(_c, _ps, f))
+            elif pattern == "iri_or_literal":
+                queries[bt] = q(bt,
+                    f"{col_name.replace('_', ' ').title()} values per item with IRI flag (multi-row)",
+                    lambda f, _c=curie, _cn=col_name, _ps=proxy_source: self._items_iri_or_literal(_c, _cn, _ps, f))
+            elif pattern == "simple_literal":
+                queries[bt] = q(bt,
+                    f"{col_name.replace('_', ' ').title()} values per item (multi-row)",
+                    lambda f, _c=curie, _cn=col_name, _ps=proxy_source: self._items_simple_literal(_c, _cn, _ps, f))
+
+        # Summary queries
+        queries.update({
             "items_by_country": q("items_by_country",
                 "Item counts grouped by country",
                 self._items_by_country),
@@ -349,7 +339,9 @@ class QueryRegistry:
             "texts_by_type": q("texts_by_type",
                 "dc:type value distribution for TEXT items (books, newspapers, etc.)",
                 self._texts_by_type),
-        }
+        })
+
+        return queries
 
     # -------------------------------------------------------------------
     # Private SPARQL generators
@@ -374,234 +366,149 @@ class QueryRegistry:
             {f.limit_clause()}
         """).strip()
 
-    # -- Entity core queries (single-valued properties, one row per prefLabel)
+    # -- Entity core queries — generic, driven from schema
 
-    def _agents_core(self, filters: QueryFilters | None = None) -> str:
+    def _entity_core(self, entity_type: str, filters: QueryFilters | None = None) -> str:
+        """Generate core export query for any entity type from schema."""
         f = filters or QueryFilters()
+        id_col = entity_id_column(entity_type)
+        class_uri = entity_class_uri(entity_type)
+        pfx_needed = entity_prefixes(entity_type)
+        core = entity_core_fields(entity_type)
+
+        select_vars = [f"?{id_col}", "?pref_label", "?pref_label_lang"]
+        select_vars.extend(f"?{name}" for name in core)
+
+        optionals = []
+        for name, attr in core.items():
+            if attr.slot_uri:
+                optionals.append(
+                    f"OPTIONAL {{ ?{id_col} {attr.slot_uri} ?{name} }}"
+                )
+
         return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos", "rdaGr2", "foaf", "dc"})}
-            SELECT ?agent ?pref_label ?pref_label_lang
-                   ?date_of_birth ?date_of_death
-                   ?date_of_establishment ?date_of_termination
-                   ?gender ?place_of_birth ?place_of_death
-                   ?begin ?end
+            {S.prefix_block(pfx_needed)}
+            SELECT {' '.join(select_vars)}
             WHERE {{
-              ?agent a edm:Agent ;
+              ?{id_col} a {class_uri} ;
                      skos:prefLabel ?pref_label .
               BIND(LANG(?pref_label) AS ?pref_label_lang)
-              OPTIONAL {{ ?agent rdaGr2:dateOfBirth ?date_of_birth }}
-              OPTIONAL {{ ?agent rdaGr2:dateOfDeath ?date_of_death }}
-              OPTIONAL {{ ?agent rdaGr2:dateOfEstablishment ?date_of_establishment }}
-              OPTIONAL {{ ?agent rdaGr2:dateOfTermination ?date_of_termination }}
-              OPTIONAL {{ ?agent rdaGr2:gender ?gender }}
-              OPTIONAL {{ ?agent rdaGr2:placeOfBirth ?place_of_birth }}
-              OPTIONAL {{ ?agent rdaGr2:placeOfDeath ?place_of_death }}
-              OPTIONAL {{ ?agent edm:begin ?begin }}
-              OPTIONAL {{ ?agent edm:end ?end }}
+              {"".join(chr(10) + "  " + opt for opt in optionals)}
             }}
             {f.limit_clause()}
         """).strip()
 
-    def _agents_links(self, filters: QueryFilters | None = None) -> str:
+    # -- Entity links queries — generic, driven from schema
+
+    def _entity_links(self, entity_type: str, filters: QueryFilters | None = None) -> str:
+        """Generate links export query for any entity type from schema."""
         f = filters or QueryFilters()
+        id_col = entity_id_column(entity_type)
+        class_uri = entity_class_uri(entity_type)
+        pfx_needed = entity_prefixes(entity_type)
+        link_props = entity_link_property_details(entity_type)
+
+        unions = []
+        for lp in link_props:
+            lang_bind = 'BIND(LANG(?value) AS ?lang)' if lp.has_lang else 'BIND("" AS ?lang)'
+            unions.append(
+                f'{{\n    ?{id_col} {lp.curie} ?value .\n'
+                f'    BIND("{lp.name}" AS ?property)\n'
+                f'    {lang_bind}\n  }}'
+            )
+
+        union_block = " UNION ".join(unions)
         return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos", "rdaGr2", "foaf", "dc", "owl"})}
-            SELECT ?agent ?property ?value ?lang
+            {S.prefix_block(pfx_needed)}
+            SELECT ?{id_col} ?property ?value ?lang
             WHERE {{
-              ?agent a edm:Agent .
-              {{
-                ?agent skos:altLabel ?value .
-                BIND("alt_label" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?agent owl:sameAs ?value .
-                BIND("same_as" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?agent rdaGr2:professionOrOccupation ?value .
-                BIND("profession" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?agent skos:note ?value .
-                BIND("note" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?agent dc:identifier ?value .
-                BIND("identifier" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?agent foaf:name ?value .
-                BIND("name" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?agent rdaGr2:biographicalInformation ?value .
-                BIND("biographical_info" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }}
+              ?{id_col} a {class_uri} .
+              {union_block}
             }}
             {f.limit_clause()}
         """).strip()
 
-    def _places_core(self, filters: QueryFilters | None = None) -> str:
+    # -- Multi-valued item query templates — driven from schema
+
+    def _items_lang_tagged(
+        self, curie: str, proxy_source: str, filters: QueryFilters | None = None,
+    ) -> str:
+        """Template for lang-tagged multi-valued properties (titles, descriptions)."""
         f = filters or QueryFilters()
+        # Extract the local name from the CURIE for the variable name
+        local = curie.split(":")[1] if ":" in curie else curie
+        prefix_keys = {"dc", "edm", "ore"}
+        if proxy_source == "europeana":
+            proxy_block = S.europeana_proxy()
+            proxy_var = "?eProxy"
+        else:
+            proxy_block = S.provider_proxy()
+            proxy_var = "?proxy"
         return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos", "wgs84_pos"})}
-            SELECT ?place ?pref_label ?pref_label_lang
-                   ?lat ?lon ?alt
+            {S.prefix_block(prefix_keys)}
+            SELECT ?item ?{local} ?lang
             WHERE {{
-              ?place a edm:Place ;
-                     skos:prefLabel ?pref_label .
-              BIND(LANG(?pref_label) AS ?pref_label_lang)
-              OPTIONAL {{ ?place wgs84_pos:lat ?lat }}
-              OPTIONAL {{ ?place wgs84_pos:long ?lon }}
-              OPTIONAL {{ ?place wgs84_pos:alt ?alt }}
+              {proxy_block}
+              {proxy_var} {curie} ?{local} .
+              BIND(LANG(?{local}) AS ?lang)
             }}
             {f.limit_clause()}
         """).strip()
 
-    def _places_links(self, filters: QueryFilters | None = None) -> str:
+    def _items_iri_or_literal(
+        self, curie: str, col_name: str, proxy_source: str,
+        filters: QueryFilters | None = None,
+    ) -> str:
+        """Template for IRI-or-literal multi-valued properties (subjects, creators, etc.)."""
         f = filters or QueryFilters()
+        # Use a column-specific value variable name matching the old convention
+        local = curie.split(":")[1] if ":" in curie else curie
+        val_var = f"{col_name.rstrip('s')}_value" if not col_name.endswith("s_") else f"{col_name}_value"
+        # Fix: subjects → subject_value, creators → creator_value, etc.
+        stem = col_name.rstrip("s")
+        val_var = f"{stem}_value"
+        prefix_keys = {"dc", "edm", "ore"}
+        if proxy_source == "europeana":
+            proxy_block = S.europeana_proxy()
+            proxy_var = "?eProxy"
+        else:
+            proxy_block = S.provider_proxy()
+            proxy_var = "?proxy"
+        raw_var = f"?_{stem[0]}v"
         return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos", "dcterms", "owl"})}
-            SELECT ?place ?property ?value ?lang
+            {S.prefix_block(prefix_keys)}
+            SELECT ?item (STR({raw_var}) AS ?{val_var}) (isIRI({raw_var}) AS ?is_iri)
             WHERE {{
-              ?place a edm:Place .
-              {{
-                ?place skos:altLabel ?value .
-                BIND("alt_label" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?place owl:sameAs ?value .
-                BIND("same_as" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?place skos:note ?value .
-                BIND("note" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?place dcterms:isPartOf ?value .
-                BIND("is_part_of" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?place dcterms:hasPart ?value .
-                BIND("has_part" AS ?property)
-                BIND("" AS ?lang)
-              }}
+              {proxy_block}
+              {proxy_var} {curie} {raw_var} .
             }}
             {f.limit_clause()}
         """).strip()
 
-    def _concepts_core(self, filters: QueryFilters | None = None) -> str:
+    def _items_simple_literal(
+        self, curie: str, col_name: str, proxy_source: str,
+        filters: QueryFilters | None = None,
+    ) -> str:
+        """Template for simple literal multi-valued properties (dates, languages, etc.)."""
         f = filters or QueryFilters()
+        local = curie.split(":")[1] if ":" in curie else curie
+        # The SPARQL variable is the singular form for most, but 'year' for years
+        # and 'dc_rights' stays as-is. Use the column name directly since that's
+        # what the old code used (date, language, year, identifier, dc_rights).
+        sparql_var_name = col_name.rstrip("s") if col_name != "dc_rights" else "dc_rights"
+        prefix_keys = {"dc", "edm", "ore"}
+        if proxy_source == "europeana":
+            proxy_block = S.europeana_proxy()
+            proxy_var = "?eProxy"
+        else:
+            proxy_block = S.provider_proxy()
+            proxy_var = "?proxy"
         return textwrap.dedent(f"""\
-            {S.prefix_block({"skos"})}
-            SELECT ?concept ?pref_label ?pref_label_lang ?scheme
+            {S.prefix_block(prefix_keys)}
+            SELECT ?item ?{sparql_var_name}
             WHERE {{
-              ?concept a skos:Concept ;
-                       skos:prefLabel ?pref_label .
-              BIND(LANG(?pref_label) AS ?pref_label_lang)
-              OPTIONAL {{ ?concept skos:inScheme ?scheme }}
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _concepts_links(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"skos", "owl"})}
-            SELECT ?concept ?property ?value ?lang
-            WHERE {{
-              ?concept a skos:Concept .
-              {{
-                ?concept skos:altLabel ?value .
-                BIND("alt_label" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?concept skos:broader ?value .
-                BIND("broader" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?concept skos:narrower ?value .
-                BIND("narrower" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?concept skos:related ?value .
-                BIND("related" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?concept skos:exactMatch ?value .
-                BIND("exact_match" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?concept skos:closeMatch ?value .
-                BIND("close_match" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?concept skos:broadMatch ?value .
-                BIND("broad_match" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?concept skos:narrowMatch ?value .
-                BIND("narrow_match" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?concept skos:relatedMatch ?value .
-                BIND("related_match" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?concept skos:note ?value .
-                BIND("note" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?concept skos:notation ?value .
-                BIND("notation" AS ?property)
-                BIND("" AS ?lang)
-              }}
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _timespans_core(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos"})}
-            SELECT ?timespan ?pref_label ?pref_label_lang
-                   ?begin ?end ?notation
-            WHERE {{
-              ?timespan a edm:TimeSpan ;
-                        skos:prefLabel ?pref_label .
-              BIND(LANG(?pref_label) AS ?pref_label_lang)
-              OPTIONAL {{ ?timespan edm:begin ?begin }}
-              OPTIONAL {{ ?timespan edm:end ?end }}
-              OPTIONAL {{ ?timespan skos:notation ?notation }}
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _timespans_links(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "skos", "dcterms", "owl"})}
-            SELECT ?timespan ?property ?value ?lang
-            WHERE {{
-              ?timespan a edm:TimeSpan .
-              {{
-                ?timespan skos:altLabel ?value .
-                BIND("alt_label" AS ?property)
-                BIND(LANG(?value) AS ?lang)
-              }} UNION {{
-                ?timespan owl:sameAs ?value .
-                BIND("same_as" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?timespan dcterms:isPartOf ?value .
-                BIND("is_part_of" AS ?property)
-                BIND("" AS ?lang)
-              }} UNION {{
-                ?timespan dcterms:hasPart ?value .
-                BIND("has_part" AS ?property)
-                BIND("" AS ?lang)
-              }}
+              {proxy_block}
+              {proxy_var} {curie} ?{sparql_var_name} .
             }}
             {f.limit_clause()}
         """).strip()
@@ -782,165 +689,6 @@ class QueryRegistry:
               OPTIONAL {{ ?eAgg edm:preview ?preview }}
               OPTIONAL {{ ?eAgg edm:landingPage ?landingPage }}
               OPTIONAL {{ ?eAgg edm:datasetName ?datasetName }}
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_titles(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item ?title ?lang
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:title ?title .
-              BIND(LANG(?title) AS ?lang)
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_descriptions(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item ?description ?lang
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:description ?description .
-              BIND(LANG(?description) AS ?lang)
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_subjects(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item (STR(?_sv) AS ?subject_value) (isIRI(?_sv) AS ?is_iri)
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:subject ?_sv .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_dates(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item ?date
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:date ?date .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_languages(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item ?language
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:language ?language .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_years(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"edm", "ore"})}
-            SELECT ?item ?year
-            WHERE {{
-              ?eProxy ore:proxyFor ?item .
-              ?eProxy edm:europeanaProxy "true" .
-              ?eProxy edm:year ?year .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_creators(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item (STR(?_cv) AS ?creator_value) (isIRI(?_cv) AS ?is_iri)
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:creator ?_cv .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_contributors(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item (STR(?_cv) AS ?contributor_value) (isIRI(?_cv) AS ?is_iri)
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:contributor ?_cv .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_publishers(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item (STR(?_pv) AS ?publisher_value) (isIRI(?_pv) AS ?is_iri)
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:publisher ?_pv .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_dc_types(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item (STR(?_tv) AS ?type_value) (isIRI(?_tv) AS ?is_iri)
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:type ?_tv .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_formats(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item (STR(?_fv) AS ?format_value) (isIRI(?_fv) AS ?is_iri)
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:format ?_fv .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_identifiers(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item ?identifier
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:identifier ?identifier .
-            }}
-            {f.limit_clause()}
-        """).strip()
-
-    def _items_dc_rights(self, filters: QueryFilters | None = None) -> str:
-        f = filters or QueryFilters()
-        return textwrap.dedent(f"""\
-            {S.prefix_block({"dc", "edm", "ore"})}
-            SELECT ?item ?dc_rights
-            WHERE {{
-              {S.provider_proxy()}
-              ?proxy dc:rights ?dc_rights .
             }}
             {f.limit_clause()}
         """).strip()

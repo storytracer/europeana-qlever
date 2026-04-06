@@ -16,6 +16,7 @@ from pathlib import Path
 import duckdb
 
 from . import display
+from .edm_schema import authority_sql, entity_id_column
 
 
 # ---------------------------------------------------------------------------
@@ -251,29 +252,19 @@ def _section_completeness(con: duckdb.DuckDBPyConnection) -> dict:
 def _section_entities(con: duckdb.DuckDBPyConnection, exports_dir: Path) -> dict | None:
     """Section 5: Entity enrichment (skip if Parquets not found)."""
     entity_types = {
-        "agents": ("agent", "agents_core.parquet", "agents_links.parquet"),
-        "places": ("place", "places_core.parquet", "places_links.parquet"),
-        "concepts": ("concept", "concepts_core.parquet", "concepts_links.parquet"),
-        "timespans": ("timespan", "timespans_core.parquet", "timespans_links.parquet"),
+        etype: (
+            entity_id_column(etype),
+            f"{etype}_core.parquet",
+            f"{etype}_links.parquet",
+        )
+        for etype in ("agents", "places", "concepts", "timespans")
     }
 
     data: dict = {}
     any_found = False
 
-    # Authority patterns for classifying sameAs links
-    authority_sql = """
-        CASE
-          WHEN STARTS_WITH(value, 'http://www.wikidata.org/') THEN 'wikidata'
-          WHEN STARTS_WITH(value, 'http://viaf.org/') THEN 'viaf'
-          WHEN STARTS_WITH(value, 'http://d-nb.info/gnd/') THEN 'gnd'
-          WHEN STARTS_WITH(value, 'http://vocab.getty.edu/ulan/') THEN 'ulan'
-          WHEN STARTS_WITH(value, 'http://isni.org/') THEN 'isni'
-          WHEN STARTS_WITH(value, 'http://id.loc.gov/') THEN 'loc'
-          WHEN STARTS_WITH(value, 'http://data.bnf.fr/') THEN 'bnf'
-          WHEN STARTS_WITH(value, 'http://sws.geonames.org/') THEN 'geonames'
-          ELSE 'other'
-        END
-    """
+    # Authority patterns for classifying sameAs links — derived from schema
+    auth_sql = authority_sql()
 
     for etype, (id_col, core_file, links_file) in entity_types.items():
         core_path = exports_dir / core_file
@@ -309,7 +300,7 @@ def _section_entities(con: duckdb.DuckDBPyConnection, exports_dir: Path) -> dict
             # Authority link breakdown
             authorities = con.execute(f"""
                 SELECT
-                    {authority_sql} AS authority,
+                    {auth_sql} AS authority,
                     COUNT(DISTINCT {id_col}) AS entities_linked,
                     COUNT(*) AS total_links
                 FROM read_parquet('{links_path}')
