@@ -140,6 +140,178 @@ EDM profiles are refinements and extensions for specific domains:
 
 **Events Profile** (under construction) — `edm:Event` class with `edm:happenedAt` (Place), `edm:occurredAt` (TimeSpan), `edm:wasPresentAt` (reverse).
 
+### 2.8 SPARQL Query Model
+
+Descriptive metadata is **not** stored directly on the `edm:ProvidedCHO`. A query like `?item dc:title ?t` returns zero results. Instead, metadata flows through **proxies** and **aggregations**:
+
+```
+edm:ProvidedCHO ←ore:proxyFor── ore:Proxy (provider)     → dc:*, dcterms:* (original metadata)
+edm:ProvidedCHO ←ore:proxyFor── ore:Proxy (Europeana)    → edm:type, edm:year, enriched entity URIs
+edm:ProvidedCHO ←edm:aggregatedCHO── ore:Aggregation     → edm:rights, edm:dataProvider, URLs
+edm:ProvidedCHO ←edm:aggregatedCHO── EuropeanaAggregation → edm:country, edm:completeness, edm:datasetName
+ore:Aggregation  ──edm:hasView──→ edm:WebResource         → ebucore:hasMimeType, width, height
+```
+
+#### 2.8.1 Core SPARQL Patterns
+
+**Provider Proxy** — original descriptive metadata (dc:title, dc:creator, dc:subject as literals):
+```sparql
+?proxy ore:proxyFor ?item .
+FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" . }
+```
+
+**Europeana Proxy** — normalised fields (edm:type, edm:year) and enriched entity URIs:
+```sparql
+?eProxy ore:proxyFor ?item .
+?eProxy edm:europeanaProxy "true" .
+```
+
+**Aggregation** — rights statement, data supply chain, digital object URLs:
+```sparql
+?agg edm:aggregatedCHO ?item .
+```
+
+**Europeana Aggregation** — country, completeness, dataset name (internal):
+```sparql
+?eAgg edm:aggregatedCHO ?item .
+?eAgg a edm:EuropeanaAggregation .
+```
+
+**Web Resource** — technical metadata (MIME type, dimensions, file size):
+```sparql
+?agg edm:aggregatedCHO ?item .
+?agg edm:hasView ?wr .
+```
+
+#### 2.8.2 Provider Proxy vs Europeana Proxy
+
+Each item has **two** proxies. The Europeana enrichment pipeline copies certain provider values and adds entity URIs.
+
+| Aspect | Provider Proxy | Europeana Proxy |
+|---|---|---|
+| **Filter** | `FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" }` | `?eProxy edm:europeanaProxy "true"` |
+| **dc:title, dc:description** | Original literals (language-tagged) | — |
+| **dc:creator, dc:contributor** | Original literals (strings) | Enriched entity URIs (`edm:Agent`) |
+| **dc:subject** | Original literals (strings) | Enriched entity URIs (`skos:Concept`) |
+| **dcterms:spatial** | Original literals (strings) | Enriched entity URIs (`edm:Place`) |
+| **edm:type** | — | `"IMAGE"`, `"TEXT"`, `"SOUND"`, `"VIDEO"`, `"3D"` |
+| **edm:year** | — | Normalised year strings (e.g., `"1765"`) |
+| **dc:date, dcterms:created, etc.** | Original date strings | — |
+
+**Key rule:** When using an entity URI (e.g., from `search_entity`), query the **Europeana proxy**. When searching text in titles or descriptions, query the **provider proxy**.
+
+#### 2.8.3 Aggregation vs EuropeanaAggregation
+
+These are different objects with different properties. Do NOT confuse them:
+
+| Property | ore:Aggregation | edm:EuropeanaAggregation |
+|---|---|---|
+| `edm:rights` | **Authoritative rights URI** | Has a copy, but incomplete — never use |
+| `edm:dataProvider` | Data provider name (literal) | Has a copy |
+| `edm:provider` | Provider name (literal) | Has a copy |
+| `edm:isShownBy` / `edm:isShownAt` | Digital object URLs | — |
+| `edm:country` | — | **Country (literal)** |
+| `edm:completeness` | — | **Completeness score** |
+| `edm:datasetName` | — | **Dataset identifier** |
+| `edm:landingPage` | — | Europeana portal URL |
+| `edm:preview` | — | Thumbnail URL |
+
+**Always use `ore:Aggregation` for `edm:rights` queries.**
+
+#### 2.8.4 Common Query Examples
+
+**Count all items:**
+```sparql
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
+  ?item a edm:ProvidedCHO .
+}
+```
+
+**Count items by type** (uses Europeana proxy):
+```sparql
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+PREFIX ore: <http://www.openarchives.org/ore/terms/>
+SELECT ?type (COUNT(DISTINCT ?item) AS ?count) WHERE {
+  ?eProxy ore:proxyFor ?item .
+  ?eProxy edm:europeanaProxy "true" .
+  ?eProxy edm:type ?type .
+} GROUP BY ?type ORDER BY DESC(?count)
+```
+
+**Text search on title** (uses provider proxy):
+```sparql
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+PREFIX ore: <http://www.openarchives.org/ore/terms/>
+SELECT ?item ?title WHERE {
+  ?proxy ore:proxyFor ?item .
+  FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" . }
+  ?proxy dc:title ?title .
+  FILTER(CONTAINS(LCASE(STR(?title)), "mona lisa"))
+} LIMIT 100
+```
+
+**Filter by country** (uses EuropeanaAggregation):
+```sparql
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
+  ?eAgg edm:aggregatedCHO ?item .
+  ?eAgg a edm:EuropeanaAggregation .
+  ?eAgg edm:country "Netherlands" .
+}
+```
+
+**Find items by entity URI** (uses Europeana proxy):
+```sparql
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+PREFIX ore: <http://www.openarchives.org/ore/terms/>
+SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
+  ?eProxy ore:proxyFor ?item .
+  ?eProxy edm:europeanaProxy "true" .
+  ?eProxy dc:creator <http://data.europeana.eu/agent/base/59832> .
+}
+```
+
+**Filter by year range** (edm:year is a string — cast to integer):
+```sparql
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+PREFIX ore: <http://www.openarchives.org/ore/terms/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
+  ?eProxy ore:proxyFor ?item .
+  ?eProxy edm:europeanaProxy "true" .
+  ?eProxy edm:year ?year .
+  FILTER(xsd:integer(?year) >= 1800 && xsd:integer(?year) <= 1900)
+}
+```
+
+**Filter by open reuse level** (uses Aggregation):
+```sparql
+PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
+  ?agg edm:aggregatedCHO ?item .
+  ?agg edm:rights ?rights .
+  FILTER(
+    STRSTARTS(STR(?rights), "http://creativecommons.org/publicdomain/") ||
+    STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/") ||
+    STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by-sa/")
+  )
+}
+```
+
+#### 2.8.5 Performance Notes
+
+- **Always `COUNT(DISTINCT ?item)`** — items have multiple proxies and entity links, so bare `COUNT` over-counts.
+- **Never use nested `BIND`/`IF` for classification** over the full 66M-item dataset (e.g., classifying reuse levels). It will time out. Run **separate `COUNT` queries** per category instead.
+- **Use `LIMIT`** for exploratory queries. Without it, a `SELECT *` can return billions of rows.
+- **Use `STR(?uri)`** when comparing URI values with `STRSTARTS` or `CONTAINS`.
+
+#### 2.8.6 Schema Cross-Reference
+
+The LinkML schema at `src/europeana_qlever/schema/edm.yaml` contains machine-readable definitions for all 12 EDM classes and 242 attributes, generated from the Europeana `metis-schema` XSD and OWL ontology sources. It is the authoritative source for property ranges, cardinality, and descriptions used by the query generator.
+
 ---
 
 ## 3. EDM Mapping Guidelines
@@ -222,7 +394,36 @@ EDM profiles are refinements and extensions for specific domains:
 | `edm:type` | Literal | 1..1 | TEXT, IMAGE, VIDEO, SOUND, or 3D |
 | `owl:sameAs` | Ref | 0..n | Linked data URI for the object |
 
-### 3.3 edm:WebResource Properties
+### 3.3 ore:Proxy Properties
+
+The ore:Proxy class carries descriptive metadata on behalf of an `edm:ProvidedCHO`. Each item has two proxies: the **provider proxy** (original metadata) and the **Europeana proxy** (enrichments). Properties marked **EP only** appear exclusively on the Europeana proxy.
+
+**Structural properties:**
+
+| Property | Value Type | Card. | Notes |
+|---|---|---|---|
+| `ore:proxyFor` | Ref | 1..1 | URI of the ProvidedCHO this proxy describes |
+| `ore:proxyIn` | Ref | 1..n | URI of the Aggregation this proxy belongs to |
+| `edm:europeanaProxy` | Literal | 0..1 | `"true"` for Europeana proxy; absent for provider proxy |
+| `edm:type` | Literal | 1..1 | **EP only.** TEXT, IMAGE, VIDEO, SOUND, or 3D |
+| `edm:year` | Literal | 0..n | **EP only.** Normalised year strings |
+
+**Descriptive properties** (same set as ProvidedCHO — the proxy carries them):
+
+The provider proxy carries all the DC and DCTerms properties listed in Section 3.2 (dc:title, dc:creator, dc:subject, dc:date, dc:description, dc:format, dc:identifier, dc:language, dc:publisher, dcterms:spatial, dcterms:temporal, dcterms:created, etc.). All are multivalued literals, often language-tagged.
+
+**Enriched entity URI properties** (on the Europeana proxy, in addition to provider proxy literals):
+
+| Property | Enriched Range | Notes |
+|---|---|---|
+| `dc:creator` | Ref (`edm:Agent`) | Entity URI alongside provider literal |
+| `dc:contributor` | Ref (`edm:Agent`) | Entity URI alongside provider literal |
+| `dc:subject` | Ref (`skos:Concept`) | Entity URI alongside provider literal |
+| `dcterms:spatial` | Ref (`edm:Place`) | Entity URI alongside provider literal |
+
+Additional proxy properties: `edm:hasMet`, `edm:hasType`, `edm:incorporates`, `edm:isDerivativeOf`, `edm:isNextInSequence`, `edm:isRelatedTo`, `edm:isRepresentationOf`, `edm:isSimilarTo`, `edm:isSuccessorOf`, `edm:realizes`, `edm:currentLocation`, `edm:userTag`, `edm:pid`, `owl:sameAs`, `ore:lineage`.
+
+### 3.4 edm:WebResource Properties
 
 No mandatory properties. Recommended: `edm:rights`.
 
@@ -246,7 +447,7 @@ No mandatory properties. Recommended: `edm:rights`.
 | `edm:rights` | Ref | 0..1 | URI from controlled list; overrides Aggregation-level rights |
 | `owl:sameAs` | Ref | 0..n | |
 
-### 3.4 ore:Aggregation Properties
+### 3.5 ore:Aggregation Properties
 
 **Mandatory:** `edm:aggregatedCHO`, `edm:dataProvider`, `edm:isShownAt` OR `edm:isShownBy` (at least one; both recommended), `edm:provider`, `edm:rights`.
 
@@ -266,7 +467,25 @@ No mandatory properties. Recommended: `edm:rights`.
 
 **Rights override logic:** The item page displays `edm:rights` from the WebResource corresponding to the selected `edm:isShownBy` or `edm:hasView`. If none is present, it falls back to `edm:rights` from the Aggregation.
 
-### 3.5 Contextual Class Properties
+### 3.6 edm:EuropeanaAggregation Properties
+
+Created at ingestion time (internal only). A subclass of `ore:Aggregation` carrying Europeana-generated information. Identified by `?eAgg a edm:EuropeanaAggregation`.
+
+| Property | Value Type | Card. | Notes |
+|---|---|---|---|
+| `edm:aggregatedCHO` | Ref | 1..1 | URI of the ProvidedCHO (inherited) |
+| `edm:country` | Literal | 1..1 | Country of the data provider (e.g., `"Netherlands"`) |
+| `edm:language` | Literal | 1..1 | Language of the data provider (BCP 47) |
+| `edm:completeness` | Literal | 0..1 | Metadata completeness score (integer as string) |
+| `edm:datasetName` | Literal | 0..1 | Europeana dataset identifier |
+| `edm:landingPage` | Ref | 0..1 | Europeana portal URL for the item |
+| `edm:preview` | Ref | 0..1 | Thumbnail URL generated by Europeana |
+| `edm:dataProvider` | Literal/Ref | 1..1 | Copy of data provider (inherited) |
+| `edm:provider` | Literal/Ref | 1..1 | Copy of provider (inherited) |
+| `edm:rights` | Ref | 0..1 | Copy of rights — **do not use for rights queries** (incomplete; use `ore:Aggregation` instead) |
+| `dqv:hasQualityAnnotation` | Ref | 0..n | Quality tier annotations |
+
+### 3.7 Contextual Class Properties
 
 **edm:Agent:**
 
@@ -334,7 +553,7 @@ Note: `rdaGr2` properties have newer RDA equivalents (e.g., `rdaGr2:dateOfBirth`
 | `odrl:inheritFrom` | Ref | 1..1 | Base rights statement from Europeana-controlled list |
 | `cc:deprecatedOn` | Literal (XML date) | 0..1 | Expiry date |
 
-### 3.6 Temporal Metadata Recommendations
+### 3.8 Temporal Metadata Recommendations
 
 Europeana normalizes dates using Extended Date/Time Format (EDTF) level 1 and ISO 8601 extended format. Normalized values are stored in the Europeana proxy; originals remain in the provider proxy.
 
@@ -348,7 +567,7 @@ Europeana normalizes dates using Extended Date/Time Format (EDTF) level 1 and IS
 - Only Gregorian calendar supported
 - Judge whether a period should be TimeSpan, Concept, or both
 
-### 3.7 Identifier Requirements
+### 3.9 Identifier Requirements
 
 Four types of identifiers used in EDM:
 1. **HTTP URI referencing external LOD resource** (dereferenceable) — preferred
@@ -358,11 +577,11 @@ Four types of identifiers used in EDM:
 
 Every resource must have a unique identifier in `rdf:about`. Linking between resources uses `rdf:resource` attributes.
 
-### 3.8 XML Schema and Validation
+### 3.10 XML Schema and Validation
 
 The EDM XML Schema enables automatic validation. Available at `http://www.europeana.eu/schemas/edm/EDM.xsd` and on GitHub (`europeana/metis-schema`). Includes Schematron rules for constraints beyond XSD capabilities (e.g., mandatory alternatives). Validation can be performed in Oxygen XML Editor.
 
-### 3.9 Known Data Anomalies
+### 3.11 Known Data Anomalies
 
 Common anomalies detected in Europeana data, grouped by category:
 
@@ -492,13 +711,42 @@ Pattern: `http://rightsstatements.org/vocab/{id}/1.0/`
 
 **Europeana's approach to accuracy:** Data providers are responsible for compliance. Europeana takes a "clean hands" approach with manual review during ingestion and post-publication analysis. Public Domain works in analog form should remain Public Domain when digitised (per Europeana Public Domain Charter).
 
-### 4.4 Digital Objects vs Non-Digital Objects
+### 4.4 Rights Classification for SPARQL
+
+For SPARQL queries, rights URIs in `edm:rights` (on `ore:Aggregation`) are classified into three reuse levels. The authoritative implementation is in `src/europeana_qlever/rights.py`.
+
+**Open** — free reuse (CC public domain tools and permissive licenses):
+- `http://creativecommons.org/publicdomain/zero/1.0/` (CC0)
+- `http://creativecommons.org/publicdomain/mark/1.0/` (Public Domain Mark)
+- `http://creativecommons.org/licenses/by/` (CC BY, any version/port)
+- `http://creativecommons.org/licenses/by-sa/` (CC BY-SA, any version/port)
+
+SPARQL detection: `STRSTARTS(STR(?rights), "http://creativecommons.org/publicdomain/")` or `STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by/")` or `STRSTARTS(STR(?rights), "http://creativecommons.org/licenses/by-sa/")`.
+
+**Restricted** — limited reuse (CC licenses with NC or ND clauses, plus select RightsStatements.org):
+- CC licenses whose URI contains `-nc` or `-nd` (e.g., `by-nc`, `by-nd`, `by-nc-sa`, `by-nc-nd`)
+- `http://rightsstatements.org/vocab/NoC-NC/1.0/` (No Copyright, Non-Commercial)
+- `http://rightsstatements.org/vocab/NoC-OKLR/1.0/` (No Copyright, Other Known Legal Restrictions)
+- `http://rightsstatements.org/vocab/InC-EDU/1.0/` (In Copyright, Educational Use)
+
+SPARQL detection: `CONTAINS(STR(?rights), "-nc") || CONTAINS(STR(?rights), "-nd")` plus exact matches for the three RightsStatements.org URIs.
+
+**Prohibited** — no reuse permitted (everything else):
+- `http://rightsstatements.org/vocab/InC/1.0/` (In Copyright)
+- `http://rightsstatements.org/vocab/InC-OW-EU/1.0/` (In Copyright, EU Orphan Work)
+- `http://rightsstatements.org/vocab/CNE/1.0/` (Copyright Not Evaluated)
+- `http://rightsstatements.org/vocab/NKC/1.0/` (No Known Copyright)
+- `http://rightsstatements.org/vocab/UND/1.0/` (Undetermined)
+
+**Important:** Always use `STR(?rights)` when matching, since `edm:rights` is a URI. There are ~580 valid rights URIs across all CC versions and country ports; the `STRSTARTS`/`CONTAINS` approach correctly classifies all of them.
+
+### 4.5 Digital Objects vs Non-Digital Objects
 
 **Digital objects:** A digital representation of cultural/scientific heritage, or a born-digital original. A 300-page book is one object, not 300. Audio/video snippets generally not adequate.
 
 **Non-digital objects:** Objects without digital representation; value resides in metadata. Included only exceptionally, with hierarchical metadata containing explicit `hasPart`/`isPartOf` relations with digital objects.
 
-### 4.5 Media Policy
+### 4.6 Media Policy
 
 **Processed media links:** `edm:object`, `edm:isShownBy`, `edm:hasView` (multiple), `edm:isShownAt` (checked for resolvability but no thumbnail generated).
 
