@@ -17,9 +17,9 @@
 
   "Properties on the aggregation (?agg): edm:rights, edm:dataProvider, edm:provider, edm:isShownAt, edm:isShownBy, edm:object, edm:hasView.",
 
-  "Properties on the Europeana aggregation (?eAgg): edm:country, edm:completeness, edm:preview, edm:landingPage, edm:datasetName.",
+  "Properties on the Europeana aggregation (?eAgg): edm:country, edm:completeness, edm:preview, edm:landingPage, edm:datasetName, edm:language.",
 
-  "edm:type is a string literal with values: \"IMAGE\", \"TEXT\", \"SOUND\", \"VIDEO\", \"3D\". Example: ?eProxy edm:type \"IMAGE\" .",
+  "IMPORTANT: dc:type and edm:type are different properties. dc:type is on the PROVIDER proxy — free-text values with millions of distinct entries (e.g. 'Preserved Specimen', 'photograph', 'newspaper'). edm:type is on the EUROPEANA proxy — exactly 5 normalised string literals: \"IMAGE\", \"TEXT\", \"SOUND\", \"VIDEO\", \"3D\". Use edm:type for broad media type filtering, dc:type for specific content types.",
 
   "edm:dataProvider and edm:country are literal strings, not URIs.",
 
@@ -29,7 +29,7 @@
 
   "Entity types in the data: edm:Agent (people/groups), edm:Place (locations), skos:Concept (subjects/genres), edm:TimeSpan (time periods), foaf:Organization (provider organisations). All have skos:prefLabel with language tags.",
 
-  "IMPORTANT: Entity URIs (from search_entity) are on the EUROPEANA PROXY, not the provider proxy. The Europeana enrichment pipeline adds entity URIs to dc:creator, dc:subject, dc:contributor, dcterms:spatial on the Europeana proxy. The provider proxy has the original string literals.",
+  "IMPORTANT: Entity URIs (from search_entity) are on the EUROPEANA PROXY, not the provider proxy. The Europeana enrichment pipeline adds entity URIs to dc:creator, dc:subject, dc:contributor, dcterms:spatial on the Europeana proxy. The provider proxy has the original string literals. This means counting 'items with a creator' gives different results depending on which proxy you query: the Europeana proxy counts only items with enriched entity-URI creators, while the provider proxy counts all items including literal string creators (much higher count).",
 
   "To find items by entity URI: use the EUROPEANA proxy pattern: ?eProxy ore:proxyFor ?item . ?eProxy edm:europeanaProxy \"true\" . ?eProxy dc:subject <concept-uri> .",
 
@@ -47,5 +47,7 @@
 
   "Items can have multiple values for dc:title, dc:creator, dc:subject, dc:date, dc:language, etc. Use DISTINCT in SELECT to avoid duplicates from multiple matches.",
 
-  "foaf:Organization entities represent data providers and aggregators. They have skos:prefLabel, edm:acronym, edm:country, owl:sameAs. They are NOT the same as edm:dataProvider (which is a literal string on the aggregation)."
+  "foaf:Organization entities represent data providers and aggregators. They have skos:prefLabel, edm:acronym, edm:country, owl:sameAs. They are NOT the same as edm:dataProvider (which is a literal string on the aggregation).",
+
+  "For classification queries (e.g. reuse level distribution), do NOT use nested BIND/IF over the full dataset — it will time out. Instead, run separate COUNT queries per category (one for open, one for restricted, one for prohibited) and combine the results."
 ]
