@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [Guidelines for data submission using the EDM Profiles](../Guidelines%20for%20data%20submission%20using%20the%20EDM%20Profiles.md)
-
 # Providing 3D content in EDM (guidelines)
 
 We encourage data partners to provide 3D content following the steps on the page below. Doing so enhances data quality and reusability while contributing to the evaluation and validation of the 3D profile. Following the [EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md)continues to be mandatory: for example awarding the correct [Licenses & Rights statements](../../Publishing%20guide/Licenses%20&%20Rights%20statements.md) is of vital importance and influences the [tier calculation.](https://europeana.atlassian.net/wiki/spaces/EF/pages/edit-v2/3270115340?draftShareId=197efaf8-0cf3-4483-9cda-bc53d5bb4fec)
@@ -193,14 +191,16 @@ Choose one of the four options from a controlled list vocabulary, and provide it
 - **3D point cloud**: `http://data.europeana.eu/vocabulary/modelType/3DPointCloud`
 - **Building Information Model (BIM)**: `http://data.europeana.eu/vocabulary/modelType/BIM`
 - **Parametric model**: `http://data.europeana.eu/vocabulary/modelType/parametricModel`
+- **3D Gaussian Splatting**: `http://data.europeana.eu/vocabulary/modelType/3DGaussianSplatting`
 
 The following technical metadata properties can be provided for each type:
 
-|  **Properties**    |  **3D mesh**    |  **Parametric model**    |  **BIM**    |  **3D point cloud**    |
-|:-------------------|:----------------|:-------------------------|:------------|:-----------------------|
-| `edm:vertexCount`  | ☑️              | ☑️                       | ☑️          |                        |
-| `edm:polygonCount` | ☑️              | ☑️                       | ☑️          |                        |
-| `edm:pointCount`   |                 |                          |             | ☑️                     |
+|  **Properties**     |  **3D mesh**    |  **Parametric model**    |  **BIM**    |  **3D point cloud**    |  **3D Gaussian Splatting**    |
+|:--------------------|:----------------|:-------------------------|:------------|:-----------------------|:------------------------------|
+| `edm:vertexCount`   | ☑️              | ☑️                       | ☑️          |                        |                               |
+| `edm:polygonCount`  | ☑️              | ☑️                       | ☑️          |                        |                               |
+| `edm:pointCount`    |                 |                          |             | ☑️                     |                               |
+| `edm:gaussianCount` |                 |                          |             |                        | ☑️                            |
 
 > [!WARNING]
 > Other technical metadata properties are being considered for the 3D profile, e.g. Texture.

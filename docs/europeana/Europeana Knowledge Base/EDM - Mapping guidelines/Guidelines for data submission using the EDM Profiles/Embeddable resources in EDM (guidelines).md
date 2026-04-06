@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [Guidelines for data submission using the EDM Profiles](../Guidelines%20for%20data%20submission%20using%20the%20EDM%20Profiles.md)
-
 # Embeddable resources in EDM (guidelines)
 
 Data partners are encouraged to provide direct links to media files. However, content from platforms such as Flickr, YouTube, Vimeo or others, which can be embedded in Europeana, is also accepted. This exception applies to organisations that are hosting media on external platforms due to hosting limitations, when Europeana does not support the display of specific file formats (e.g. 3D models), or when copyright restrictions prevent direct online access to media.

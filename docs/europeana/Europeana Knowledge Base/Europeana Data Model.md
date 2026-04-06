@@ -1,6 +1,4 @@
 
-
-
 # Europeana Data Model
 
 On this page you find all the documentation you need about the Europeana Data Model (EDM).
@@ -33,13 +31,13 @@ For further information, please contact [info@europeana.eu](mailto:info@european
 
 Related EDM documentation can also be found below:
 
-| File                                                                                                                       | Modified                      |
-|:---------------------------------------------------------------------------------------------------------------------------|:------------------------------|
-| [EDM\_slides\_130714(last update Jan2025).pdf](../attachments/8cd29157-97cd-415d-88a3-ca0de4524ee7.pdf)                    | Jan 30, 2025 by Adina Ciocoiu |
-| [EDM\_Primer\_130714-1.pdf](../attachments/63d1ff1a-ed30-4a03-b973-731b800ab1ef.pdf)                                       | Jan 30, 2025 by Adina Ciocoiu |
-| [EDM\_Definition\_v5.2.7\_042016.pdf](../attachments/72f1e6b1-c4fb-4e21-9cde-e4d791c8c8a5.pdf)                             | Jan 30, 2025 by Adina Ciocoiu |
-| [EDM\_Definition\_v5.2.8\_102017-3.pdf](../attachments/f31abd38-9aa9-4241-aa21-3e298dc2422b.pdf)                           | Jan 30, 2025 by Adina Ciocoiu |
-| [EDM Schematron validation in Oxygen XML editor.pdf](../attachments/a9a89c2d-7964-4594-980f-003339cc877a.pdf)              | Jan 30, 2025 by Adina Ciocoiu |
-| [EDM\_Mapping\_Guidelines\_v2.3\_112016.pdf](../attachments/e2af841c-7800-4367-9c97-e1327c986acf.pdf)                      | Jan 30, 2025 by Adina Ciocoiu |
-| [EDM\_Mapping\_Guidelines\_v2.4\_102017(last update Jan2025).pdf](../attachments/41887548-4315-409b-abd6-858d675307b4.pdf) | Jan 30, 2025 by Adina Ciocoiu |
-| [EDM\_Factsheet-1.pdf](../attachments/d12a0ff4-2548-485a-8df1-a82eacdae854.pdf)                                            | Jan 30, 2025 by Adina Ciocoiu |
+| File                                                                                                                    | Modified                      |
+|:------------------------------------------------------------------------------------------------------------------------|:------------------------------|
+| [EDM\_slides\_130714(last update Jan2025).pdf](https://europeana.atlassian.net/wiki/download/attachments/2916974597/EDM_slides_130714(last%20update%20Jan2025).pdf?version=1&modificationDate=1738248203711&cacheVersion=1&api=v2)                    | Jan 30, 2025 by Adina Ciocoiu |
+| [EDM\_Primer\_130714-1.pdf](https://europeana.atlassian.net/wiki/download/attachments/2916974597/EDM_Primer_130714-1.pdf?version=1&modificationDate=1738248203684&cacheVersion=1&api=v2)                                       | Jan 30, 2025 by Adina Ciocoiu |
+| [EDM\_Definition\_v5.2.7\_042016.pdf](https://europeana.atlassian.net/wiki/download/attachments/2916974597/EDM_Definition_v5.2.7_042016.pdf?version=1&modificationDate=1738248203405&cacheVersion=1&api=v2)                             | Jan 30, 2025 by Adina Ciocoiu |
+| [EDM\_Definition\_v5.2.8\_102017-3.pdf](https://europeana.atlassian.net/wiki/download/attachments/2916974597/EDM_Definition_v5.2.8_102017-3.pdf?version=1&modificationDate=1738248202861&cacheVersion=1&api=v2)                           | Jan 30, 2025 by Adina Ciocoiu |
+| [EDM Schematron validation in Oxygen XML editor.pdf](https://europeana.atlassian.net/wiki/download/attachments/2916974597/EDM%20Schematron%20validation%20in%20Oxygen%20XML%20editor.pdf?version=1&modificationDate=1738248202803&cacheVersion=1&api=v2)              | Jan 30, 2025 by Adina Ciocoiu |
+| [EDM\_Mapping\_Guidelines\_v2.3\_112016.pdf](https://europeana.atlassian.net/wiki/download/attachments/2916974597/EDM_Mapping_Guidelines_v2.3_112016.pdf?version=1&modificationDate=1738248202697&cacheVersion=1&api=v2)                      | Jan 30, 2025 by Adina Ciocoiu |
+| [EDM\_Mapping\_Guidelines\_v2.4\_102017(last update Jan2025).pdf](https://europeana.atlassian.net/wiki/download/attachments/2916974597/EDM_Mapping_Guidelines_v2.4_102017(last%20update%20Jan2025).pdf?version=1&modificationDate=1738248202672&cacheVersion=1&api=v2) | Jan 30, 2025 by Adina Ciocoiu |
+| [EDM\_Factsheet-1.pdf](https://europeana.atlassian.net/wiki/download/attachments/2916974597/EDM_Factsheet-1.pdf?version=1&modificationDate=1738248202499&cacheVersion=1&api=v2)                                            | Jan 30, 2025 by Adina Ciocoiu |

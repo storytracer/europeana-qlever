@@ -1,6 +1,4 @@
 
-[Persistent identifiers](../Persistent%20identifiers.md)
-
 # Upgrading existing PIDs in the data
 
 To make references to Europeana objects more stable, we have introduced a new [EDM profile](https://europeana.atlassian.net/wiki/x/OgC7ww) that allows cultural heritage institutions (CHIs) and aggregators to supply [persistent identifiers (PIDs)](https://europeana.atlassian.net/wiki/x/AgCowg) in a dedicated `edm:pid` field.

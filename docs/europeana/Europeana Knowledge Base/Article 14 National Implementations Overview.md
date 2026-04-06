@@ -5,8 +5,6 @@ tags:
   - '#public-domain'
 ---
 
-
-
 # Article 14 National Implementations Overview
 
 The Article 14 National Implementations Overview provides information about the specificities of how European Union member states and some European Economic Area countries have brought article 14 of the [Copyright in the Digital Single Market (CDSM) Directive](https://eur-lex.europa.eu/eli/dir/2019/790/oj) into their national legislation. It seeks to support legal practitioners, openGLAM activists and cultural heritage professionals in having a better understanding of the transposition of article 14 and its practical impact.

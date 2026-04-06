@@ -1,6 +1,4 @@
 
-
-
 # FAQs on digital cultural heritage and the concept of openness
 
 > [!NOTE]
@@ -151,7 +149,7 @@ Among the CC suite of licences for copyright materials, those that are open incl
 
 Materials for which copyright does not arise, or has expired, are also ‘open’ and they may be clearly placed or marked as being public domain, by using the [CC0 1.0 Universal Public Domain Dedication](https://creativecommons.org/publicdomain/zero/1.0/) or the [Public Domain Mark 1.0 Universal](https://creativecommons.org/publicdomain/mark/1.0/) (PDM). The PDM is not a legally-binding licence, but simply a label to communicate the public domain status of a work that is unequivocally in the public domain.
 
-![](../attachments/28aa2830-437a-4598-82bb-4bfca953bb93.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2647490571/AD_4nXdhAIwRxW5b0zRDFrABR6-QRmlmkfbhf-1WRGIwR5an0UugiZ5hAa_1FYbqxG52NLRxQuLVJcsdTmMdN5DLf_9ZkMj4lOAdcvmu_i4IrqU_-oan-9O9je16EfrudtzKiT5jfCuKauvgqNRCvLz2x8IuA64t%3Fkey=srHuB46Jcfc2-dWGAXbVnw?version=1&modificationDate=1721212316510&cacheVersion=1&api=v2)
 
 ---
 

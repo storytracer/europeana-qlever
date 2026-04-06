@@ -1,6 +1,4 @@
 
-[Europeana APIs Documentation](../Europeana%20APIs%20Documentation.md)
-
 # Accessing the APIs
 
 - [Levels of access](#levels-of-access)
@@ -72,7 +70,7 @@ Before applying for a Project API key, please consider the following:
 
 Once you’ve registered and logged in to the Europeana website, you can access the API section from the top-right menu, next to your nickname, under “*Manage API keys*”. This will take you to a page where you can register both personal and project keys, and view any keys previously granted to you.
 
-![image-20260204-124331.png](../../attachments/bcae6394-967d-4021-a933-13f15ab28b0f.png)
+![image-20260204-124331.png](https://europeana.atlassian.net/wiki/download/attachments/2462351393/image-20260204-124331.png?version=1&modificationDate=1770209015413&cacheVersion=1&api=v2)
 
 ## Registering for a Personal key
 
@@ -84,13 +82,13 @@ You can find the “*Personal API key*” section at the top of the page. After 
 > [!NOTE]
 > You can hold only one Personal API key at a time. If you lose or forget your key, you can always return to this section to view it again.
 
-![image-20260204-123217.png](../../attachments/7beba99c-3fb3-4793-85b0-12c4e6e86b18.png)![image-20260206-095434.png](../../attachments/3be9f50a-3f13-43d8-ad78-be3b7dc10fce.png)
+![image-20260204-123217.png](https://europeana.atlassian.net/wiki/download/attachments/2462351393/image-20260204-123217.png?version=1&modificationDate=1770208341804&cacheVersion=1&api=v2)![image-20260206-095434.png](https://europeana.atlassian.net/wiki/download/attachments/2462351393/image-20260206-095434.png?version=1&modificationDate=1770371676057&cacheVersion=1&api=v2)
 
 ## Registering for a Project key
 
 You can find the “*Project API keys*“ section below the “*Personal API key*“ section.
 
-![image-20260204-141200.png](../../attachments/a0bdcba9-5929-4916-8e34-b4294cd7ebbc.png)
+![image-20260204-141200.png](https://europeana.atlassian.net/wiki/download/attachments/2462351393/image-20260204-141200.png?version=1&modificationDate=1770214323484&cacheVersion=1&api=v2)
 > [!WARNING]
 > Please ensure that you meet the requirements outlined in the [Project Key](#project-key) section before requesting a Project API key; otherwise, your request may be rejected.
 

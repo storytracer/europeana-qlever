@@ -3,8 +3,6 @@ tags:
   - '#core-classes'
 ---
 
-[EDM - Mapping guidelines](../EDM%20-%20Mapping%20guidelines.md)
-
 # EDM Core classes
 
 This section details **the three core classes: edm:ProvidedCHO, edm:WebResource, and ore:Aggregation**.
@@ -21,7 +19,7 @@ Each will have its own associated metadata, giving three core “metadata sectio
 
 For example, the Mona Lisa is represented by the edm:ProvidedCHO and its digital image by the class edm:WebResource. This allows the relevant metadata properties to be applied to each class. In the Mona Lisa example, the edm:ProvidedCHO could have a dc:creator property with the value “Leonardo da Vinci” and the edm:WebResource a dc:format property with the value “jpg”. Because the metadata about an object and its digital representations will now be separated between those two classes, there is also a mechanism to associate the related classes. This is the ore:Aggregation class and it is the pivotal object between the edm:ProvidedCHO and the edm:WebResource(s). It has properties to allow linking between the associated classes and also has some more familiar descriptive properties, such as edm:dataProvider, that apply to the whole group.
 
-![](../../attachments/de4b54cc-c7f2-4aae-a624-f19892182dab.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/987758622/image-20211022-114414.png?version=1&modificationDate=1634903057971&cacheVersion=1&api=v2)
 
 To handle more complex provided objects additional properties have been defined to express the relationships between parts of objects. For example, an edm:ProvidedCHO could have an edm:isNextInSequence property to link to another object which logically precedes it.   
    

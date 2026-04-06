@@ -7,8 +7,6 @@ tags:
   - '#framework'
 ---
 
-[Publishing guide](../../Publishing%20guide.md) > [Content & Metadata Tiers](../Content%20&%20Metadata%20Tiers.md)
-
 # Tier 1 requirements per edm:type
 
 **Europeana website as a search engine: ‘I want to search and browse collections online’**

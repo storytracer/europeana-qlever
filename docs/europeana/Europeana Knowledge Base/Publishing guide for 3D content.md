@@ -1,6 +1,4 @@
 
-
-
 # Publishing guide for 3D content
 
 This page is for professionals working in cultural heritage institutions who want to share 3D data with [europeana.eu](http://Europeana.eu) .

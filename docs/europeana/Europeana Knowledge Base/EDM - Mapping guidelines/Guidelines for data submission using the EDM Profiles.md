@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../EDM%20-%20Mapping%20guidelines.md)
-
 # Guidelines for data submission using the EDM Profiles
 
 Europeana has developed a series of [EDM profiles](https://europeana.atlassian.net/wiki/x/LAAYsw) to support data services in the Europeana core platform. In the sections below you’ll find guidance on how to best implement these in EDM.

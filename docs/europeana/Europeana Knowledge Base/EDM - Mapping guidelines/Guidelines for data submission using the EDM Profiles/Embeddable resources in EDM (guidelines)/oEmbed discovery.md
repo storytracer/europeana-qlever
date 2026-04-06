@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../../../EDM%20-%20Mapping%20guidelines.md) > [Guidelines for data submission using the EDM Profiles](../../Guidelines%20for%20data%20submission%20using%20the%20EDM%20Profiles.md) > [Embeddable resources in EDM (guidelines)](../Embeddable%20resources%20in%20EDM%20(guidelines).md)
-
 # oEmbed discovery
 
 The oEmbed specification includes the [concept of discovery](https://oembed.com/#section4), which allows oEmbed providers (e.g. YouTube, Vimeo, Flickr, among others) to make their oEmbed endpoints discoverable through link elements in the HTML of their web pages and link headers in HTTP responses. As a Europeana data provider contributing embeddable media in EDM, you can inspect link elements and headers to find the correct oEmbed URL for a specific WebResource.

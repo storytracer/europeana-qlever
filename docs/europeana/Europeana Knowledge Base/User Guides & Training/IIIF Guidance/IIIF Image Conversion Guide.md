@@ -3,8 +3,6 @@ tags:
   - '#iiif'
 ---
 
-[User Guides & Training](../../User%20Guides%20&%20Training.md) > [IIIF Guidance](../IIIF%20Guidance.md)
-
 # IIIF Image Conversion Guide
 
 The Europeana Natural History Aggregator OpenUp! has developed scripts for the IIIF image conversion process that can be used to install a IIIF server and perform a IIIF image conversion. The scripts are available for download and reuse from a [GitHub repository](https://github.com/AITProjectAssistant/OpenUp/tree/main/IIIF).
@@ -31,7 +29,7 @@ If you are looking for a general introduction to the IIIF framework, please chec
 
 The **goal** of this guide is to give you an example of how to **make your digital images IIIF compliant**. For that purpose you will have to run a [**web server**](https://en.wikipedia.org/wiki/Web_server) and a [**IIIF-compatible image server**](https://iiif.io/get-started/image-servers/)and provide your [**images in a multi-resolution format (pyramid TIFFs)**](https://www.loc.gov/preservation/digital/formats/fdd/fdd000237.shtml). Pyramid TIFFs are layered documents that contain multiple, mapped versions of the same image in different resolutions. This allows image servers to optimize zooming, as they switch to higher resolution images as the user zooms deeper and deeper into the document.
 
-![img-conv-process.png](../../../attachments/4f35a28e-94d5-4de0-9caa-56069199e502.png)
+![img-conv-process.png](https://europeana.atlassian.net/wiki/download/attachments/2343010305/img-conv-process.png?version=1&modificationDate=1712310527658&cacheVersion=1&api=v2)
 
 Main contents of the guide
 
@@ -47,7 +45,7 @@ Glossary and scripts
 
 Overall workflow
 
-![Workflow](../../../attachments/12423354-c898-4dbc-8f05-0646ff3096a7.png)
+![Workflow](https://europeana.atlassian.net/wiki/download/attachments/2343010305/workflow1.png?version=1&modificationDate=1685514372775&cacheVersion=1&api=v2)
 
 The first two steps “**Web server setup**” and “**Install the IIPImage Server**” are described in detail in [chapter 3](#chapter-3) and [4](#key-4) of this guide, but they can be easily executed automatically by running the script “**iiif-install.sh**” on your computer (find the script in [chapter 9](#chapter-9)).  
 The step “**Convert images to pyramid TIFFs**”, described in [chapter 5](#chapter-5), can be carried out by running the “**iiif-image-converter.sh**” script (find the script in [chapter 9](#chapter-9)).
@@ -80,7 +78,7 @@ sudo apt-get update
 
 After entering this command, the command line will prompt for user and password.
 
-![](../../../attachments/193a468d-a193-4139-bc88-bd868531c724.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure2.png?version=1&modificationDate=1685514673130&cacheVersion=1&api=v2)
 
 **Install Apache 2 (additionally install sub-software package fcgid)**
 
@@ -88,7 +86,7 @@ After entering this command, the command line will prompt for user and password.
 sudo apt-get install apache2 libapache2-mod-fcgid
 ```
 
-![](../../../attachments/2f7b58b6-4dbe-4d39-870c-046d98f11ca0.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure3.png?version=2&modificationDate=1685514994860&cacheVersion=1&api=v2)
 
 **Start web server**
 
@@ -96,13 +94,13 @@ sudo apt-get install apache2 libapache2-mod-fcgid
 sudo systemctl start apache2
 ```
 
-![](../../../attachments/7a303c2e-80ee-46f8-a62c-040a3c89d4d8.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure4.png?version=1&modificationDate=1685515026835&cacheVersion=1&api=v2)
 
 **Make sure that the Apache server is actually running**
 
 Open your browser, enter your IP address into your browser’s address bar and the Apache2 Debian Default Page should appear as in the screenshot below.
 
-![](../../../attachments/e214b212-bcab-4d0b-8f41-3a225c698f22.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure5.png?version=1&modificationDate=1685531677574&cacheVersion=1&api=v2)
 
 **Move your content (files you want to access via the browser e.g. html and css files) to the default folder Apache points to (/var/www/html/)**
 
@@ -122,7 +120,7 @@ sudo apt-get install iipimage-server
 
 The command will prompt you for installing some dependencies for this package. To do this, type “y” (yes) and press *Enter*.
 
-![](../../../attachments/795bd33a-ee34-40cd-8d8b-aa11f849970f.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure6.png?version=1&modificationDate=1685531764811&cacheVersion=1&api=v2)
 
 **Change your image server’s data directory**
 
@@ -132,7 +130,7 @@ With the following command the default data directory of your image server */usr
 sudo cp -r /usr/lib/iipimage-server/ /var/www/iipimage-server/
 ```
 
-![](../../../attachments/ead85ee4-11de-42e0-a328-de550fcff6a1.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure7.png?version=1&modificationDate=1685532849335&cacheVersion=1&api=v2)
 
 Now you need to run the image server as an Apache module. The modules are configured in directory */etc/Apache2/mods-available/*.   
 Change to this directory and open from there the image server’s *iipsrv.conf* config file with following command:
@@ -154,7 +152,7 @@ In addition, you can configure the server to serve through a "cleaner" url. You 
 Save the file with *Ctrl+o* and press *Enter* to confirm and close nano with *Ctrl+x*.   
 All these changes are illustrated in Figure 8 (red arrows). With this module enabled, Apache knows where you put the image server’s data directory.
 
-![](../../../attachments/b2b50055-ca75-41a5-94b4-48b73eeebabc.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure8.png?version=1&modificationDate=1685532981539&cacheVersion=1&api=v2)
 
 **Enable the necessary Apache modules for the image server (fcgid already installed and enabled above)**
 
@@ -182,7 +180,7 @@ Now, that all three modules are enabled you need to restart Apache again:
 sudo systemctl restart apache2
 ```
 
-![](../../../attachments/a44222c6-efdb-4e7a-95be-7edbf5a023c9.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure9.png?version=1&modificationDate=1685533051122&cacheVersion=1&api=v2)
 
 **Enable CORS**
 
@@ -198,7 +196,7 @@ Header set Access-Control-Allow-Origin \*
 
 It is important that there are no spelling mistakes in the line above. Then you save changes with *Ctrlt+o* and exit nano with *Ctrl+x*.
 
-![](../../../attachments/74620469-0bfd-4965-a61a-9a187a675ea5.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure10.png?version=1&modificationDate=1685533086757&cacheVersion=1&api=v2)
 
 Now you restart Apache once again:
 
@@ -206,7 +204,7 @@ Now you restart Apache once again:
 sudo systemctl restart apache2
 ```
 
-**Check if the IIPImage server works**
+**Check if the IIPImage server works**
 
 Enter in your browser address bar:
 
@@ -214,14 +212,14 @@ Enter in your browser address bar:
 
 If the start screen of the IIPImage server is shown then you are sure that the server configuration was successful and it runs correctly.
 
-![](../../../attachments/e323a325-ed06-42a3-909f-e3064ec36fc3.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure11.png?version=1&modificationDate=1685533165904&cacheVersion=1&api=v2)
 
 # **5 Convert images to pyramid TIFFs**
 
 With a multi-resolution format, large raster image files are compressed and can be quickly viewed without having to decompress the entire file. IIPImage Server supports multi-resolution images of the format TIFF and JEPG2000. Thus you need to convert your images to one of these types. In this guide we show how you can convert your images to TIFF format.  
 Figure 12 shows graphically how pyramid TIFFs are constructed. The Tiled Multi-Resolution (or Tiled Pyramidal) TIFF type allows the image server to enhance zoom options in a way that it switches to higher resolution images of the pyramid as the zoom goes deeper and deeper.
 
-![](../../../attachments/64a02cd0-b8e0-4bd2-a43d-4316922973b8.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure12.png?version=1&modificationDate=1685533220335&cacheVersion=1&api=v2)
 
 ## Installation of the image processor VIPS
 
@@ -233,7 +231,7 @@ Use **apt-get** to install the the package **libvips-tools** on Ubuntu:
 sudo apt-get install libvips-tools
 ```
 
-![](../../../attachments/a045d0cd-19d0-4cbb-8c2c-2a5a9f91cda5.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/Figure13.png?version=1&modificationDate=1685533251405&cacheVersion=1&api=v2)
 
 Now go to the folder where the original images are stored (e.g: **cd /var/www/html/images/**)
 
@@ -250,7 +248,7 @@ The execution of the command above can take some time because the pyramid tiffs 
 This command is only for one image!   
 If you need to convert a large number of images, the shell script (**iiif-image-converter.sh**) that contains the conversion command automates this process for all images. The content of the **iiif-image-converter.sh** shell script looks like this:
 
-![](../../../attachments/b0d9d8f7-d85d-495f-a537-fea4271dffd5.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/CovertImagesToPyramidsTIFFs_script.png?version=1&modificationDate=1685533317780&cacheVersion=1&api=v2)
 
 You need to place the script in the same folder where the images are located (**e.g.: /var/www/html/images/** ) and execute the script by typing the following command into your terminal:
 
@@ -280,7 +278,7 @@ The Manifest is a container file (in the [JSON](https://en.wikipedia.org/wiki/JS
 
 The sample manifest can be viewed and downloaded from [here](https://iiif.io/api/cookbook/recipe/0005-image-service/manifest.json).
 
-![](../../../attachments/2e892ebe-a1e0-4a33-8252-cf93fc13a764.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2343010305/sampleManifest.png?version=1&modificationDate=1685533553926&cacheVersion=1&api=v2)
 
 However, this manifest needs to be updated according to your needs. For that you may use for example the nano command. Updating means in this context: changing *MY\_IP\_ADDRESS* to **your** **actual** IP Address or host name (if known), changing the content of “label” tag etc. Then if everything is adapted and changed correctly the manifest should be loaded in the browser by entering the following in the browser’s address bar:
 

@@ -59,7 +59,7 @@ Note that the American spelling of “organization” is used throughout to be c
 
 # Overview
 
-![Organization profile - 2025-20260206-152005.png](../../../attachments/aceaec68-33bc-471f-9e38-67696bb769d6.png)
+![Organization profile - 2025-20260206-152005.png](https://europeana.atlassian.net/wiki/download/attachments/3261923389/Organization%20profile%20-%202025-20260206-152005.png?version=1&modificationDate=1770391225120&cacheVersion=1&api=v2)
 
 Many of the properties described below will apply to an organization and will be mapped from the CRM fields to EDM classes/properties accordingly. For example:
 

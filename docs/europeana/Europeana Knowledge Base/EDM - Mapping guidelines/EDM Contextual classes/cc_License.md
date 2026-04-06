@@ -3,8 +3,6 @@ tags:
   - '#cc-license'
 ---
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Contextual classes](../EDM%20Contextual%20classes.md)
-
 # cc:License
 
 > [!IMPORTANT]

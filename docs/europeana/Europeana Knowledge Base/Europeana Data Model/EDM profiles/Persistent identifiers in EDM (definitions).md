@@ -1,6 +1,4 @@
 
-[Europeana Data Model](../../Europeana%20Data%20Model.md) > [EDM profiles](../EDM%20profiles.md)
-
 # Persistent identifiers in EDM (definitions)
 
 This page defines the classes and associated properties that are part of the **EDM profile for persistent identifiers**. The profile outlines how [Glossary of terms](../../Persistent%20identifiers/Glossary%20of%20terms.md) can be explicitly represented in EDM metadata. It is motivated by the [Policy for persistent identifiers in the data space for cultural heritage](https://europeana.atlassian.net/wiki/x/A4Clwg), which sets out the vision and terminology behind the profile.
@@ -27,7 +25,7 @@ This page defines the classes and associated properties that are part of the **E
 > [!TIP]
 > Data providers can see these elements in action for their case in the [EDM Mapping Guidelines section](https://europeana.atlassian.net/wiki/x/BQC7ww).
 
-![EDM Persistent Identifiers PID profile -20260107-114813.png](../../../attachments/91377d8e-c834-4e1d-8dfa-f78c84cb0c1a.png)
+![EDM Persistent Identifiers PID profile -20260107-114813.png](https://europeana.atlassian.net/wiki/download/attachments/3283812410/EDM%20Persistent%20Identifiers%20PID%20profile%20-20260107-114813.png?version=1&modificationDate=1767786514814&cacheVersion=1&api=v2)
 
 ## **Property** edm:equivalentPID
 

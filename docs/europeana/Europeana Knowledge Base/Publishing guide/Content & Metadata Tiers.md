@@ -8,8 +8,6 @@ tags:
   - '#framework'
 ---
 
-[Publishing guide](../Publishing%20guide.md)
-
 # Content & Metadata Tiers
 
 **The scenario you choose will depend on your digital strategy as a cultural institution (what you want) and the type of data that you can provide to Europeana (what you give). You may also take into consideration the services that Europeana can deliver to you (what we do) and the results of these actions (what you get).**
@@ -59,7 +57,7 @@ Benefits as above plus:
 - Europeana can incorporate your collections into existing projects and partnerships operating in the creative industries (e.g. Memories Retold video game, Birdie memory app). Your data can also be used on open platforms such as Wikimedia, shared with the social media hashtag #OpenCollections and promoted in hackathons. To do this, the collection must be made available under a rights statement that allows free reuse.
 - You can expect wide reach of your content, increased brand recognition and reputation, and greater exposure on and beyond the Europeana website. Your collections could be used in commercial and non-commercial websites, apps, services, and products.
 
-![](../../attachments/59372e8b-e651-4a8d-8868-7cada5c5ab11.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2059829253/I9jBQvWsZndQOec-VG45C_NuHzd2eZzu0rOviaQcHXB6hRpxImgyenXEV7dJYf46cUZ5iL_BtUSu1BK8GyIgKDLJUnPoUO8BX9AFlnivy_VV4LiNQy3a8DtR9Y86PMHOyGKBSFh-?version=1&modificationDate=1627056193438&cacheVersion=1&api=v2)
 
 What you give and what you get for the four tiers of content quality
 

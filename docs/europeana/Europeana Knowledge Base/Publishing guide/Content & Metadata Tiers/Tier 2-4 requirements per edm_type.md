@@ -7,8 +7,6 @@ tags:
   - '#quality'
 ---
 
-[Publishing guide](../../Publishing%20guide.md) > [Content & Metadata Tiers](../Content%20&%20Metadata%20Tiers.md)
-
 # Tier 2-4 requirements per edm:type
 
 Digital objects compliant with Tier 1 are sufficient to use the Europeana website as a search engine and allow people to find your collections. The EPF specifies three additional publication scenarios (or tiers) for digital content for you to choose from: depending on what you want and what you give in terms of quality, Europeana can deliver different services to you and you will see different actions as a result of it. If you want to use Europeana as a showcase, your digital objects need to be compliant with Tier 2 of the EPF. If you want to use Europeana as a distribution platform for non-commercial reuse, your digital objects need to be compliant with Tier 3 of the EPF. If you want to use Europeana as a free reuse platform, your digital objects need to be compliant with Tier 4 of the EPF.
@@ -43,7 +41,7 @@ Digital objects compliant with Tier 1 are sufficient to use the Europeana websit
 
 #### Content Tier:4 'I want to find, view and use collections in whatever way I choose’
 
-*‘We are an audiovisual archive representing public and private broadcasters  in our country. Most of our collections are, of course, from the 20th century and the rights situation is complicated. However, we own the rights to parts of our collections and have experimented with making them available under ‘open’ licences that allow free reuse. The results have been extremely positive, in particular, the collections that have been taken up by Wikipedia have increased visibility to our material far beyond what we could do ourselves. Europeana has the expertise and tools to make collections that are of good quality and that are licensed for free reuse available on these platforms.’*
+*‘We are an audiovisual archive representing public and private broadcasters  in our country. Most of our collections are, of course, from the 20th century and the rights situation is complicated. However, we own the rights to parts of our collections and have experimented with making them available under ‘open’ licences that allow free reuse. The results have been extremely positive, in particular, the collections that have been taken up by Wikipedia have increased visibility to our material far beyond what we could do ourselves. Europeana has the expertise and tools to make collections that are of good quality and that are licensed for free reuse available on these platforms.’*
 
 ### What you want
 

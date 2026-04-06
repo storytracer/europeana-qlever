@@ -1,6 +1,4 @@
 
-
-
 # Media policy
 
 The Europeana Media Policy outlines the requirements for the links to the media resources that are part of the provided metadata. It complements the information provided with the [Publishing guide](Publishing%20guide.md) and the [EDM - Mapping guidelines](EDM%20-%20Mapping%20guidelines.md). By following these requirements, we can give audiences a better experience and a greater connection with your collections. Following these requirements we will:

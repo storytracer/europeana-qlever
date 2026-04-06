@@ -3,8 +3,6 @@ tags:
   - '#apidocs'
 ---
 
-[Europeana APIs Documentation](../../Europeana%20APIs%20Documentation.md) > [API Suite](../API%20Suite.md)
-
 # Search API Documentation
 
 The Search API provides a way to **search for metadata records and media** on the Europeana repository. For example, you would use the Search API to get a response to the query *give me all the results for the word "Vermeer"*. Additionaly, it provides an alternative method using the [OpenSearch.RSS](#opensearch-rss) protocol for easier integration with external services.
@@ -910,4 +908,4 @@ The following will be deprecated per the given date, ensure that your API client
 
 We deploy new versions of this API quite regularly, but not all new versions result in changes in the interface. To see the changes made for this version and also all previous releases, see the [API changelog in the project GitHub](https://github.com/europeana/api2/releases/).
 
-![image-20260209-173522.png](../../../attachments/2f04fb30-2a35-4b53-93d6-ccf9f09669e6.png)
+![image-20260209-173522.png](https://europeana.atlassian.net/wiki/download/attachments/2385739812/image-20260209-173522.png?version=1&modificationDate=1770658524873&cacheVersion=1&api=v2)

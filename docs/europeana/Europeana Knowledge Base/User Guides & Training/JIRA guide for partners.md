@@ -5,8 +5,6 @@ tags:
   - '#data-processing'
 ---
 
-[User Guides & Training](../User%20Guides%20&%20Training.md)
-
 # JIRA guide for partners
 
 The Europeana Data Publishing Services team (DPS) is the main point of contact for all data partners wishing to publish data in the Europeana website. Since January 2019, the Europeana DPS team adopted [scrum](https://en.wikipedia.org/wiki/Scrum_(software_development)) to manage the work of the team and since July 2019, we use [Jira](https://en.wikipedia.org/wiki/Jira_(software)) as a ticket tracking system to organise the work of the DPS team.
@@ -36,11 +34,11 @@ Colleagues and partners that regularly work with Jira among our data partners ha
 
 For every data partner contact person that needs to be involved in the data publication work, access to Jira is needed. For this to happen, **EF needs to be informed about who requires access, and needs an email address from the person that will be added to Jira**. This will trigger the person to receive an invite to join Jira and to create a Jira account.
 
-![](../../attachments/7ac6be71-5cb4-4ae4-8877-8a0bca0c8b56.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/74h_EPyBFqy0MNNjKb9CeciI1SC4t9ttRsM0SOToCRyS81hzryKpBwyShBSCVKZ2II1GyDSB0p9Xsud8z_aAkgThhVATstE1OHn15udwbAdCKD9EjtEJ7WlELZJ8mo_2fa7bI15Y6a3Rzwo6LoQA_hk0ulJ52-ZOdTzgbxkTf2bFziuTAzh_PIZ0tZM8?version=1&modificationDate=1671024048269&cacheVersion=1&api=v2)
 
 We aim to have one to three main contacts per data partner. It is also possible to register an aggregator specific email address, like a generic contact email account that several people have access to. This way it also improves flexibility to e.g. have other people that only temporarily need access to Jira to work on a ticket.
 
-![](../../attachments/eddd7c58-6955-4999-b718-32b09b7a67b3.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/dqBHEWbTUiAkfSPqueo8V1UEkv84tqYLjAMOUbshcyVd8LEfke6JDdsUN0X2HUODXY_QfgPlh-IOm1HeaZGRCNfmgSRLh4W7NNTo-SrTVx4LSma8_7AiabwPWEmuuH0aKF4DeVNJpNzWcH9cy_J7gMeP-UmJANCbwi6EcupWqzJyH86D_TXveA6s3XW8?version=1&modificationDate=1671024048284&cacheVersion=1&api=v2)
 
 # The Data Partner Epic
 
@@ -50,7 +48,7 @@ There is **one unique URL** for every data partner epic that unites all other ti
 
 The main contact person/s for the data partner alone will have access to their specific epic, so you will not be able to see and interact with the data processing work of other aggregators. This is important with regard to data protection regulations as the DPS Jira project contains some personal data which cannot be publicly exposed.
 
-![](../../attachments/d80b7875-ff5f-4f9a-a8c8-d1c16dafcfd3.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/DYYbQ-z9g3jG8GTW8ymc9okVgSzMNl-cQG9fE0157e1GeYExYMna-JqzMLm45x0t4guHYvwuLqiXR9z86Vo73uBGS0ATPgULqZ2iiad2F1XZJ8pLEcyhtnKAtJZDonlgh2Jb-XL153qI9I360qqC0Ab_75M8nvz2gjWqzfVGvjq-R2wBmJNBOkOS-8t5?version=1&modificationDate=1671024048293&cacheVersion=1&api=v2)
 
 # The dataset as a ticket
 
@@ -62,7 +60,7 @@ Data ingestion specialists will comment on the ticket with feedback on the speci
 
 It is also possible to upload attachments to Jira (e.g. a sample dataset). The default maximum file size for these attachments is 10Mb.
 
-![](../../attachments/687126ec-a0c0-4eff-a383-f6b15996b630.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/m14-oshDlJIosULNyjE3SJ2ozthCMElnvCEmOrUWPjNo_dLBvYtdsmayxtT-wLNRWiCO38YGQ-kdhpDOPuY39Tl6NNh80z1TnFE536f7s5bxovok-hFzzU1f9Mixk59o2Imwzbdl2YCqPcZ98ZdoZDS9Vt_cIpdMbjNrjTXtC4zRsP1BrZfNB0IyFps_?version=1&modificationDate=1671024048306&cacheVersion=1&api=v2)
 
 # Requesting an update of an existing dataset
 
@@ -72,7 +70,7 @@ Please add any relevant information, such as details of additional records, qual
 
 The DPS team will be notified and we can include the request in our planning.
 
-![](../../attachments/d0f73006-3bad-44bb-b1a6-351b9375572a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/Cv31oeQnAjI3uOVhkPiwUECfuQoB52iyhRawBkJu6Kq-nMkY539DJnbF85o16H5fK4I8M4pa4HzujzJHJmiDoqS8yuElhjsSqnXO2JdwsMO49IA7PxmWkROBJXc5PlW7Y6aZzacm1CNsMmHYJ0OKZclGxKU4euDMYNjo5vu1I99VBf2ilqQ2VesVAVhJ?version=1&modificationDate=1671024048314&cacheVersion=1&api=v2)
 
 # Creating a ticket for a new or missing dataset
 
@@ -82,7 +80,7 @@ This way we can establish the basic information for every dataset, create a tick
 
 The link to the service desk is also in your epic, so it will be available to you when you need it.
 
-![](../../attachments/13d67bfa-754f-4ba4-b8b9-39c1511e7fa9.png)![](../../attachments/5061cc2c-59aa-4e74-a0af-4789688c5c04.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/G8jEz4vWq2f1IeiBFOpSvqjaSIm2AzmLVbENE1alDVRW3J3nYdNksSH3JafqkFie-L4VBUj23wt08MFq4PtxBkz415gTZWi0LL4M6EUhUheRDHQ4lrld6hqdFENqipbgKeKGGzAIv25MlUaCbF5cSrhU8kzHYfvLRxXraKg4d5YnT28EE3zFJ8xh5yRL?version=1&modificationDate=1671024048320&cacheVersion=1&api=v2)![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/nfZEBCLXZ2weE0Bd9DY4V9XTGwrIGO-2kx-fgL4JyOMsdc8tT5LOTCzktAurwwVUnffLL9skJnz7Q2SMINBE7GyohdyCDozQcbpcvdeNo8i1Aer9iuHLlhxUZ0keTHk_mqwkFgazgqn1-od4EhT8lAhGc5JwSGC_TIY1zRz48eNT87kNFKyPk2DPeDUl?version=1&modificationDate=1671024048328&cacheVersion=1&api=v2)
 
 # The Jira Guide Epic
 
@@ -122,7 +120,7 @@ As soon as a dataset is prioritised and planned into the upcoming sprint data pa
 
 If you wish to reopen a closed ticket then you simply have to comment on it stating your request.
 
-![](../../attachments/4b24d0b7-4a4a-4769-9c90-fe8d459332a9.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/tVGpnE2cOYckgRTaICWDq3a9FKD0BKTecztRzj7JUlDLuNDtZ0QCSs7tOk5wBuqliSbM89DL71b93XaUSDfbI-lqaztSl6bEYUtR1pOEtcD18wjMoKvbk6auO1WSNu56aB7KHNfmHpXsrYcnyqlTfHFwvNuEkz08sa8rnKxEFxZzifAc-RfcsL30VXbJ?version=1&modificationDate=1671024048337&cacheVersion=1&api=v2)
 
 # Configuring notifications in Jira
 
@@ -133,7 +131,7 @@ Should you wish to configure notifications in Jira then please read below
 > 2. click on ‘personal settings’ and customise as needed.
 > 3. By default the notifications are set to ‘notify me’ for your own changes, i.e. even when you add a comment to a ticket you get an email about it. If you don’t want this, change to ‘do not notify me’.
 
-![](../../attachments/b7bd8a31-bab2-4628-9834-d503d36aef63.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295758855/OuGkIpk1vjy69aLbIJs612i89kYB2VjovsAsT6ztOg3mfJqwqcaVMcf25Sh6XIzn3d9op4p1ATl-LJQGMiePJSANeXZAqa1IcZBXI1H4vZ74M7qpjTIkxQtADH5S8mtc0YY8E95lA1up5Wg3RoEcTCCyiDwtBpgocvyX7sd62pWYNlFE3D7TmBI4wO_t?version=1&modificationDate=1671024048344&cacheVersion=1&api=v2)
 
 # Importing data from Jira into Google Sheets
 

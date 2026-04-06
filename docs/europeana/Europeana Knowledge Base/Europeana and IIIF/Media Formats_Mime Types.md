@@ -1,6 +1,4 @@
 
-[Europeana and IIIF](../Europeana%20and%20IIIF.md)
-
 # Media Formats/Mime Types
 
 The tables below list the mime types of media resources included in Europeana’s manifests. We have categorised these mime types into two groups, based on how they are represented in the canvas:

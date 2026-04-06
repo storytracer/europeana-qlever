@@ -1,6 +1,4 @@
 
-[Persistent identifiers](../Persistent%20identifiers.md)
-
 # Glossary of terms
 
 This glossary provides definitions of key terms used throughout the documentation on persistent identifiers (PIDs). It is intended to support clarity and consistency, especially for readers who may be new to the topic.

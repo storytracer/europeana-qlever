@@ -4,8 +4,6 @@ tags:
   - '#metadatatiers'
 ---
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Contextual classes](../EDM%20Contextual%20classes.md)
-
 # skos:Concept
 
 A Concept is defined as a unit of thought or meaning that comes from an organised knowledge base (such as subject terms from a thesaurus or controlled vocabulary) where URIs or local identifiers have been created to represent each concept. In the cultural heritage domain there are many such controlled vocabularies such as the [Library of Congress Subject Headings](https://id.loc.gov/authorities/subjects.html) or [AAT](https://www.getty.edu/research/tools/vocabularies/aat/index.html).

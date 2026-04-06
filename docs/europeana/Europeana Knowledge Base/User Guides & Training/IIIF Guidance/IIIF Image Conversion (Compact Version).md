@@ -3,8 +3,6 @@ tags:
   - '#iiif'
 ---
 
-[User Guides & Training](../../User%20Guides%20&%20Training.md) > [IIIF Guidance](../IIIF%20Guidance.md)
-
 # IIIF Image Conversion (Compact Version)
 
 This compact guide describes **how to apply** the scripts for[ web server & IIIF image server installation](#web-server-iiif-image-server-installation) and [IIIF image conversion](#iiif-image-conversion).
@@ -43,7 +41,7 @@ The workflow of image conversion is described step by step and the successful ex
 
 For this training you will need a set of images (e.g. jpeg images) that you want to convert to multi-resolution format.
 
-You could use your own images or download a test set of 10 images from here: [ConversionGuide_Images_TestSet.zip](../../../attachments/66aaad05-6109-4eca-92c1-8a4cc1af7dc3.zip).
+You could use your own images or download a test set of 10 images from here: [ConversionGuide_Images_TestSet.zip](https://europeana.atlassian.net/wiki/download/attachments/2355396609/ConversionGuide_Images_TestSet.zip?version=1&modificationDate=1688718814636&cacheVersion=1&api=v2).
 
 We will use [Apache web server](https://httpd.apache.org/) and [IIPImage server](https://iipimage.sourceforge.io/documentation/server) in this training.
 
@@ -55,7 +53,7 @@ At first you have to make the script executable:
 sudo chmod +x iiif-install.sh
 ```
 
-![](../../../attachments/d8b75bf7-7b95-445a-856b-00d7f8b89a6a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f1_ict_sudoinstal.png?version=1&modificationDate=1688997902366&cacheVersion=1&api=v2)
 
 Then you have to run the script in your terminal by simply typing:
 
@@ -63,17 +61,17 @@ Then you have to run the script in your terminal by simply typing:
 sudo ./iiif-install.sh
 ```
 
-![](../../../attachments/c289cb81-81aa-45f6-bd81-22a9cbdeb297.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/Figure14.png?version=1&modificationDate=1688715394750&cacheVersion=1&api=v2)
 
 # 2 Image Conversion
 
 To facilitate transport, the images are saved in a zip file so that they are not transferred individually, but all together. Your next step should be decompressing the zip file in your Home directory.
 
-![](../../../attachments/9e48da08-0530-49a8-9a63-faa2571dd84a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f2_ict_decompr.png?version=1&modificationDate=1688722760240&cacheVersion=1&api=v2)
 
 After that, you have to move the [**iiif-image-converter.sh**](https://github.com/AITProjectAssistant/OpenUp/tree/main/IIIF) file into the folder with the decompressed images.
 
-![](../../../attachments/35067f97-46bd-4a34-bf20-5ac0c4a8d83d.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f3_ict_script.png?version=1&modificationDate=1688722935137&cacheVersion=1&api=v2)
 
 Make the script executable with:
 
@@ -81,11 +79,11 @@ Make the script executable with:
 sudo chmod +x iiif-image-converter.sh
 ```
 
-![](../../../attachments/e1a7e6cb-c22d-4807-9c35-632fd0855b57.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f2_ict_sudoconv.png?version=1&modificationDate=1688998545380&cacheVersion=1&api=v2)
 
 In your terminal, open the TestSet folder where your images and the script are located (**cd TestSet** if you are not already in that folder).
 
-![](../../../attachments/f08e4a8e-99c2-4c78-a610-bd9d96fd8926.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f2-1_ict_sudoconv.png?version=1&modificationDate=1688998623172&cacheVersion=1&api=v2)
 
 And run the script from there by simply typing:
 
@@ -95,25 +93,25 @@ And run the script from there by simply typing:
 
 In the following screenshot you can see that during the execution of this script there is a corresponding TIFF image generated for every original image.
 
-![](../../../attachments/9c2191d7-6c5e-42d3-aed4-68927ad30c80.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f4_ict_conv.png?version=1&modificationDate=1688723296194&cacheVersion=1&api=v2)
 
 A better view example of the original versus corresponding tiff image is shown in the next figure. There you can see that the TIFF image consists of 3 layers that represent different resolutions of the original image.
 
-![](../../../attachments/f391c338-bd99-48c3-86e5-dd03507f00c1.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f5_ict_image.png?version=1&modificationDate=1688723370031&cacheVersion=1&api=v2)
 
 At the end of execution the script demands sudo password in order to move the generated TIFF images to the image server folder.
 
-![](../../../attachments/00746ff1-2346-4b95-983a-ffe7c243bc8d.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f6_ict_move.png?version=1&modificationDate=1688723524544&cacheVersion=1&api=v2)
 
 After correctly entering the sudo password the script ends with no outputs in the terminal and the images are moved to the */var/www/iipimage-server* folder.   
 To check if the images are really there, go to this folder and type *ls* into your terminal. The following output should be obtained.
 
-![](../../../attachments/e04b479f-f0af-4986-ac8c-5d68985bbf81.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f7_ict_check.png?version=1&modificationDate=1688724496224&cacheVersion=1&api=v2)
 
 Now, you can access the images from the browser with a URL.   
 For example, you can type into the browsers address bar: **http://localhost/iiif/15513\_4892.tif/full/400,/0/default.jpg**
 
-![](../../../attachments/2cc1b04c-2299-4068-9eff-317e6a6efc91.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f8_ict_browser.png?version=1&modificationDate=1688724655384&cacheVersion=1&api=v2)
 
 The identifiers after .tif image in the URL represent the required image request that must be in the following order: region, size, rotation and quality. “The order of the parameters is also intended as a mnemonic for the order of the operations by which the service should manipulate the image content. Thus, the requested image content is first extracted as a region of the complete image, then scaled to the requested size, mirrored and/or rotated, and finally transformed into the colour quality and format. This resulting image content is returned as the representation for the URI. Image and region dimensions in pixels are always given as integer numbers. Intermediate calculations may use floating point numbers and the rounding method is implementation specific. Some parameters, notably percentages, may be specified with floating point numbers. These should have at most 10 decimal digits and  consist only of decimal digits and “.” with a leading zero if less than  1.0.”
 
@@ -121,11 +119,11 @@ In accordance with these guidelines, the image representation on your computer c
 
 With this url the region of the image consisting of pixels that have x coordinate between 100 and 140 and y coordinate between 70 and 120 is extracted. The extracted region is not scaled, and is returned at its full size (from size=full in url), rotated 90 degrees and in grayscale quality. The result of this url can be seen in the following figure.
 
-![](../../../attachments/0a7b6644-c618-4b20-976a-773061e9eb23.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f9_ict_browser2.png?version=1&modificationDate=1688724809107&cacheVersion=1&api=v2)
 
 For all TIFF images the image server creates an info.json file that can be accessed via the browser address bar and contains all necessary information (image width and height, available qualities, formats etc.) about the corresponding image.
 
-![](../../../attachments/bfce8f32-cdba-489b-a184-99f8d61dc21f.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2355396609/f10_ict_json.png?version=1&modificationDate=1688724929317&cacheVersion=1&api=v2)
 
 With the adequate manifest you are able to access and view these images further with IIIF-compliant image viewers like [Mirador, Universal Viewer, OpenSeadragon etc.](https://iiif.io/get-started/iiif-viewers/)
 

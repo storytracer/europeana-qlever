@@ -3,8 +3,6 @@ tags:
   - '#apidocs'
 ---
 
-[Europeana APIs Documentation](../../Europeana%20APIs%20Documentation.md) > [API Suite](../API%20Suite.md)
-
 # Entity API Documentation
 
 The Entity API allows you to search for or retrieve information about entities that are referred to by items available in Europeana. It presently offers 3 methods:

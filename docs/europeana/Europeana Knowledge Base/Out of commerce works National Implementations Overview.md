@@ -5,8 +5,6 @@ tags:
   - '#outofcommerceworks'
 ---
 
-
-
 # Out of commerce works National Implementations Overview
 
 Out of commerce works National Implementations Overview information on how the out of commerce works provisions from the [Copyright in the Digital Single Market (CDSM) Directive](https://eur-lex.europa.eu/eli/dir/2019/790/oj) have been transposed and implemented in each European Union member state. When information about licences concluded is available, it is indicated next to the country name.

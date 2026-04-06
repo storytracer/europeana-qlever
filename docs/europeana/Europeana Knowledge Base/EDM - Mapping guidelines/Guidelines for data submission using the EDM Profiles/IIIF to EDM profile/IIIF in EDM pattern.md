@@ -6,8 +6,6 @@ tags:
   - '#iiif-pattern'
 ---
 
-[EDM - Mapping guidelines](../../../EDM%20-%20Mapping%20guidelines.md) > [Guidelines for data submission using the EDM Profiles](../../Guidelines%20for%20data%20submission%20using%20the%20EDM%20Profiles.md) > [IIIF to EDM profile](../IIIF%20to%20EDM%20profile.md)
-
 # IIIF in EDM pattern
 
 - [Step 1: Providers MUST identify the type of link between the IIIF resource for the object and the object.](#step-1-providers-must-identify-the-type-of-link-between-the-iiif-resource-for-the-object-and-the-object)

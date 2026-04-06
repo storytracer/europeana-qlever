@@ -4,8 +4,6 @@ tags:
   - '#enrichment'
 ---
 
-[Semantic enrichments](../Semantic%20enrichments.md)
-
 # Europeana automatic enrichment with organisations
 
 This page describes how Europeana links information about providing organisations to Europeana entities for organisations.

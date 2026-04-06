@@ -3,8 +3,6 @@ tags:
   - '#ore-aggregation'
 ---
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Core classes](../EDM%20Core%20classes.md)
-
 # ore:Aggregation
 
 The following are the properties that can be used for the class of ore:Aggregation. This means that they are attributes that apply to the whole set of related resources about one particular provided CHO. For each ore:Aggregation a set of these properties should be provided.

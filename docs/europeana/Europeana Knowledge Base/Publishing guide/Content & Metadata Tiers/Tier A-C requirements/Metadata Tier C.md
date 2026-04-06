@@ -8,8 +8,6 @@ tags:
   - '#metadata'
 ---
 
-[Publishing guide](../../../Publishing%20guide.md) > [Content & Metadata Tiers](../../Content%20&%20Metadata%20Tiers.md) > [Tier A-C requirements](../Tier%20A-C%20requirements.md)
-
 # Metadata Tier C
 
 **Metadata Tier C (Europeana website as a knowledge platform)**

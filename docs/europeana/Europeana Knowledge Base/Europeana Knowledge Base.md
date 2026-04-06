@@ -1,6 +1,4 @@
 
-
-
 # Europeana Knowledge Base
 
 All our guidelines and documentation in one place.
@@ -18,13 +16,13 @@ For those looking to have the information listed in the pages above in .pdf form
 
 To export of a single page, follow the  **. . .**  symbol on the right-hand side of the page and chose between word or pdf:
 
-![](../attachments/445630d2-3117-4ce3-a399-9776969a74e8.png)![](../attachments/ceda18b7-9cb9-4b6f-a72c-41da43f2b235.png)![](../attachments/08f05a85-f0ce-4a4b-b88a-6017ed6d6363.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/330367111/qYxkQPsRnK7Z2qy2jZ42vczSINfctGR-MsVztLgZF0pdEBWr40mSZtlMpJDnZ5raESSDVAsLuV5-NkIH04diTNfhVlV9Rl421dhVeeKv5uPf0qDOo5WZyYltK-JCxFtWUk9BEN8RMYfXBz02KSF8dzULpExUAIJk4C0wg0BDr7iFyEfgVOwIVWOsHqnd?version=1&modificationDate=1671029178927&cacheVersion=1&api=v2)![](https://europeana.atlassian.net/wiki/download/attachments/330367111/MFplrZ8gVpDQ6FRmKA6LfE9I_DYkxwiWnz-lQ7e3_V503zaaZ9Bba97W-u3ICxS_cwtERLeCWS0YYI8dvmBtM9SUZLMnoUpSa2uVtmrNLWmxZh0egxKTGXjxU1XdSaNoXtcph7zvwuETnEiUCp9RIMapuQHiRZy8VD8Sd68HIXGbLBRax7Z-wHm2OKpa?version=1&modificationDate=1671029178935&cacheVersion=1&api=v2)![](https://europeana.atlassian.net/wiki/download/attachments/330367111/hIOD7MaVxDxHaHh92N4IUHqVGAgBpJ_Mxksa_9trHQwlGMmbf1ReinWevoexWPZZVgrMuLb7sDbMTrUulQuP4SWYQRSLfuAo8kKnRYLB3xWYN481oikHtfMQUlu_EjQFFewvTARYyWsQvytHCT43ye8qkIBgcjftGuRYSY45ffd7tip8KSEBWwvhIu7n?version=1&modificationDate=1671029178942&cacheVersion=1&api=v2)
 
 To exporting the entire space: click on
 
 *Space settings → Manage space → Export space* and adjust the settings according to your needs. The following images give an indication on the steps to follow:
 
-![](../attachments/f917f53b-3e58-41e1-be3e-b7a821e50872.png)![](../attachments/def1bef5-d05e-4133-a04b-b0ea18101dc0.png)![](../attachments/703b3c77-7695-4e4f-abfe-1e423bb1e400.png)![](../attachments/d8097059-6784-4687-8ef2-419318820513.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/330367111/ehYLCrdRHQuIsdwWWPCC_-CJa60VjhHoSN786sGWG815bGfw6DLW4AVffa1NCywh3R2P5du6t2JDPII0zEmPIySC3-YD_bH2Pkv_cWL6zuveCL64pC3OrUR3B4GSP7bE4-niJVyl0By6edmQYLwkAYrcleMPf0Z9XV5frOpykzW5Rtadxifzi2HEb5df?version=1&modificationDate=1671029178949&cacheVersion=1&api=v2)![](https://europeana.atlassian.net/wiki/download/attachments/330367111/mFEyMK7mTj0eF6Utx0wg9OB3tei5tXa8No1Lzm1iimpzHz5XTJBxqfS1nRRryk3UT_1N79MLjxCcDRQJbe3PJr1fT9_YOm3rsPoC6LCjrwowd6BAK_A5tH-vgKZmLpxk41qrQZxDc5Qqt1QP7HfnCKd8AM3D2_qboPpJ1oilqi6onQlhwqIMSpZZah88?version=1&modificationDate=1671029178955&cacheVersion=1&api=v2)![](https://europeana.atlassian.net/wiki/download/attachments/330367111/_604-lUfGxrLSS1eROpIONXY7VvgR3VWHpX81XbRDzxDtx4QVtLt5RWXKAIydLXxEhSHLwbHhRyPdb6kgOe9xbJ0sJkRUbvE86BppZzI50QZXyoU11lIqnk5nN1Wt64WCMZ4lqoOedlnRdNPpi8W7YESOV8EHa3gjtNqrghAKQU2HY1ez418jV4Wxdxl?version=1&modificationDate=1671029178962&cacheVersion=1&api=v2)![](https://europeana.atlassian.net/wiki/download/attachments/330367111/xbivFBsl7BXnehP69kHqgROgZNXhqECKFAO1MAB-DsmeBbq5V52FMc0TtMtq5yMpFHsVgGqVjHQ076su4H0dJM4rvLSX2N5SbpIr0ygEkSscgkBal73CfpgQlOzIGECv0VpDkWWhEoPRtMVlAbGmW6IWKM-poqRCn4iqvSf_ASEkyC6vMXPKDvmfapgd?version=1&modificationDate=1671029178968&cacheVersion=1&api=v2)
 
 ---
 

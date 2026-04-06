@@ -5,8 +5,6 @@ tags:
   - '#api-queries'
 ---
 
-[User Guides & Training](../User%20Guides%20&%20Training.md)
-
 # How to search Europeana website and API
 
 # Introduction

@@ -3,8 +3,6 @@ tags:
   - '#apidocs'
 ---
 
-
-
 # Europeana APIs Documentation
 
 These pages provide you with the public documentation for the Europeana APIs. This landing page will help you navigate through the suite of APIs available so you can find the information you need and get started using Europeana’s data as quickly as possible.
@@ -56,8 +54,8 @@ If you want to see an example of our API in action, then look no further than th
 
 If you need any **Support** or **Help** with using our Europeana APIs, you can join discussions about using our APIs in our [**Google Group**](https://groups.google.com/forum/?pli=1#!forum/europeanaapi)**,** or visit our [API FAQ](Europeana%20APIs%20Documentation/API%20FAQ.md) for help. If you need more support, you can always contact us directly at [**api@europeana.eu**](mailto:api@europeana.eu)
 
-|                                                                                                  |       |
-|:-------------------------------------------------------------------------------------------------|:------|
-| ![photo-Hugo-Manguinhas-02-10-2023.png](../attachments/8d6644a3-9718-4ba6-bbda-e6f710608485.png) | <br/> |
+|                                                                                               |       |
+|:----------------------------------------------------------------------------------------------|:------|
+| ![photo-Hugo-Manguinhas-02-10-2023.png](https://europeana.atlassian.net/wiki/download/attachments/2385313793/photo-Hugo-Manguinhas-02-10-2023.png?version=1&modificationDate=1708618198760&cacheVersion=1&api=v2) | <br/> |
 
 We are keen to hear about your project, plan or idea to develop something using digital cultural heritage. Have you created something that uses Europeana data, or are you in the process of doing so? We would love to chat with you to see how we can help support or promote your project to our network. By getting in contact with us about your project, you’ll receive important updates we make to our API suite and will get the latest offers and services from Europeana.

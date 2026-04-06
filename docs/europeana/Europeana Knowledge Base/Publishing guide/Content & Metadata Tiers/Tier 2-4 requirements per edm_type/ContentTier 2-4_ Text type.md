@@ -8,8 +8,6 @@ tags:
   - '#epf'
 ---
 
-[Publishing guide](../../../Publishing%20guide.md) > [Content & Metadata Tiers](../../Content%20&%20Metadata%20Tiers.md) > [Tier 2-4 requirements per edm:type](../Tier%202-4%20requirements%20per%20edm_type.md)
-
 # ContentTier 2-4: Text type
 
 - [Content Tier 2 (Europeana as a showcase)](#content-tier-2-europeana-as-a-showcase)

@@ -6,8 +6,6 @@ tags:
   - '#metadata-tiers'
 ---
 
-[Publishing guide](../../Publishing%20guide.md) > [Content & Metadata Tiers](../Content%20&%20Metadata%20Tiers.md)
-
 # Example records - content & metadata tiers
 
 In addition to the written requirements and recommendations for each of the content and metadata tiers, we have developed example records to show what these requirements mean in practice.

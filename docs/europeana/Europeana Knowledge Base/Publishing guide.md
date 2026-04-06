@@ -8,8 +8,6 @@ tags:
   - '#quality'
 ---
 
-
-
 # Publishing guide
 
 The *Europeana Publishing Guide* is a resource for data partners who share material on the Europeana website. It outlines the minimum metadata requirements for having your data incorporated into the Europeana website.  It brings all the existing information into one place and outlines the criteria for submission of metadata to the Europeana website. It is intended to help aggregators and data partners share their data, become fully standardised and interoperable, if desired, and to improve the Europeana website in a uniform and consistent way. We will work with you to make sure that your datasets meet the publication criteria - because good data gives audiences a better experience and a greater connection with *your* collections.

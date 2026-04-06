@@ -6,8 +6,6 @@ tags:
   - '#edm-core-classes'
 ---
 
-[EDM - Mapping guidelines](../EDM%20-%20Mapping%20guidelines.md)
-
 # Overview of properties per class
 
 - [Core Clasess](#core-clasess)

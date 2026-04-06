@@ -1,6 +1,4 @@
 
-[Organisation entities in Europeana](../Organisation%20entities%20in%20Europeana.md)
-
 # Management of organisation entities (for aggregators)
 
 One of the features we offer to Europeana website users is the ability to browse our vast collection through providing organisations. For instance, if you are interested in materials from a specific research center, you can easily access all relevant records from its dedicated page. You can explore the list of contributing organisations sharing their data [here](https://www.europeana.eu/en/collections/organisations).
@@ -8,7 +6,7 @@ One of the features we offer to Europeana website users is the ability to browse
 <details>
 <summary>Dedicated page for Naturalis Biodiversity Center</summary>
 
-![Screenshot 2024-06-21 at 13.15.53.png](../../attachments/a85d294b-d241-46d6-a840-a8d4c921d849.png)
+![Screenshot 2024-06-21 at 13.15.53.png](https://europeana.atlassian.net/wiki/download/attachments/2617442393/Screenshot%202024-06-21%20at%2013.15.53.png?version=5&modificationDate=1718973560496&cacheVersion=1&api=v2)
 
 </details>
 
@@ -17,14 +15,14 @@ Even if you choose not to browse by contributing organisations, you will still l
 <details>
 <summary>Record page for a preserved specimen provided by Naturalis Biodiversity Center</summary>
 
-![Screenshot 2024-06-24 at 10.50.55.png](../../attachments/635fee1b-6f70-49ed-b0cd-b0adb0d62ba5.png)
+![Screenshot 2024-06-24 at 10.50.55.png](https://europeana.atlassian.net/wiki/download/attachments/2617442393/Screenshot%202024-06-24%20at%2010.50.55.png?version=3&modificationDate=1719223292793&cacheVersion=1&api=v2)
 
 </details>
 
 <details>
 <summary>Screenshot of the Naturalis Biodiversity Center record in Zoho CRM</summary>
 
-![Screenshot 2024-06-21 at 13.53.26.png](../../attachments/8dd5d0d0-3622-4881-8900-310e69c9461a.png)
+![Screenshot 2024-06-21 at 13.53.26.png](https://europeana.atlassian.net/wiki/download/attachments/2617442393/Screenshot%202024-06-21%20at%2013.53.26.png?version=4&modificationDate=1718975874323&cacheVersion=1&api=v2)
 
 </details>
 
@@ -189,7 +187,7 @@ Organisation can either be provided as a literal value or URI:
 
 To search for existing organisations that have already provided data to Europeana, you can use [this tool](https://rnd-2.eanadev.org/share/entities/search.html). Simply focus your search on organisation entities by ticking the "Organisation" option and add keywords in the search bar:
 
-![Screenshot 2024-06-21 at 18.40.05.png](../../attachments/2bf1084f-68c8-49eb-8bca-6f79c78b902d.png)
+![Screenshot 2024-06-21 at 18.40.05.png](https://europeana.atlassian.net/wiki/download/attachments/2617442393/Screenshot%202024-06-21%20at%2018.40.05.png?version=2&modificationDate=1718991677444&cacheVersion=1&api=v2)
 
 When you click on one of the results, you will be taken to the entity page for this specific organisation on Europeana website: `https://www.europeana.eu/en/collections/organisation/4513-naturalis-biodiversity-center`
 

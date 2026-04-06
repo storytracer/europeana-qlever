@@ -3,8 +3,6 @@ tags:
   - '#iiif'
 ---
 
-[User Guides & Training](../../User%20Guides%20&%20Training.md) > [IIIF Guidance](../IIIF%20Guidance.md)
-
 # EDM2IIIF Manifest Creation Tool
 
 The Europeana Natural History Aggregator OpenUp! has published an online tool that supports the automated creation of IIIF manifests out of uploaded EDM metadata.
@@ -77,7 +75,7 @@ Below is a list of the general interface elements and their uses.
 
 The default screen, the screen you land on when navigating to the tool is the Welcome screen.
 
-![](../../../attachments/a14ba0a0-717d-4d34-9207-41085ebd009a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXcCd8j_Qcom7HELNTojtuJCcLSk_mTMJuAfkqe7LnvBHXdvdMSQ6_SiEGdTw0fW1_Q2mRJPfrf9FXTCFzWJW3Gwusa9G3_5LFtlIPdt6LGgNcxHi436GE5MpHE1kQ_3orAPcqgfMEHlt2et9LMo1U5LeF_6%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718707401052&cacheVersion=1&api=v2)
 
 You can click ‘Start’ to navigate to the Home screen (see section below).
 
@@ -85,35 +83,35 @@ You can click ‘Start’ to navigate to the Home screen (see section below).
 
 This screen allows you to start accessing the EDM2IIIF Manifest Creation tool. Here you can track existing data or initiate a new upload. It looks like this:
 
-![](../../../attachments/5f208564-9229-4507-a301-f0f8e3de4ca4.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXcDoHDShFIcHrXyg__buHHznDwy4N2iImVTL0l1UXCj_df9mhoR9vIVvmv6U52AMWgV-5giHj8m_dgokRe3RZz5DJh-5TejOPHRbIf2_ogf6PpNYKTUX9JiY5122DkML9IST9KMb2WOb9lCfIOLAZ2FMYmt%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718707401075&cacheVersion=1&api=v2)
 
 ### 4.2.1 Input fields
 
 The input fields are the white boxes where information must be entered by you. The description above the input field states what information should be entered. Every input field comes with a possible input example. **Each field is mandatory**.
 
-![](../../../attachments/668857bb-bfa0-4403-a7ad-0a8571a878ba.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXdOT_CScNtGIJYxqZMIIE2x9SY7vU18JwMAf6WWFeKPUdAixMuuVVEpx1X8eJ8_659piQJ7OCfsKZ2Mu5hSHNt1y1Rbqt8dC8B8iQ4Aj1z9gfbvrTFG3NHCdlgcQEu9UGK4n28xLJ8b8gamhFYKwZ3-cwE%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629109&cacheVersion=1&api=v2)
 
 ### 4.2.2 Buttons
 
 The radio buttons are used to select the upload method to upload EDM metadata records through OAI-PMH or file upload and to download the resulting manifests and enriched EDM data:
 
-![](../../../attachments/7905d5bb-dad2-4467-9cf6-abededfc8f0c.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXcOaRuCGpPEHU5NL4IuyObdoXSX9DExfAGbIAEt9wkgDXCcDJpxZy-I1bm7SxyX-4mI6ppPqohRGHq9oRCA0003oRqndBnd0fAu5lBnYllaGcX8HtYsh2cBb_gFPqF74LTOCx6476IbhevPRWT21h9MQjjj%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629128&cacheVersion=1&api=v2)
 
 …or to refresh your harvesting results.
 
-![](../../../attachments/2dfa0503-cf1f-43cf-90bc-2e64156fe776.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXcddzcJf5ESKETAbJhtPXB8zqe-VYNFnnoGEWIBxCEGZM5oADwVtNEiLzGNgn1jlL9MwmaAiHp2kOHE9Ibqwo5rZdVD9y_WSiAZiBA9MmSXks7aSo2OTydhCeT74uTpXxBbynFi6SVe0N2QywER1L8Uey0%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629136&cacheVersion=1&api=v2)
 
 # 5 Upload a new dataset
 
 The EDM2IIIF Manifest Creation tool was implemented as an open web service. Therefore it is not possible yet to create a user account (this may be implemented in v02). When uploading your EDM metadata records you have to make sure to choose a **unique** name for the upload. If the name already exists, you will be requested to confirm the override of the previous set. Please try not to delete other uploads by choosing the same name.
 
-![](../../../attachments/f0006c6c-9a0b-4811-b025-1287d64eea21.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXeW5XJr66yqi0l7WgMui2ALxuXneIdNRWrCOXIjAsiHUGMYrk9rk2Kvpq2EmTWBn__yMdGahSDSU-yi9CS4LXPofWF6HTceEH7fFerdZgMGoG51qh1dhtWspAYUcIgyYkcFlYyuhJVNUOVA3eXXJyHTzVVE%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629143&cacheVersion=1&api=v2)
 
 ## 5.1 Data input
 
 This screen allows you to start accessing the EDM2IIIF Manifest Creation tool. Here you can track existing data or initiate a new upload. The “Upload Data” form looks like shown in the figure below and can at the same time be used to track or later download a previous dataset.
 
-![](../../../attachments/f813c17e-1710-442e-bb7d-bd3a44bff64f.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXcWrj1sMVZRFpbxjJsngxjgLtdLoF0vaBzsMKTd5xiXMjvrHAByFPwzzhWTICoFosuQNIndgJvwymFW9dHFViZHEnCx9amNjK1qcS_ySbqGt8iMYIV42CtI4gUaKRfmnqQfZw9HAvXbKBW1fXD6VxZ56KNM%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629150&cacheVersion=1&api=v2)
 
 1. *Dataset Name Input*: used to enter the **unique** name of a new dataset you want to **create** or a previously uploaded dataset you want to **track.**
 2. *Base URL for images*: used to enter the base URL for your **IIIF images**.
@@ -141,23 +139,23 @@ If the upload has been successful, a green information window will appear (see f
 
 To use the harvesting protocol OAI-PMH, you should enter an URL for harvesting your data. The URL of your OAI-PMH should look like this:
 
-![](../../../attachments/d2903c05-22b2-416a-8ace-65c9b134c0d6.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXdlHgJTh2KDZVrAhFaLWr5T652tbm4mPm6wNhpNZ6I_mM4xBIK5crWVaQJRsjLPUlbnLNNCz-wb3PCVfvxKLmRXub-BL6HyJ4tiQE2_y3NhswnsuYfXWrduB3wpPDpHalmdCRyCjoNpnQf05FbQx_weCOw%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629157&cacheVersion=1&api=v2)
 
 For more details on the appearance of the URL, please see the [OAI-PMH specifications](https://www.openarchives.org/OAI/openarchivesprotocol.html).
 
 If the upload of your data was successful, the following message appears:
 
-![](../../../attachments/ea9d1c4a-13c4-487f-96f3-2df789403877.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXemiFRkgH5vjerzhl80ztFfJd6pvD0O_I1yy9qiQHc_hNkIT_S8g0QZeccLonwNXB2zZWztD_lQhKFH5Mi3cGX_ajW9YlA1YA2qGNNvDgLrn5htuECcMOA825Mm7kfuqcSqGIji0XJSfq4QLGxpfOxGuWs%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629165&cacheVersion=1&api=v2)
 
 ### 5.2.2 Zip file
 
 This option allows you to upload a zip file with an EDM dataset (xml files) that is stored locally. Click on “Durchsuchen” (or “Search”; depending on the language setting on your computer) and choose the zip file with your data. It is important to know that only files with the ending .zip can be uploaded successfully.
 
-![](../../../attachments/c48a25b7-6efa-49a3-90ea-a77fd6796639.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXcxma4QbtxKpDrmp6QLWAlvZ1kOvC80FuTRKsB3SeaVwvN1_KZzjinQ3cHzxA1AKLysjZsFt_VQ9EcxQQuCRj1tko6WRA5Jg0Qjt_46thuYAF1jTdQ5xnoaySylkkhdPBL1HArD3s9UnfC0Pq8Bb6ndSmk%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629173&cacheVersion=1&api=v2)
 
 If the upload of your data was successful, the following message appears:
 
-![](../../../attachments/7e88601e-aa61-4159-a5a9-64730cf53248.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXfxr9aXaxQ6SbRwbB0EWhmJ8s2qNBSNcA-Cx2oNXIkzgAN-CpIBb_Qk3n5wzk0k40imT7dcWcbSoB9QFGykl0xm4-nm6H_R9s9wrhKnmtZMFB2J_a-o2aK9YUMyRho5K6yUK9mlD26kcEQLOJeTDejrk4I%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629181&cacheVersion=1&api=v2)
 
 # 6 Track dataset processing
 
@@ -169,11 +167,11 @@ After successfully submitting your dataset to be processed, the status can be ch
 
 As a result of the above steps, the new page with the harvest details will be opened. The following figure shows what the resulting page looks like. While the process is not completed, the "Refresh" button is enabled in the "Results" column.
 
-![](../../../attachments/bd3d78c2-107a-4c99-bd4a-046ee3ed0e48.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXdM22AR0SAtWQyp1t1fHc_tK9M3EmzSm78MPEJ3I4BaMNPySp5VMEtrXZKsaD1cSzr3a1Nz2PTjjHBV6BUdUTVLW2M5GBltKxiBLqrDqTskAkKYkOjqN-HVqHvNUxNCSTCBNlA_zP_CSZPvCwS7SJ8bnF4h%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629189&cacheVersion=1&api=v2)
 
 When the process of data harvest is complete, the "Download" button becomes available (see figure below), which allows to download the resulting manifests, the enriched EDMs and the log.json file, with all of them compressed into a zip file.
 
-![](../../../attachments/6064a7ae-24a9-4542-bd58-25085604c5e3.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXfJ4HDXVhAtpdl8eNdGInHyuuiBb-uCEtvdX9iZnLYuRDEKOG0DUma8ekqz0iSW98b4ip-LC0jsdTvE4uclUxN2bxNQ9Jw04UMxB6HR31dDDeVbPrrTnTE_9LBR75tZFwBVd_4p5c8mU0q6RS-0lKyQ0xBI%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708629197&cacheVersion=1&api=v2)
 
 The log.json file can also be downloaded from the "Process Info" column at any time so that you know what is happening with the processing of the records. More details about this file are provided in the next chapter.
 
@@ -183,21 +181,21 @@ The log.json file, which can be downloaded from the project results page, contai
 
 1. "**OK**" indicates that the EDM record has been successfully processed and the IIIF manifest and corresponding enriched EDM have been created for this record.
 
-![](../../../attachments/17834548-cad0-427a-a5f4-f9b5253a1fe4.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXdl2esqWqM7l1Fq0MH7D9DT9Kap04_rtd9vAO4BlukRG-XMkSzkppGtj2QQ8TpfAOypef1-fGYZ5UqePMEDb087PlpFHy_9Z49Xy5uFn8llW4njcmf7FWzC0p8Il9r1ygRwyMlOVmrEXJrrIr-5_QEeJ3S1%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708924148&cacheVersion=1&api=v2)
 
 2. An "**Error**" with error details indicates the EDM record processing cannot be performed due to this error and its IIIF manifest and enriched EDM are not provided.
 
-![](../../../attachments/b82e87ce-899f-45be-955e-12927a93f16c.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXe9baY0oJd8dYp0sEFEdJuDssJzPvgRfpnQrzk-iy0p0dEoiH1tMN982N_4oxk4lAq-cnPAoE1_8gvqoGB4c1Ukw5uap2diGfzi5FOH8DzsZITH_ZWAeGWG5m9VlmApiU9w4kOcfh7KEfsc17l_T6SqSVc%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708924169&cacheVersion=1&api=v2)
 
 3. A "**Warning**" indicates that there are problems processing the EDM record, but the IIIF manifest and enriched EDM are still generated. It warns you of a problem that you can fix in the future to make processing the record more efficient.
 
-![](../../../attachments/16390452-65eb-4b8f-89c5-7a715d16df90.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXf261ywu2szhR0qy_fsF0SbzPe0-vffx2Qhyd2nlRa_f-JiNgBLlUfc6a_rNuDCugO4x4iygcva26oT3mX8WpoRmlz-oLHT6zeoHwY9BGq3VGOaK6EovCcspPtxiz0wxdyh7BU0tEsn7_l_SXzHvCR2yY_B%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708924180&cacheVersion=1&api=v2)
 
 # 8 Data Download
 
 Your data can be downloaded through the already mentioned “Download” button on the EDM2IIIF Results page when the status changes to “**done**” This automatically induces the download of a zip file with separate zip files for the IIIF manifests, the enriched EDMs and log.json file as shown below.
 
-![](../../../attachments/eb77692b-ac29-4cd3-84b9-a093a601fb7c.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXf3dhfyeRnYfUD5m_bpTbBHIdbII2tbKTJE9_F4A5ShOrf5-IFNXfmlQ8hGmKKAE2uCEZgs9-VMEbBFcsf_GRleHRbtYK75uGDXJAIh1lBqh9OrHypgkv3KrEL0zjdNTbQ41zN5sG6EgQgWa-0OBpcerDtD%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708924188&cacheVersion=1&api=v2)
 
 After downloading your created manifests, there is one last step to make them accessible: You have to make sure that you unzip the manifests in the correct folder on your server. In our case we would have to store the IIIF manifests in the folder "manifests" on the server "my.IPADDRESS". The storage place **must** match the path in the service base URL for manifests that you had entered in the upload form.
 
@@ -257,13 +255,13 @@ After a week the EDM Manifest Creation tool deletes a submitted dataset. It is h
 
 How error is produced: Writing project name in *Name* input field -> Choosing *Track/download harvested dataset*  as Harvest Protocol -> *Submit* button
 
-![](../../../attachments/8252490d-1dee-4824-a82a-7f526b49b7e9.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXcq2p33A7dP-ESmF2XdkrrC-BLHn6XAVIhBVXVqgP-JWLip-bK_NIE34W-q1X8BzPdDtqdFuN4WGmA7s7gyxo45aI6uw48COtLWoz-bOHNaKRvdOstAPlbu-SBuI7D3V0canOStWddtaaOTyg85o8ogZjBJ%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708924197&cacheVersion=1&api=v2)
 
 *“OAI-PMH upload failed”:*
 
 This window shows if the OAI-PMH link was not correct or one of the two URL input fields could not be processed correctly.
 
-![](../../../attachments/758f340f-5e2a-4277-a669-a55a416f1da0.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXfu3rXytZtZkA6Wytd6xw3UThsuDou4iGumBG_0tYjPTSBQnqujA9iAMUfrKeJtchRUA-DUiZKr8R7jw_8C6hxHfs2JPqcajYjUnjuzFPXlRloiptnAjVwJyt0gobYfyq0xF6GVp7pJFwN7ssLfiGRLtl3S%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708924205&cacheVersion=1&api=v2)
 
 # Samples
 

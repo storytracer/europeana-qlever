@@ -1,11 +1,10 @@
 
-[Europeana APIs Documentation](../Europeana%20APIs%20Documentation.md)
-
 # Use cases
 
 This page presents **current and past use cases** of platforms, apps, websites and other projects that have used the Europeana APIs in some way. This page can help you find inspiration for your next project using the data that we make available, or can give you insight into how others have used the Europeana APIs.
 
 - [Current use cases](#current-use-cases)
+  - [MagnificentH](#magnificenth)
   - [Artetra](#artetra)
   - [Karlsruhe Virtual Catalog](#karlsruhe-virtual-catalog)
   - [Gongu](#gongu)
@@ -36,15 +35,21 @@ This page presents **current and past use cases** of platforms, apps, websites a
 
 # Current use cases
 
+## MagnificentH
+
+![MagHxEuropeana_PlatformScreenshot.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/MagHxEuropeana_PlatformScreenshot.png?version=1&modificationDate=1774439938252&cacheVersion=1&api=v2)
+
+[MagnificentH](https://magnificenth.com/), the antidote to context-poor social platforms, is an online space where anyone passionate about culture and history can create and share personal museum narratives. Through its integration with the Europeana Search API, users can seamlessly find and incorporate high-quality cultural heritage data and media into their own micro-museums. In doing so, digitized heritage becomes an active part of modern storytelling.
+
 ## Artetra
 
-![Screenshot 2026-02-25 164155.png](../../attachments/e042373f-b849-4391-856b-1a3103717ada.png)
+![Screenshot 2026-02-25 164155.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/Screenshot%202026-02-25%20164155.png?version=1&modificationDate=1772034142517&cacheVersion=1&api=v2)
 
 [Artetra](https://museum-artetra.com/gallery/693184a9144b2352fc3db323) is a platform for creating interactive 3D exhibition spaces. By integrating Europeana’s APIs (specifically the Search, Record and User Set APIs), it allows users to import and showcase [Europeana.eu](http://Europeana.eu) content alongside their own. This integration enables immersive galleries that support storytelling, education and creative exploration.
 
 ## Karlsruhe Virtual Catalog
 
-![image-20250217-162046.png](../../attachments/6c49428e-f0de-4189-9329-4996964e1c11.png)
+![image-20250217-162046.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-162046.png?version=1&modificationDate=1739809248217&cacheVersion=1&api=v2)
 
 The [Karlsruhe Virtual Catalog](http://kvk.bibliothek.kit.edu/) (KVK) is a search engine that gives access to millions of books, magazines and other media from library and book trade catalogs worldwide. Developed by the [Karlsruhe Institute of Technology](http://www.kit.edu/) (KIT Library), KVK allows users to simultaneously search for content from several library catalogs, including from Europeana.
 
@@ -52,7 +57,7 @@ The [Karlsruhe Virtual Catalog](http://kvk.bibliothek.kit.edu/) (KVK) is a searc
 
 Korean search platform users the Europeana APIs
 
-![image-20250217-161057.png](../../attachments/ec78b5bf-c3c7-4cff-8659-2a9f49c71983.png)
+![image-20250217-161057.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-161057.png?version=1&modificationDate=1739808659082&cacheVersion=1&api=v2)
 
 Supported by the Korea Copyright Commission, [Gongu](https://gongu.copyright.or.kr/gongu/main/main.do) is a Korean language search engine for cultural content. Through Gongu you can access digital objects and find out about their rights statements. Because Gongu has integrated the Europeana API, you can also discover related content from Europeana using this search engine.
 
@@ -60,7 +65,7 @@ Supported by the Korea Copyright Commission, [Gongu](https://gongu.copyright.or.
 
 Find and use what you need most on the public domain
 
-![image-20250217-160320.png](../../attachments/95449b7f-09e6-4960-bbc4-2f016d244cd8.png)
+![image-20250217-160320.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-160320.png?version=1&modificationDate=1739808202471&cacheVersion=1&api=v2)
 
 PICRYL is a search engine for public domain images, documents, music, and videos, with over 5 million public domain images, 1,000 of collections and 10,000 of locations all available on this single website.
 
@@ -74,7 +79,7 @@ Provided by: <https://picryl.com/>
 
 Discover and share images of events that happened on this day in history
 
-![image-20250217-155829.png](../../attachments/c0b40e81-3386-4053-8e32-e289321491db.png)
+![image-20250217-155829.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-155829.png?version=1&modificationDate=1739807910851&cacheVersion=1&api=v2)
 
 On This Day, part of the [CulturePics site](http://culturepics.org/on-this-day/), displays items relating to the current date in history from 1800 to the present day. Users can also choose a particular year or month.
 
@@ -90,7 +95,7 @@ The code is openly licensed.
 
 Locate and enjoy great content
 
-![image-20250217-154953.png](../../attachments/de1c1456-30f8-4236-a410-a60739981432.png)
+![image-20250217-154953.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-154953.png?version=1&modificationDate=1739807395340&cacheVersion=1&api=v2)
 
 [CC Search](https://search.creativecommons.org/) helps users to find content they can share, use, and remix from multiple platforms, including Europeana.
 
@@ -104,7 +109,7 @@ You can also [install CC Search as a custom search engine](https://wiki.creative
 
 Ajapaik (translated from Estonian to English as 'Timepatch') is a location based site inviting users to look around and add metadata to historical images. It also adds a social and competitive element, with points awarded for contributions made.
 
-![image-20250217-152245.png](../../attachments/130c1a22-c6b1-49e7-a9e1-0aefb23d9830.png)
+![image-20250217-152245.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-152245.png?version=1&modificationDate=1739805768086&cacheVersion=1&api=v2)
 
 Ajapaik (translated from Estonian to English as 'Timepatch') is a location based site inviting users to look around and add metadata to historical images. It also adds a social and competitive element, with points awarded for contributions made.
 
@@ -117,7 +122,7 @@ Ajapaik was a winner in the Europeana Creative Challenges and will be working to
 
 This interface allows simultaneous search of many of the Library's catalogued collections and displays results from Europeana using a sidebar widget.
 
-![image-20250217-151452.png](../../attachments/2af4af13-690d-42d2-88d8-80cfffaf07bb.png)
+![image-20250217-151452.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-151452.png?version=1&modificationDate=1739805294331&cacheVersion=1&api=v2)
 
 This [interface](http://catalogue.nli.ie/Search/Results?lookfor=aran+islands&type=AllFields&filter%5B%5D=digitised%3A%22Digitised%22&view=grid) allows simultaneous search of many of the Library's catalogued collections, including digitised material. A new feature is that results from Europeana are also returned for every search, using a sidebar widget. The widget shows six items from Europeana with an option to see the full search result on the Europeana portal. Results from the National Library's contributions to Europeana are filtered out to remove duplicates.
 
@@ -131,7 +136,7 @@ Discover more and start using this [unique tool](https://github.com/ian-nai/Euro
 
 ## Bulk Downloader (2017)
 
-![image-20250217-161637.png](../../attachments/2e320069-b6b3-4768-a68f-b501ef3582c8.png)
+![image-20250217-161637.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-161637.png?version=1&modificationDate=1739808999244&cacheVersion=1&api=v2)
 
 A collection of code snippets (mainly php) for working with the Europeana API. Get bulk downloads of specific subsets of items, including both their metadata and their associated media files, by using this application.
 
@@ -139,7 +144,7 @@ A collection of code snippets (mainly php) for working with the Europeana API. G
 
 ## KNReise (2017)
 
-![image-20250217-151159.png](../../attachments/c5da60e8-aad4-4751-bb81-a2ee5e559d3d.png)
+![image-20250217-151159.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-151159.png?version=1&modificationDate=1739805122107&cacheVersion=1&api=v2)
 
 Supported by [KNReise](http://knreise.org/) and the [Arts Council Norway](http://www.kulturradet.no/), this map-demo service displays the artworks from the [Europeana 280](http://www.europeana.eu/portal/en/collections/art-history/Europeana280.html) campaign by country of origin. Discover Europe's shared cultural heritage using this application!
 
@@ -149,7 +154,7 @@ To learn more about this solution, take a look at [other maps](http://knreise.no
 
 Using the Moodle plugin, you can enhance your lessons or homework with content and references to scientific or cultural resources.
 
-![image-20250217-134715.png](../../attachments/79a44dde-49d8-4bab-ac3d-2ccc5885eff5.png)
+![image-20250217-134715.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-134715.png?version=1&modificationDate=1739800037827&cacheVersion=1&api=v2)
 
 The [EEXCESS prototype tools](http://eexcess.eu/results/) serve as recommendation tools, delivering personally tailored recommendations from cultural and scientific databases without having to explicitly search for this content, integrated into web browsers and content management systems. All code is available openly licensed and via [GitHub](https://github.com/EEXCESS/eexcess).
 
@@ -162,7 +167,7 @@ Using the Moodle plugin, you can enhance your lessons or homework with content a
 
 The Colour Explorer is a demonstrator to showcase the new media metadata filters and colour search available from Europeana
 
-![image-20250217-155505.png](../../attachments/36853e58-5b17-4698-8e87-6a5c85702019.png)
+![image-20250217-155505.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-155505.png?version=1&modificationDate=1739807707105&cacheVersion=1&api=v2)
 
 The [Europeana Colour Explorer](http://culturepics.org/colour/) is a simple but playful demonstrator built to showcase the new media metadata methods introduced to the Europeana API in late 2015. Whilst the principal goal is to show the colour search, it also uses new functionality that allows filtering not just by license, but also to just items which have thumbnail images and those which are available at a certain resolution for direct download.
 
@@ -174,7 +179,7 @@ It can combine colour searches and has options to share via Facebook and Twitter
 
 PHP based harvester to download all records via the Europeana OAI-PMH Service
 
-![image-20250217-134548.png](../../attachments/7f6ff72b-0ccb-44f8-8b22-2842fcef8b46.png)
+![image-20250217-134548.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-134548.png?version=1&modificationDate=1739799950184&cacheVersion=1&api=v2)
 
 This PHP script downloads all Europeana records via OAI-PMH protocol. The result are a number of files (named as europeana-oai-pmh-import-dddddddd.json), each contain 1000 records, one record per line in JSON format. Be aware: a full harvest takes more than a week and resulted 250+ GB content.
 
@@ -186,7 +191,7 @@ For more about the service, see the [Dataset download and OAI-PMH service](API%2
 
 Ruby gem providing an adapter to use the Europeana REST API as a data source for Blacklight.
 
-![image-20250217-134436.png](../../attachments/feceb164-a02f-47ab-8420-f2d18b1ef3fd.png)
+![image-20250217-134436.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-134436.png?version=1&modificationDate=1739799878232&cacheVersion=1&api=v2)
 
 Europeana REST API adapter for Blacklight. Used in Europeana Collections.
 
@@ -209,7 +214,7 @@ The [app](https://github.com/pj4533/OpenPics) is designed for both iPad and iPho
 
 <http://Museums.EU> describes itself as "The European Museums Network intended to present and promote museums and cultural heritage across Europe".
 
-![image-20250217-153853.png](../../attachments/f82186b2-506a-4866-bacc-0e3d32d3ba0c.png)
+![image-20250217-153853.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-153853.png?version=1&modificationDate=1739806735781&cacheVersion=1&api=v2)
 
 <http://Museums.EU> describes itself as "The European Museums Network intended to present and promote museums and cultural heritage across Europe".
 
@@ -221,7 +226,7 @@ For museums that have content in Europeana, live API calls pull in top content a
 
 Photomediations: An Open Book redesigns a coffee-table book as an online experience.
 
-![image-20250217-155303.png](../../attachments/245af1eb-e8d1-4ad7-abc7-cc04a9484ee9.png)
+![image-20250217-155303.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-155303.png?version=1&modificationDate=1739807585737&cacheVersion=1&api=v2)
 
 [*Photomediations: An Open Book*](http://www.photomediationsopenbook.net/) redesigns a coffee-table book as an online experience. It features over 200 images drawn from Europeana and other open repositories, it tells a unique story about the relationship between photography and other media.
 
@@ -229,7 +234,7 @@ The book also contains three open chapters, the content of which can develop and
 
 ## Sound Connections (2015)
 
-![image-20250217-151913.png](../../attachments/812477fa-1da0-4e17-8f73-1ae94caebd96.png)
+![image-20250217-151913.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-151913.png?version=1&modificationDate=1739805555323&cacheVersion=1&api=v2)
 
 Explore sounds from across Europe and help enrich them with contextual information and audio-visual media.
 
@@ -241,7 +246,7 @@ The Europeana API was used to integrate sound assets from the two content provid
 
 Find and release your inner Van Gogh
 
-![image-20250217-152016.png](../../attachments/08a106a1-c64f-4c6d-b9c2-e2dd2d069a1e.png)
+![image-20250217-152016.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-152016.png?version=1&modificationDate=1739805618480&cacheVersion=1&api=v2)
 
 [VanGoYourself](http://vangoyourself.com/) is a different and surprisingly deep way for visitors to engage with heritage, based on emotion, playfulness and curiosity. Recreate a painting or historic photo with your friends, then upload and share your photograph, twinned with the original, for others to enjoy.
 
@@ -267,7 +272,7 @@ The Challenge Event for the Tourism and Social Networks themes took place in Sep
 
 Bringing historians and museums closer together
 
-![image-20250217-151344.png](../../attachments/bf4c359a-dd7c-4d1f-bcaf-93b5bee8481c.png)
+![image-20250217-151344.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-151344.png?version=1&modificationDate=1739805226530&cacheVersion=1&api=v2)
 
 The [Inventing Europe](http://www.inventingeurope.eu/) online platform is a pioneering collaboration between historians and cultural heritage institutions across Europe.
 
@@ -281,7 +286,7 @@ Besides the exhibitions, curators from the partner institutions and other expert
 
 Serendip-o-matic connects your sources to digital materials located in libraries, museums, and archives around the world. By first examining your research interests our serendipity engine helps you discover photographs, documents, maps and other primary sources.
 
-![image-20250217-134031.png](../../attachments/694a78ee-3019-46f3-9e5e-f2aa12b8b779.png)
+![image-20250217-134031.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-134031.png?version=1&modificationDate=1739799633631&cacheVersion=1&api=v2)
 
 As their page states: "Serendip-o-matic connects your sources to digital materials located in libraries, museums, and archives around the world. By first examining your research interests, and then identifying related content in locations such as the Digital Public Library of America (DPLA), Europeana, and Flickr Commons, our serendipity engine helps you discover photographs, documents, maps and other primary sources.
 
@@ -293,7 +298,7 @@ Whether you begin with text from an article, a Wikipedia page, or a full Zotero 
 
 The Culture Cam tool offers a non-text based visual search interface to European cultural heritage.
 
-![image-20250217-134156.png](../../attachments/2b327c48-b3bc-47de-bdf8-e93221ea1dea.png)
+![image-20250217-134156.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-134156.png?version=1&modificationDate=1739799717794&cacheVersion=1&api=v2)
 
 With Culture Cam people can browse a sub collection of Europeana’s content in an easy and intuitive way through a colour, a shape or a pattern by using the camera from a computer or mobile phone. Culture Cam enables and engages creative people and industries with European digital cultural heritage to find inspiration and source materials for new designs and art artefacts. All pictures in Culture Cam are under public domain, meaning that all the copyrights are waived or expired.
 
@@ -305,7 +310,7 @@ Culture Cam is developed by the Danish Design Company [Spild ad Tid](http://www.
 
 Memory Match – Natural History Edition, is an educational game combining the classic memory game of finding pairs with a quiz game testing player’s knowledge of natural history.
 
-![image-20250217-134315.png](../../attachments/809b97f9-bcc2-4925-975a-b86864292852.png)
+![image-20250217-134315.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/image-20250217-134315.png?version=1&modificationDate=1739799797973&cacheVersion=1&api=v2)
 
 It is one of the pilot applications developed in the [Europeana Creative](http://www.europeanacreative.eu/) project - a European project enabling and promoting greater re-use of cultural heritage resources by creative industries. The goal of this project was creating an educational game that will be reusing content from Europeana. The application was developed by Semantika in collaboration with the National Museum in Prague. The game is primarily aimed at school children and their teachers and parents.
 

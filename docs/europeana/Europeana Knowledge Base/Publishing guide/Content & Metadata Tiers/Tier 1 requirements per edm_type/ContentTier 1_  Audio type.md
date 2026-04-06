@@ -8,8 +8,6 @@ tags:
   - '#content'
 ---
 
-[Publishing guide](../../../Publishing%20guide.md) > [Content & Metadata Tiers](../../Content%20&%20Metadata%20Tiers.md) > [Tier 1 requirements per edm:type](../Tier%201%20requirements%20per%20edm_type.md)
-
 # ContentTier 1: Audio type
 
 It is best practice for audio files to be published in a quality that preserves the quality of the underlying recording. On a web-based platform like the Europeana website, an important criterion is direct access to an audio file that can be played in a web browser without the need for additional software (plugins).

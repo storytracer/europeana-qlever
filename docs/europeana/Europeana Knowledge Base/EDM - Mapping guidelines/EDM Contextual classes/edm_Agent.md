@@ -4,8 +4,6 @@ tags:
   - '#edm-agent'
 ---
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Contextual classes](../EDM%20Contextual%20classes.md)
-
 # edm:Agent
 
 The class `edm:Agent` comprises people, either individually (ie. Person) or in groups (ie. Corporate Body), who had or have the potential to perform intentional actions.

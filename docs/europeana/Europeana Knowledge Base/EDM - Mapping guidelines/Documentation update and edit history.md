@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../EDM%20-%20Mapping%20guidelines.md)
-
 # Documentation update and edit history
 
 2025-06-02 **Antoine Isaac, Adina Ciocoiu**

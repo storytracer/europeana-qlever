@@ -1,6 +1,4 @@
 
-[Europeana APIs Documentation](../Europeana%20APIs%20Documentation.md)
-
 # API Suite
 
 The table below aims to help you choose the API that best suites your needs by correlating the kind of resource you are looking for with the function you intend to do with it.

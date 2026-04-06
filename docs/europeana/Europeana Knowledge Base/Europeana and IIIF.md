@@ -1,6 +1,4 @@
 
-
-
 # Europeana and IIIF
 
 In our efforts to enhance user engagement with collections published in Europeana, we are actively developing and adopting technologies that facilitate the reuse and sharing of digital objects. One such technology we are leveraging is the [International Image Interoperability Framework (IIIF)](https://iiif.io/), a set of open standards designed with cultural institutions in mind. These standards enable seamless sharing of media resources and metadata online, fostering interoperability across repositories and systems.

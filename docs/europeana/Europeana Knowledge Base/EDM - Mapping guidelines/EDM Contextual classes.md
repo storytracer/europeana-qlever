@@ -3,13 +3,11 @@ tags:
   - '#edm-contextual-classes'
 ---
 
-[EDM - Mapping guidelines](../EDM%20-%20Mapping%20guidelines.md)
-
 # EDM Contextual classes
 
 The contextual classes of **edm:Agent, edm:Place, edm:TimeSpan** and **skos:Concept** are provided to allow these entities to be modelled as separate entities from the CHO with their own properties if the data can support such treatment. When source metadata contains additional details about an entity that is distinct from the CHO (for instance, the date of birth for an author, different language versions of a subject term) then these contextual classes can be employed to model that separate entity. Such values are properties of that separate entity, rather than a property of the CHO and the properties can be mapped by creation of an appropriate EDM contextual entity. This may be the case where the value in the property is an identifier taken from a thesaurus or authority file which will link to further information related to that entity. For example, the identifier for an Author name in an authority file will give access to fuller information about that Author.
 
-![](../../attachments/85df3c37-8b05-415e-9f85-d7f563e92dc3.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/987725857/image-20211018-122610.png?version=1&modificationDate=1634903535635&cacheVersion=1&api=v2)
 
 *A Provided CHO with two contextual resources*
 

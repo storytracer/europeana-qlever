@@ -5,8 +5,6 @@ tags:
   - '#rights-statements-info'
 ---
 
-[Publishing guide](../Publishing%20guide.md)
-
 # Licenses & Rights statements
 
 To inform the public how digital cultural objects published on Europeana can be used, we ask data providers to assign each digital object a rights statement from a number of options. If you share data with Europeana as a cultural heritage institution, data partner or aggregator, use the guidance on this page to learn more about rights statements and how to submit them to Europeana.

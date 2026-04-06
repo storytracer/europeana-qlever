@@ -1,6 +1,4 @@
 
-[Europeana Data Model](../../Europeana%20Data%20Model.md) > [EDM profiles](../EDM%20profiles.md)
-
 # Technical metadata in EDM (definitions)
 
 To support the application of the [Media policy](../../Media%20policy.md) and provide additional useful facets and filtering of Europeana resources, the addition of technical metadata at the level of the `edm;WebResource`, which was currently absent from EDM, is needed. This specification applies to five media types which Europeana currently supports, namely: Sound, Video, Text, Image and 3D objects. This profile lists the properties that will apply to the `edm:WebResource` class and an additional class that were defined to support such functionality.

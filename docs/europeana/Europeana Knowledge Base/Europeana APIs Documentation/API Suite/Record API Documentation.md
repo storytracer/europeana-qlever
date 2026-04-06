@@ -3,8 +3,6 @@ tags:
   - '#apidocs'
 ---
 
-[Europeana APIs Documentation](../../Europeana%20APIs%20Documentation.md) > [API Suite](../API%20Suite.md)
-
 # Record API Documentation
 
 The Record API provides direct access to Europeana’s data and metadata, which is modelled using [Page not accessible (ID: 2385313809)]. EDM is an open flexible data model used to capture the data and metadata about Cultural Heritage Objects (CHOs). The Record API is used to retrieve all of the data and metadata that relates to a single Cultural Heritage object, which will have a single Europeana ID. A Europeana ID is made up of a dataset number, and a record ID. For the object at this URL: <https://www.europeana.eu/item/90402/RP_P_1984_87>, the dataset ID is 90402, and the record ID is RP\_P\_1984\_87. Both are findable by looking at the URL.

@@ -1,6 +1,4 @@
 
-[Persistent identifiers](../Persistent%20identifiers.md)
-
 # Role of aggregators in supporting persistent identification in the data space
 
 Persistent identifiers (PIDs) play a vital role in ensuring cultural heritage resources remain identifiable, verifiable, findable and accessible across systems. As an aggregator contributing to the data space, we rely on you to help promote the benefits of the adoption of PIDs and to support their dissemination by including existing PIDs in the metadata you provide.

@@ -1,6 +1,4 @@
 
-[Europeana APIs Documentation](../../Europeana%20APIs%20Documentation.md) > [API Suite](../API%20Suite.md)
-
 # Thumbnail API Documentation
 
 The Thumbnail API was developed to give access to the cached thumbnails that are generated upon aggregation of the items in Europeana. Thumbnails are generated for all image resources that are referred through by [Page not accessible (ID: 2385313809)], edm:hasView or [Page not accessible (ID: 2385313809)] properties. Only one of these thumbnails is chosen for the [Page not accessible (ID: 2385313809)] property, however, all are accessible via the Thumbnail API using the URL of the media resources they were extracted from.

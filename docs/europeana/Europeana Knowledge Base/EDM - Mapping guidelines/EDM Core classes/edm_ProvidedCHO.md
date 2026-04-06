@@ -3,8 +3,6 @@ tags:
   - '#edm-provided-cho'
 ---
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Core classes](../EDM%20Core%20classes.md)
-
 # edm:ProvidedCHO
 
 The values in these properties relate to the original cultural heritage object (CHO) itself, not the digital representation of it. E.g. the attributes of the painting Mona Lisa, not the digitised image of the painting.

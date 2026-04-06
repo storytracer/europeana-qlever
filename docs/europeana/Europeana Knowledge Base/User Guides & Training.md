@@ -5,8 +5,6 @@ tags:
   - '#metis-sandbox'
 ---
 
-
-
 # User Guides & Training
 
 In this section you can find the following

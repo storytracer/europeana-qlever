@@ -1,6 +1,4 @@
 
-[Europeana and IIIF](../Europeana%20and%20IIIF.md)
-
 # IIIF Manifests at Europeana
 
 Harnessing the capabilities of the [IIIF Presentation API](https://training.iiif.io/europeana/prezi-intro.html), we are making sharing and reusing digital objects published in Europeana even easier. Now, the great majority of records in Europeana contain a link to a IIIF manifest, powering the display of digital objects in the portal and unlocking new reuse possibilities.

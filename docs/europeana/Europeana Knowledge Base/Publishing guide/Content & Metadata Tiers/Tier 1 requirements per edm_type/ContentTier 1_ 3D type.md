@@ -8,8 +8,6 @@ tags:
   - '#tiers'
 ---
 
-[Publishing guide](../../../Publishing%20guide.md) > [Content & Metadata Tiers](../../Content%20&%20Metadata%20Tiers.md) > [Tier 1 requirements per edm:type](../Tier%201%20requirements%20per%20edm_type.md)
-
 # ContentTier 1: 3D type
 
 3D content refers to a digital object with 3D geometry. 2D representations (images) of three-dimensional real-world objects (e.g. sculptures) should not be given the type 3D in Europeana records.

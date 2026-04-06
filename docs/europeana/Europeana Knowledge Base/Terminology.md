@@ -3,8 +3,6 @@ tags:
   - '#edm-terminology'
 ---
 
-
-
 # Terminology
 
 > [!IMPORTANT]

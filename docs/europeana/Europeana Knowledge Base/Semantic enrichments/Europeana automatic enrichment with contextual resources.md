@@ -4,8 +4,6 @@ tags:
   - '#enrichment'
 ---
 
-[Semantic enrichments](../Semantic%20enrichments.md)
-
 # Europeana automatic enrichment with contextual resources
 
 - [Introduction](#introduction)

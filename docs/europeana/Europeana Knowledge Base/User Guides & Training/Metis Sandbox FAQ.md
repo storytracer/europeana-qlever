@@ -4,8 +4,6 @@ tags:
   - '#faq'
 ---
 
-[User Guides & Training](../User%20Guides%20&%20Training.md)
-
 # Metis Sandbox FAQ
 
 # How can we help you?
@@ -60,7 +58,7 @@ If you set the harvest protocol to OAI-PMH upload, you must enter valid values f
 
 The record id is one of the variables in the URL path of the item. In the URL this is the part after “/item/” and consists of the dataset id followed by record id. Make sure to include the first forward slash, resulting in the form of  **”/dataset\_id/record\_id”**.
 
-![](../../attachments/2a2d8da6-b0e4-477a-bf8e-3f98010e18d0.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2295103495/kHShk2h_1Z4J0Q2SOGrmulkgF6NfpZDsER195D2L76FyFxwaBih_7esa2SOxnzlHsVlQnRNjX9wGh65Z4z-ngUBGiPhNyhkmb5tsmKlwbYb9GM-r81iddwNObI8iIEp4sBIutbe2yHCyl5gJqpeK2lf3AmkLcDEkItB-mf1UB7gJkynoxGsd4YFfk0k4uA?version=1&modificationDate=1670410970279&cacheVersion=1&api=v2)
 
 </details>
 

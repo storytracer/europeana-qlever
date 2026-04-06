@@ -4,8 +4,6 @@ tags:
   - '#edm-place-'
 ---
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Contextual classes](../EDM%20Contextual%20classes.md)
-
 # edm:Place
 
 A spatial location identified by the provider and named according to some vocabulary or local convention.

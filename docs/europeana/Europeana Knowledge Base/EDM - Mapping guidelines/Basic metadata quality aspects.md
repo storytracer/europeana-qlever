@@ -5,8 +5,6 @@ tags:
   - '#identifiers'
 ---
 
-[EDM - Mapping guidelines](../EDM%20-%20Mapping%20guidelines.md)
-
 # Basic metadata quality aspects
 
 - [Identifiers for resources in the data](#identifiers-for-resources-in-the-data)

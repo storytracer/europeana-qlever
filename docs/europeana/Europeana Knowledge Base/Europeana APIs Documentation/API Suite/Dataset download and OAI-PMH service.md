@@ -3,8 +3,6 @@ tags:
   - '#apidocs'
 ---
 
-[Europeana APIs Documentation](../../Europeana%20APIs%20Documentation.md) > [API Suite](../API%20Suite.md)
-
 # Dataset download and OAI-PMH service
 
 Besides our main [Europeana APIs](#europeana-apis) for searching and retrieving metadata about objects, we also offer other methods for downloading and harvesting metadata that are better suited if you want to extract large amounts of data. On this page, you can explore the two available solutions.

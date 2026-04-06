@@ -4,8 +4,6 @@ tags:
   - '#edm-timespan-'
 ---
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Contextual classes](../EDM%20Contextual%20classes.md)
-
 # edm:TimeSpan
 
 A period of time having a beginning, an end and a duration. There is a difference between timespans as chronological values (where different skos:prefLabel can be used, e.g., "3200BC" is written "3200AC" is some languages, and all variants for "20th century") and historical timespans (e.g. “Bronze Age”, “Middle Age”) . See [Recommendations for providing temporal metadata](../Recommendations%20for%20providing%20temporal%20metadata.md) for some more discussion on the topic.

@@ -3,8 +3,6 @@ tags:
   - '#edm-web-resource'
 ---
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Core classes](../EDM%20Core%20classes.md)
-
 # edm:WebResource
 
 These are the properties that can be used for the class of edm:WebResource.

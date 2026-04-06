@@ -1,6 +1,4 @@
 
-[Persistent identifiers](../Persistent%20identifiers.md)
-
 # Policy for persistent identifiers in the data space
 
 > [!NOTE]

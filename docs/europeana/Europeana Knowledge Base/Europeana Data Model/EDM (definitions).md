@@ -3,8 +3,6 @@ tags:
   - '#apidocs'
 ---
 
-[Europeana Data Model](../Europeana%20Data%20Model.md)
-
 # EDM (definitions)
 
 This page presents the classes defined in EDM and the properties that may be associated with them.
@@ -479,11 +477,11 @@ This class is defined in [Persistent identifiers in EDM (definitions)](EDM%20pro
 
 ### foaf:Organization
 
-This class is defined in [Organization profile for providers and aggregators (definitions)](EDM%20profiles/Organization%20profile%20for%20providers%20and%20aggregators%20(definitions).md).
+This class is defined in [Organization profile for data providers and aggregators (definitions)](EDM%20profiles/Organization%20profile%20for%20data%20providers%20and%20aggregators%20(definitions).md).
 
 ### edm:Aggregator
 
-This class is defined in [Organization profile for providers and aggregators (definitions)](EDM%20profiles/Organization%20profile%20for%20providers%20and%20aggregators%20(definitions).md).
+This class is defined in [Organization profile for data providers and aggregators (definitions)](EDM%20profiles/Organization%20profile%20for%20data%20providers%20and%20aggregators%20(definitions).md).
 
 ### svcs:Service
 

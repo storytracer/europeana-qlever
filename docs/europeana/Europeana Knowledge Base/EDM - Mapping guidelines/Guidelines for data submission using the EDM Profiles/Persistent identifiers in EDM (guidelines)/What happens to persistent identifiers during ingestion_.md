@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../../../EDM%20-%20Mapping%20guidelines.md) > [Guidelines for data submission using the EDM Profiles](../../Guidelines%20for%20data%20submission%20using%20the%20EDM%20Profiles.md) > [Persistent identifiers in EDM (guidelines)](../Persistent%20identifiers%20in%20EDM%20(guidelines).md)
-
 # What happens to persistent identifiers during ingestion?
 
 After successful validation, logic is applied to PIDs to normalise and convert [Persistent identifiers in EDM (definitions)](../../../Europeana%20Data%20Model/EDM%20profiles/Persistent%20identifiers%20in%20EDM%20(definitions).md) values into instances of [Persistent identifiers in EDM (definitions)](../../../Europeana%20Data%20Model/EDM%20profiles/Persistent%20identifiers%20in%20EDM%20(definitions).md) class.

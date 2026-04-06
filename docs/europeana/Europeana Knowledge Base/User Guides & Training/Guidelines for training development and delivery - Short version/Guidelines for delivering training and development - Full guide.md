@@ -1,6 +1,4 @@
 
-[User Guides & Training](../../User%20Guides%20&%20Training.md) > [Guidelines for training development and delivery - Short version](../Guidelines%20for%20training%20development%20and%20delivery%20-%20Short%20version.md)
-
 # Guidelines for delivering training and development - Full guide
 
 <details>
@@ -127,7 +125,7 @@ The image below is a detailed visual representation of the development process. 
 
 While the development process may look like a sequential process in this image, in reality it will be more incremental. You will be shaping the training by going back and forth between steps. Throughout this guide you will be asked to go back to previous steps to review if the ideas that you collected still align with the insights you’ve gained in the later stages.
 
-![TrainingDevelopmentProces.png](../../../attachments/97c4f861-e6ab-4800-9105-06a090020432.png)
+![TrainingDevelopmentProces.png](https://europeana.atlassian.net/wiki/download/attachments/3040477191/TrainingDevelopmentProces.png?version=1&modificationDate=1744617479179&cacheVersion=1&api=v2)
 
 ---
 
@@ -145,7 +143,7 @@ Training needs can be identified from a practical level: users or other stakehol
 
 ## **A.2 Strategic**
 
-![](../../../attachments/0714f808-46fb-44f0-8d1e-2dfc1abe53fa.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/3040477191/AD_4nXds-vdXM38lCSBs0G2XMDJplyN8qdZen4KD7DXfs6AetoSbhQINYXxG7pLg4nLnasHKAsZLKRFTM1NQaEgJ6aQss_MrmfgNW0MRodauWfRR4gg6f-2FfnhVFod-uASwiRrkHMqbviQh4FinfmJajhewn6g%3Fkey=b3eT8qBgdgDyy36qiWEDYA?version=1&modificationDate=1744617528215&cacheVersion=1&api=v2)
 
 Training needs can be a direct result from strategic priorities. What is it that you are trying to achieve in the upcoming years? It is possible that you have already determined these priorities in earlier work or projects. In this case it is advised to look critically at the role of training. Where will training make the biggest difference? What other kinds of activities should be undertaken alongside the training to reach your strategic goal? The [Capacity Building Playbook](https://docs.google.com/document/u/0/d/1l-j4xJzJwHWWuOQ_iCx03nA4eOqKAcqVWHLNfWLDCHo/edit) can be used to determine your training needs from a strategic perspective. It supports you in creating a roadmap for capacity building for digital transformation and can be used by organisations, communities and other partnerships.
 
@@ -205,7 +203,7 @@ Simplified examples of learning objectives are:
 
 ILOs are preferably written in measurable verbs that also connect to the determined impact. See [this resource for a list of measurable verbs](https://www.utica.edu/academic/Assessment/new/Blooms%20Taxonomy%20-%20Best.pdf) for more information.
 
-![Blooms-Taxonomy.jpeg](../../../attachments/5b488248-ba5e-4bd2-950a-ea39485a5eba.jpg)
+![Blooms-Taxonomy.jpeg](https://europeana.atlassian.net/wiki/download/attachments/3040477191/Blooms-Taxonomy.jpeg?version=1&modificationDate=1744617624506&cacheVersion=1&api=v2)
 
 ### **B.3.1 Establish ILOs**
 
@@ -240,7 +238,7 @@ For example, the goal ‘I want to learn how to improve the quality of my data o
 
 For someone in a smaller institution it could mean that they need to become more of a generalist and learn about Europeana’s standards and frameworks, from the Europeana Data Model to identifying copyright and choosing rights statements for objects. Someone at a larger institution might need to become an even better expert in a single topic.
 
-![image5.png](../../../attachments/10b5a2f8-633f-4083-bb89-9158f13c167f.png)
+![image5.png](https://europeana.atlassian.net/wiki/download/attachments/3040477191/image5.png?version=1&modificationDate=1744617869971&cacheVersion=1&api=v2)
 
 Both of these people already have their own set of skills, competencies and knowledge as a starting point and both of them have different end goals.
 
@@ -366,7 +364,7 @@ The table below details the development process for training resources. These st
 
 During the development process you will also create different resources. The image below is a visual representation of these resources, their moment of creation and their dependencies.
 
-![TrainingDevelopmentProces2.png](../../../attachments/173d7aff-63ae-4f63-b0d6-61ce13ddfb67.png)
+![TrainingDevelopmentProces2.png](https://europeana.atlassian.net/wiki/download/attachments/3040477191/TrainingDevelopmentProces2.png?version=1&modificationDate=1744618182085&cacheVersion=1&api=v2)
 
 ---
 
@@ -443,7 +441,7 @@ Complex topics are  often better explained in an image or illustration. In the 
 
 Providing images and descriptions with this level of detail allows for a smoother learning experience, both for a learner and instructor.
 
-![image-20250414-081634.png](../../../attachments/dcfae8b4-387c-4926-833d-abac1ea04b0c.png)
+![image-20250414-081634.png](https://europeana.atlassian.net/wiki/download/attachments/3040477191/image-20250414-081634.png?version=1&modificationDate=1744618596498&cacheVersion=1&api=v2)
 
 ### **C.2.4 Advertising and delivery of training**
 

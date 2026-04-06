@@ -1,0 +1,2308 @@
+{
+  "lockfile_version": 2,
+  "last_export": "2026-04-06T13:35:55.464260+00:00",
+  "orgs": {
+    "https://europeana.atlassian.net": {
+      "spaces": {
+        "EF": {
+          "pages": {
+            "1141932262": {
+              "title": "Guidelines for data submission using the EDM Profiles",
+              "version": 8,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles.md",
+              "attachments": {}
+            },
+            "1476952093": {
+              "title": "Semantic enrichments",
+              "version": 15,
+              "export_path": "Europeana Knowledge Base/Semantic enrichments.md",
+              "attachments": {}
+            },
+            "1503756289": {
+              "title": "Providing copyright metadata to Europeana",
+              "version": 28,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Licenses & Rights statements/Providing copyright metadata to Europeana.md",
+              "attachments": {}
+            },
+            "1532592129": {
+              "title": "How do I choose a rights statement when submitting data to Europeana?",
+              "version": 65,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Licenses & Rights statements/How do I choose a rights statement when submitting data to Europeana_.md",
+              "attachments": {}
+            },
+            "1627914244": {
+              "title": "IIIF APIs Documentation",
+              "version": 36,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/IIIF APIs Documentation.md",
+              "attachments": {
+                "att1628012549": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2333631b-6266-4d7f-ac37-f184fae0be82.png"
+                },
+                "att1627979787": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/782215c7-707f-44de-8964-732c34f0d155.png"
+                },
+                "att1628176385": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9728c687-b6c3-41d8-9fc8-d20c3f009760.png"
+                }
+              }
+            },
+            "1967849520": {
+              "title": "Metadata Tier C",
+              "version": 22,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier A-C requirements/Metadata Tier C.md",
+              "attachments": {}
+            },
+            "1969258498": {
+              "title": "Metadata Tier A",
+              "version": 51,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier A-C requirements/Metadata Tier A.md",
+              "attachments": {}
+            },
+            "1969979393": {
+              "title": "Tier A-C requirements",
+              "version": 21,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier A-C requirements.md",
+              "attachments": {}
+            },
+            "1970044936": {
+              "title": "Metadata Tier B",
+              "version": 32,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier A-C requirements/Metadata Tier B.md",
+              "attachments": {}
+            },
+            "2059763713": {
+              "title": "Publishing guide",
+              "version": 17,
+              "export_path": "Europeana Knowledge Base/Publishing guide.md",
+              "attachments": {}
+            },
+            "2059763741": {
+              "title": "ContentTier 1: Video type",
+              "version": 18,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 1 requirements per edm_type/ContentTier 1_ Video type.md",
+              "attachments": {}
+            },
+            "2059796518": {
+              "title": "ContentTier 1: 3D type",
+              "version": 32,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 1 requirements per edm_type/ContentTier 1_ 3D type.md",
+              "attachments": {}
+            },
+            "2059829253": {
+              "title": "Content & Metadata Tiers",
+              "version": 6,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers.md",
+              "attachments": {
+                "att2060255240": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/59372e8b-e651-4a8d-8868-7cada5c5ab11.jpg"
+                }
+              }
+            },
+            "2059829289": {
+              "title": "ContentTier 1:  Audio type",
+              "version": 23,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 1 requirements per edm_type/ContentTier 1_  Audio type.md",
+              "attachments": {}
+            },
+            "2060058669": {
+              "title": "ContentTier 2-4: Audio type",
+              "version": 29,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 2-4 requirements per edm_type/ContentTier 2-4_ Audio type.md",
+              "attachments": {}
+            },
+            "2060091476": {
+              "title": "ContentTier 2-4: Video type",
+              "version": 22,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 2-4 requirements per edm_type/ContentTier 2-4_ Video type.md",
+              "attachments": {}
+            },
+            "2060288023": {
+              "title": "ContentTier 1: Image type",
+              "version": 34,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 1 requirements per edm_type/ContentTier 1_ Image type.md",
+              "attachments": {}
+            },
+            "2060320789": {
+              "title": "Tier 2-4 requirements per edm:type",
+              "version": 21,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 2-4 requirements per edm_type.md",
+              "attachments": {}
+            },
+            "2060386340": {
+              "title": "Tier 1 requirements per edm:type",
+              "version": 28,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 1 requirements per edm_type.md",
+              "attachments": {}
+            },
+            "2060386355": {
+              "title": "ContentTier 1: Text type",
+              "version": 22,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 1 requirements per edm_type/ContentTier 1_ Text type.md",
+              "attachments": {}
+            },
+            "2060386364": {
+              "title": "ContentTier 2-4: Image type",
+              "version": 25,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 2-4 requirements per edm_type/ContentTier 2-4_ Image type.md",
+              "attachments": {
+                "att2352939123": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/bc3b1997-5b2a-4bdb-8d60-f31c05375b0e.png"
+                },
+                "att2352939117": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f1c51cdd-b91b-4527-855d-5d3d6cd4eb8a.png"
+                },
+                "att2352939111": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b3d99ce6-b559-4c71-bf12-f9ec3cf4a2f3.png"
+                },
+                "att2352939105": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9d0d4697-d41c-4744-8d07-b8cbfdba9ee4.png"
+                },
+                "att2352939099": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/642d3713-5649-448c-9bf5-74ae359e162e.png"
+                },
+                "att2352939093": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/967484f4-40e0-4ec1-b0a9-709d2c2ce08b.png"
+                },
+                "att2352939087": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4cfce39a-6816-4652-9a02-90af249444b1.png"
+                },
+                "att2352939081": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4a3ffdc0-f978-49a2-a086-b28696c62b3c.png"
+                },
+                "att2352939075": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/303d3a56-ec3e-4117-9c74-e3aaba239a75.png"
+                },
+                "att2352939069": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/791d4dc4-9517-4d8d-997a-a292579f3142.png"
+                },
+                "att2352939063": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/0547a851-98f5-4ad7-968a-ae1566e20132.png"
+                }
+              }
+            },
+            "2060451857": {
+              "title": "ContentTier 2-4: Text type",
+              "version": 22,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 2-4 requirements per edm_type/ContentTier 2-4_ Text type.md",
+              "attachments": {}
+            },
+            "2102788136": {
+              "title": "User Guides & Training",
+              "version": 6,
+              "export_path": "Europeana Knowledge Base/User Guides & Training.md",
+              "attachments": {}
+            },
+            "2104295432": {
+              "title": "Metis Sandbox User Guide",
+              "version": 25,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/Metis Sandbox User Guide.md",
+              "attachments": {
+                "att3805052929": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b4e90944-abca-4317-b3f0-c90d538a7810.png"
+                },
+                "att3799810065": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/11658087-710a-45cd-ab90-42af0d722e89.png"
+                },
+                "att3800596495": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a1c21a9c-1035-49f6-978d-28fe3c0e5a23.png"
+                },
+                "att3800596489": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/0aa0caf4-a7e2-4d7c-b224-9d20889a14a2.png"
+                },
+                "att3800727554": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f4663d87-2001-4f6d-ba9a-ab92f86c08a6.png"
+                },
+                "att3800694785": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6c533657-0243-4a0b-a929-52f3b4b3f2e1.png"
+                },
+                "att3799646223": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a6bffa6e-021b-449d-9211-ad72b16a787d.png"
+                },
+                "att3799810050": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/36016ba0-ef77-49a8-beb7-fe784f99bd6b.png"
+                },
+                "att3799973890": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5978f277-d8e8-45a4-b8d7-a8be307a81c3.png"
+                },
+                "att3800104961": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/29415174-21f7-42e8-a566-3288621d1e07.png"
+                },
+                "att3237904406": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9c2064aa-c6cc-4652-9fe4-f4bda8f06094.png"
+                },
+                "att3237904393": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/52fa23b7-1561-4353-9347-375ad7bf916e.png"
+                },
+                "att3237707792": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/32525b57-d9fe-49fe-8666-06ffe752e33d.png"
+                },
+                "att3237806092": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9139f43f-d59a-47d1-ba0f-2770dae8e31a.png"
+                },
+                "att2958098541": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/5a44000b-13b6-4cfb-a5ce-82d1443c117c.png"
+                },
+                "att2958098481": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/ad5d80ee-d6a0-4827-9d53-f20ff36c702b.png"
+                },
+                "att2958098461": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/5e1ebed8-4a01-4448-9cda-b18046dc5069.png"
+                },
+                "att2958098441": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/d15449d3-72aa-453b-8c02-6d74c43bdaab.png"
+                },
+                "att2910322692": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a8098adf-6e96-4b5a-9c22-113d82353200.png"
+                },
+                "att2910355461": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/3fd5b908-fbca-40cf-bb9c-e5fa63d71edb.png"
+                },
+                "att2909863938": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/8804706e-1939-4c92-a193-232d5761c9d2.png"
+                },
+                "att2875916302": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c430a7ca-2879-4238-bc78-6f7ddf130101.png"
+                },
+                "att2386460679": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/45322f1e-8444-4e30-94f8-298144baee2d.png"
+                },
+                "att2381709320": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7577c848-c2dc-4bc2-a6b3-f9a5b092e5e8.png"
+                },
+                "att2382168068": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9548ef82-1430-4f7d-991b-65790601a975.png"
+                },
+                "att2381840389": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5d469bee-6880-4f61-986d-416967f2babd.png"
+                },
+                "att2381774851": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/3f35edbf-ca2b-4e7c-90d8-dd8ba72ad00f.png"
+                },
+                "att2381479951": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5e3dff6c-45fe-47b7-9ded-4a1649302270.png"
+                },
+                "att2381414431": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ad30f1c1-4f4d-402a-be58-9383c166837a.png"
+                },
+                "att2381479945": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/73aa3c6c-e32a-4ce1-acd0-025a70806fae.png"
+                },
+                "att2381414416": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/df523be3-5f0a-4b05-a12e-9fd4774c8269.png"
+                },
+                "att2381512708": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/488e55c3-4d8d-4436-95c2-9e8c1cbabd68.png"
+                },
+                "att2379939849": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/cb9c93ef-f872-44a6-b508-d9bde83b31e8.png"
+                },
+                "att2341797927": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/545a0662-8dca-48b0-a338-fc09d073f74a.png"
+                },
+                "att2341666858": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/adb5cff0-da22-4fcc-b7c3-e91cf7e09500.png"
+                },
+                "att2341797915": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2c74ff98-962c-45ad-a5da-91cb44b637ec.png"
+                },
+                "att2341797909": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/86fb95fe-21e6-40f8-88bc-bce1b5cde3ae.png"
+                },
+                "att2341666852": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e6dd6d45-8318-482e-be93-d91726479c74.png"
+                },
+                "att2341568589": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d945fd00-a322-4090-adcf-dd8ccfd33cde.png"
+                },
+                "att2341437467": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2d05fc30-124e-40c2-b031-033fdeed0668.png"
+                },
+                "att2341568583": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9d290599-1d82-4790-b7bc-31c6c7eb0fc4.png"
+                },
+                "att2341830667": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d64fa3fc-f892-4723-8f75-8bbcebdc5824.png"
+                },
+                "att2341568577": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a5721694-08e2-4c77-8f22-793412e1fcb5.png"
+                },
+                "att2341797899": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5d1308c1-8d30-4a5e-9013-edb521416afb.png"
+                },
+                "att2341830659": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7ae4bc05-0507-464e-a345-d7c485a0241b.png"
+                },
+                "att2340782089": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/8d35c29b-596f-4ba3-8050-564eb586ac79.png"
+                },
+                "att2341011457": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6188adb5-8604-4fba-a9c0-c1b2fe01ed21.png"
+                },
+                "att2340585499": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6c73668c-b727-4976-bc0e-5cb908c4fba0.png"
+                },
+                "att2340814865": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e91ffcc5-a79d-47fb-a2a5-944c46d253a8.png"
+                },
+                "att2339897408": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/fe1ba143-515f-4a5c-a43e-d5bee7213754.png"
+                },
+                "att2340716550": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/523d8bcb-3ea3-44e6-a270-daecd92ef12a.png"
+                },
+                "att2340913161": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b195d783-4e0c-4054-a017-1321105d013e.png"
+                },
+                "att2340978689": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ef644b39-c495-4a18-9a60-68d51ca2a66a.png"
+                },
+                "att2339930197": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f8ad7bb2-012c-4365-89ad-d881bc20d0c8.png"
+                },
+                "att2339930157": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4dde953b-68a6-44ed-88aa-08512ff0ef2d.png"
+                },
+                "att2339962930": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f0d76e65-13cd-4b1d-a67b-1508212d4ab2.png"
+                },
+                "att2339962922": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/144fd764-d9f2-4ab7-9baf-ec334b8640dd.png"
+                },
+                "att2340028455": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/cab31d03-a0a2-4a79-8a0a-820d92efdd9f.png"
+                },
+                "att2340028445": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/398c05d7-7dee-431f-8e49-39ac7315613a.png"
+                },
+                "att2339962906": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5ae4c073-5466-4cf4-aad7-515cdcb90bce.png"
+                },
+                "att2340028435": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c3444c78-57d8-4a13-8d18-53c829886191.png"
+                },
+                "att2339930141": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/8d1e91a3-848b-4074-9bbf-c89f338548f5.png"
+                },
+                "att2339930135": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e14b5e04-eac8-4398-b92b-789e64671975.png"
+                },
+                "att2339995683": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e1477805-c4d2-45cf-bd6f-e622e42cccbc.png"
+                },
+                "att2339995677": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/8f9c86a4-62fc-41bf-8ad7-4e168b888acd.png"
+                },
+                "att2339930123": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6daeae9a-ba4d-4b3e-b690-35e3df2d2085.png"
+                },
+                "att2339995651": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5a53d42d-eb7b-4b29-9fc4-24ed74249d8d.png"
+                },
+                "att2316632101": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/850b0b65-a5af-4bde-91fd-290ae8c52e8b.png"
+                },
+                "att2316599310": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4789a183-ca04-4e0d-96c0-6c9b67a537e7.png"
+                },
+                "att2297135133": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/66140cf0-de71-4e6f-91fb-01954e39639c.png"
+                },
+                "att2220752911": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/478faca7-0643-4a24-88b6-ca408bcc887b.png"
+                },
+                "att2220392540": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/85bddcc2-9f16-4ae1-a544-9e3b874db921.png"
+                }
+              }
+            },
+            "2105901079": {
+              "title": "edm:Place",
+              "version": 14,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Contextual classes/edm_Place.md",
+              "attachments": {}
+            },
+            "2106032160": {
+              "title": "ore:Aggregation",
+              "version": 47,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Core classes/ore_Aggregation.md",
+              "attachments": {}
+            },
+            "2106032167": {
+              "title": "skos:Concept",
+              "version": 16,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Contextual classes/skos_Concept.md",
+              "attachments": {}
+            },
+            "2106195985": {
+              "title": "edm:Agent",
+              "version": 26,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Contextual classes/edm_Agent.md",
+              "attachments": {}
+            },
+            "2106261527": {
+              "title": "edm:TimeSpan",
+              "version": 18,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Contextual classes/edm_TimeSpan.md",
+              "attachments": {}
+            },
+            "2106294284": {
+              "title": "edm:ProvidedCHO",
+              "version": 65,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Core classes/edm_ProvidedCHO.md",
+              "attachments": {}
+            },
+            "2106392591": {
+              "title": "edm:WebResource",
+              "version": 36,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Core classes/edm_WebResource.md",
+              "attachments": {}
+            },
+            "2157510701": {
+              "title": "Example records - content & metadata tiers",
+              "version": 9,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Example records - content & metadata tiers.md",
+              "attachments": {}
+            },
+            "2165440526": {
+              "title": "Namespace abbreviations used in EDM documentation",
+              "version": 8,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/Namespace abbreviations used in EDM documentation.md",
+              "attachments": {}
+            },
+            "2168291329": {
+              "title": "Organisation entities in Europeana",
+              "version": 3,
+              "export_path": "Europeana Knowledge Base/Organisation entities in Europeana.md",
+              "attachments": {}
+            },
+            "2168848385": {
+              "title": "How to confirm if your vocabulary supports content negotiation?",
+              "version": 9,
+              "export_path": "Europeana Knowledge Base/Semantic enrichments/How to confirm if your vocabulary supports content negotiation_.md",
+              "attachments": {
+                "att2178744324": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4f287e6a-01da-476f-b81f-5c7dbc8e2bd3.png"
+                }
+              }
+            },
+            "2185003031": {
+              "title": "Digital objects vs Non digital objects",
+              "version": 3,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Digital objects vs Non digital objects.md",
+              "attachments": {}
+            },
+            "2189262856": {
+              "title": "IIIF to EDM profile",
+              "version": 8,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/IIIF to EDM profile.md",
+              "attachments": {}
+            },
+            "2189262875": {
+              "title": "IIIF in EDM pattern",
+              "version": 9,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/IIIF to EDM profile/IIIF in EDM pattern.md",
+              "attachments": {}
+            },
+            "2189262924": {
+              "title": "IIIF to EDM profile (definitions)",
+              "version": 11,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/IIIF to EDM profile (definitions).md",
+              "attachments": {
+                "att2189262962": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4399c172-09bd-4b07-b1b4-4661bdaa5c1b.jpg"
+                }
+              }
+            },
+            "2189262969": {
+              "title": "Different cases of IIIF in EDM",
+              "version": 19,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/IIIF to EDM profile/Different cases of IIIF in EDM.md",
+              "attachments": {
+                "att2292219905": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/b6e5aae0-e387-4c20-acc4-cfc7b95d798c.xml"
+                },
+                "att2291400741": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6219c16f-6a0d-4275-93de-bc7a81a0a45b.xml"
+                },
+                "att2292088833": {
+                  "version": 3,
+                  "path": "Europeana Knowledge Base/attachments/7f23b2cc-181c-47f8-aa3a-d417fb8615df.xml"
+                },
+                "att2291761165": {
+                  "version": 3,
+                  "path": "Europeana Knowledge Base/attachments/fa78553f-9998-42f7-84f2-84ca12e16b89.xml"
+                }
+              }
+            },
+            "2225471493": {
+              "title": "Management of organisations in Zoho CRM (for internal use)",
+              "version": 86,
+              "export_path": "Europeana Knowledge Base/Organisation entities in Europeana/Management of organisations in Zoho CRM (for internal use).md",
+              "attachments": {
+                "att2846523512": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/291308d8-1fc4-4458-889c-262920557bf8.png"
+                },
+                "att2846687299": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/bbe0db19-9c00-477e-a039-5d3f2932891f.png"
+                },
+                "att2846326882": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a18b9489-bdf5-48ce-8390-5a6eb29d39ed.png"
+                },
+                "att2846523493": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/19c2f77c-39de-47d2-9204-55c34e907aca.png"
+                },
+                "att2846523503": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5602f73d-5e6e-4922-88b0-56df42a1f806.png"
+                },
+                "att2846752820": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/64769d77-83e5-4729-ae15-1fe951c2ba74.png"
+                },
+                "att2846523487": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/236e6207-668a-4f36-9e4b-31afcc5fdb11.png"
+                },
+                "att2846523479": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d71af37f-a0ff-4033-b458-57584fbe4dc6.png"
+                },
+                "att2846457942": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d11297cc-ca31-493f-88d6-d8e8ad308f3d.png"
+                },
+                "att2846523471": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b58b3b74-e7fb-4f73-959b-a9e3f272e3c9.png"
+                },
+                "att2751922324": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e51ffa66-fdc7-4de3-bcc5-794e13ef067c.png"
+                },
+                "att2752020663": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4221f486-ca59-4513-98f1-8b016f1ab673.png"
+                },
+                "att2420801582": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9413c2b5-4c51-47ca-97fa-ea026a4ad094.png"
+                },
+                "att2420768796": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/af418895-c717-49e7-af83-ea64fd6f7739.png"
+                },
+                "att2420965411": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/8b5c340e-3e35-4e1f-a94d-a84497935f43.png"
+                },
+                "att2420768789": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/eb3bcaa0-f0e6-4501-a84e-a41054f21f79.png"
+                },
+                "att2420801548": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/04d0a581-78cd-48d5-938c-74bd3b8cf997.png"
+                }
+              }
+            },
+            "2227765249": {
+              "title": "Metis Sandbox Training",
+              "version": 14,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/Metis Sandbox Training.md",
+              "attachments": {
+                "att2294251529": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/0a46737f-cc8b-4716-87d5-0ef0c5744086.png"
+                },
+                "att2294284313": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/fff374a0-eaec-4b4f-baa5-23a5401f7adb.png"
+                },
+                "att2294677513": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/109eec09-bb06-4d40-af5e-5abe7e8c0205.png"
+                },
+                "att2275311621": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/35b34532-9b40-428b-bbbb-891432e3be17.png"
+                },
+                "att2274328616": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/66f84e35-7df8-4a1d-96e0-39e0660156fe.png"
+                },
+                "att2274230310": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/9c784bf5-de2d-4beb-a65e-d39893e3c10a.png"
+                },
+                "att2274197523": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/233f8606-4ea3-4a92-901b-2cc5c2fca10b.png"
+                },
+                "att2274361383": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/159c27a5-6adf-4786-a9b9-248cd79722cc.png"
+                },
+                "att2274426898": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/0f6de7de-7e16-4031-b13e-58c2f7f5099b.png"
+                },
+                "att2274328597": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d3f3136e-30cd-4c60-95fe-c16f5b4f3ea2.png"
+                },
+                "att2274099217": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5a35b6bf-eb7c-4683-ac75-1fcf391d0068.png"
+                },
+                "att2274263066": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/22669769-6cef-4981-8744-2140c9e60992.png"
+                },
+                "att2274263060": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a9b9335d-0e28-4685-8604-054b8cc22beb.png"
+                },
+                "att2274394123": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/503c8a55-7596-4231-9e82-b086a8b04dca.png"
+                },
+                "att2274230288": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/c0fb449c-185d-44a4-8ad7-67bae24d73e7.png"
+                },
+                "att2274197513": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e42b453c-9f38-4e0a-ac1b-1205bc2249ba.png"
+                },
+                "att2274295809": {
+                  "version": 4,
+                  "path": "Europeana Knowledge Base/attachments/f73aa0f2-43de-4965-945b-84f1a4657af9.png"
+                },
+                "att2232287243": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c6696c20-46f4-48ce-9035-d7f5b38cd20b.png"
+                }
+              }
+            },
+            "2238447617": {
+              "title": "Examples of high quality data",
+              "version": 9,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Examples of high quality data.md",
+              "attachments": {}
+            },
+            "2291138591": {
+              "title": "cc:License",
+              "version": 10,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Contextual classes/cc_License.md",
+              "attachments": {}
+            },
+            "2295103495": {
+              "title": "Metis Sandbox FAQ",
+              "version": 7,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/Metis Sandbox FAQ.md",
+              "attachments": {
+                "att2295136287": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2a2d8da6-b0e4-477a-bf8e-3f98010e18d0.png"
+                }
+              }
+            },
+            "2295758855": {
+              "title": "JIRA guide for partners",
+              "version": 8,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/JIRA guide for partners.md",
+              "attachments": {
+                "att2298380361": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b7bd8a31-bab2-4628-9834-d503d36aef63.png"
+                },
+                "att2298380355": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4b24d0b7-4a4a-4769-9c90-fe8d459332a9.png"
+                },
+                "att2298380349": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5061cc2c-59aa-4e74-a0af-4789688c5c04.png"
+                },
+                "att2298380343": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/13d67bfa-754f-4ba4-b8b9-39c1511e7fa9.png"
+                },
+                "att2298380337": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d0f73006-3bad-44bb-b1a6-351b9375572a.png"
+                },
+                "att2298380331": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/687126ec-a0c0-4eff-a383-f6b15996b630.png"
+                },
+                "att2298380319": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d80b7875-ff5f-4f9a-a8c8-d1c16dafcfd3.png"
+                },
+                "att2298380313": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/eddd7c58-6955-4999-b718-32b09b7a67b3.jpg"
+                },
+                "att2298380307": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7ac6be71-5cb4-4ae4-8877-8a0bca0c8b56.jpg"
+                }
+              }
+            },
+            "2299854904": {
+              "title": "Documentation update and  edit history",
+              "version": 9,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/IIIF to EDM profile/Documentation update and  edit history.md",
+              "attachments": {}
+            },
+            "2299920411": {
+              "title": "Documentation update and edit history",
+              "version": 18,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Documentation update and edit history.md",
+              "attachments": {}
+            },
+            "2319319041": {
+              "title": "Workflow for supporting new vocabularies",
+              "version": 12,
+              "export_path": "Europeana Knowledge Base/Semantic enrichments/Workflow for supporting new vocabularies.md",
+              "attachments": {}
+            },
+            "2324463617": {
+              "title": "Dataset download and OAI-PMH service",
+              "version": 9,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/Dataset download and OAI-PMH service.md",
+              "attachments": {}
+            },
+            "2324561923": {
+              "title": "Entity API Documentation",
+              "version": 29,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/Entity API Documentation.md",
+              "attachments": {}
+            },
+            "2329346049": {
+              "title": "How to search Europeana website and API",
+              "version": 17,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/How to search Europeana website and API.md",
+              "attachments": {}
+            },
+            "2343010305": {
+              "title": "IIIF Image Conversion Guide",
+              "version": 57,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/IIIF Guidance/IIIF Image Conversion Guide.md",
+              "attachments": {
+                "att2517368883": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4f35a28e-94d5-4de0-9caa-56069199e502.png"
+                },
+                "att2344779795": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2e892ebe-a1e0-4a33-8252-cf93fc13a764.png"
+                },
+                "att2344779789": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b0d9d8f7-d85d-495f-a537-fea4271dffd5.png"
+                },
+                "att2344714286": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a045d0cd-19d0-4cbb-8c2c-2a5a9f91cda5.png"
+                },
+                "att2344615983": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/64a02cd0-b8e0-4bd2-a43d-4316922973b8.png"
+                },
+                "att2344648733": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e323a325-ed06-42a3-909f-e3064ec36fc3.png"
+                },
+                "att2344681528": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/74620469-0bfd-4965-a61a-9a187a675ea5.png"
+                },
+                "att2344648726": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a44222c6-efdb-4e7a-95be-7edbf5a023c9.png"
+                },
+                "att2344681521": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b2b50055-ca75-41a5-94b4-48b73eeebabc.png"
+                },
+                "att2344714277": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ead85ee4-11de-42e0-a328-de550fcff6a1.png"
+                },
+                "att2344681514": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/795bd33a-ee34-40cd-8d8b-aa11f849970f.png"
+                },
+                "att2344681506": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e214b212-bcab-4d0b-8f41-3a225c698f22.png"
+                },
+                "att2344714260": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7a303c2e-80ee-46f8-a62c-040a3c89d4d8.png"
+                },
+                "att2344714253": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/2f7b58b6-4dbe-4d39-870c-046d98f11ca0.png"
+                },
+                "att2344681480": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/193a468d-a193-4139-bc88-bd868531c724.png"
+                },
+                "att2344615939": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/12423354-c898-4dbc-8f05-0646ff3096a7.png"
+                }
+              }
+            },
+            "2345500691": {
+              "title": "Guide to edit organisation pages on europeana.eu",
+              "version": 10,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/Guide to edit organisation pages on europeana.eu.md",
+              "attachments": {
+                "att2345533489": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/52c05050-504d-4678-9d1c-41d4009d745a.png"
+                },
+                "att2345500749": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f9e50ea1-1668-4a0b-a537-910733e1dd6f.png"
+                },
+                "att2345435192": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/958c59a3-34c5-4ee4-87b9-8f91c0b233d9.png"
+                },
+                "att2345566283": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/3e9033cf-48f8-497c-a41b-662316b8db72.png"
+                },
+                "att2345566252": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/460cf4ee-bbdc-45d7-a86e-bc3a40bd3a6a.png"
+                },
+                "att2345500741": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f1d317bd-c594-4c57-9ea5-e343f9ce95e2.png"
+                },
+                "att2345566260": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2da19532-86e6-4283-8c77-d2c95e7620b4.png"
+                },
+                "att2345435184": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d89287b0-a1ac-4aee-b9cb-431e7d26c7df.png"
+                },
+                "att2345566246": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e816bb78-42ca-41a3-99ee-4467cf67b5f2.png"
+                },
+                "att2345467982": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/522130c4-0281-4108-86f8-81077ea77dca.png"
+                },
+                "att2345566240": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9c918fda-8888-45b8-8aa2-4c601eed62d2.png"
+                },
+                "att2345566232": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4671c981-09e5-4060-8729-25197a2f6d26.png"
+                },
+                "att2345533475": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ee0edf2e-e995-4baf-8ae9-411defc6fc09.png"
+                },
+                "att2345533467": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/0491354c-67d2-4365-8fb7-f5abbac7c92e.png"
+                },
+                "att2345500733": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ffff6f89-2922-4f90-84e9-a5187f777733.png"
+                },
+                "att2345500725": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/cafd2c69-c1a9-44cb-9dca-d765c2f9e2e5.png"
+                },
+                "att2345467950": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/02ab40fd-2faa-4928-83b7-67f125bd615c.png"
+                },
+                "att2345435168": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/48692dce-7443-46a4-8231-22d5695dbf1b.png"
+                },
+                "att2345467942": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a8338628-bc41-434f-a150-2ce31488cbe7.png"
+                },
+                "att2345467926": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/746a376e-6b03-44d1-a4d6-c9318b7e7c4a.png"
+                },
+                "att2345533455": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9fb774e1-a80d-47b7-bf4e-ed847df810dd.png"
+                },
+                "att2345467932": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/1a69aa23-9174-481c-a44e-61f2c2217f87.png"
+                }
+              }
+            },
+            "2346614785": {
+              "title": "Europeana automatic enrichment with organisations",
+              "version": 21,
+              "export_path": "Europeana Knowledge Base/Semantic enrichments/Europeana automatic enrichment with organisations.md",
+              "attachments": {}
+            },
+            "2355396609": {
+              "title": "IIIF Image Conversion (Compact Version)",
+              "version": 31,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/IIIF Guidance/IIIF Image Conversion (Compact Version).md",
+              "attachments": {
+                "att2355822595": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f08e4a8e-99c2-4c78-a610-bd9d96fd8926.png"
+                },
+                "att2356051978": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e1a7e6cb-c22d-4807-9c35-632fd0855b57.png"
+                },
+                "att2356051972": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d8b75bf7-7b95-445a-856b-00d7f8b89a6a.png"
+                },
+                "att2355363979": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/bfce8f32-cdba-489b-a184-99f8d61dc21f.png"
+                },
+                "att2355527751": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/0a7b6644-c618-4b20-976a-773061e9eb23.png"
+                },
+                "att2355462284": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2cc1b04c-2299-4068-9eff-317e6a6efc91.png"
+                },
+                "att2355462252": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e04b479f-f0af-4986-ac8c-5d68985bbf81.png"
+                },
+                "att2355462244": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/00746ff1-2346-4b95-983a-ffe7c243bc8d.png"
+                },
+                "att2355363966": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f391c338-bd99-48c3-86e5-dd03507f00c1.png"
+                },
+                "att2355363959": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9c2191d7-6c5e-42d3-aed4-68927ad30c80.png"
+                },
+                "att2355462231": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/35067f97-46bd-4a34-bf20-5ac0c4a8d83d.png"
+                },
+                "att2355527734": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9e48da08-0530-49a8-9a63-faa2571dd84a.png"
+                },
+                "att2355462170": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/66aaad05-6109-4eca-92c1-8a4cc1af7dc3.zip"
+                },
+                "att2355363849": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c289cb81-81aa-45f6-bd81-22a9cbdeb297.png"
+                }
+              }
+            },
+            "2358673409": {
+              "title": "How to set up your browser to access the Europeana APIs",
+              "version": 12,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/User guides/How to set up your browser to access the Europeana APIs.md",
+              "attachments": {
+                "att3908468853": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/7c82ad89-40ef-42f9-80b2-175acaf34c71.png"
+                },
+                "att3908468871": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9fe1b9d7-9807-4e9e-8280-f121a9762e19.png"
+                },
+                "att3908468865": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/4326df74-ef80-4185-a34d-eb1b79b9a594.png"
+                },
+                "att3908468859": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6a5f94a1-1112-4106-a284-10351e3825d3.png"
+                },
+                "att3908468847": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2839d174-1175-4988-afcc-a89d8c1d06df.png"
+                },
+                "att3908468841": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/899e74fc-0751-4513-91c6-7c5718e2c21a.png"
+                },
+                "att3908468835": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/1e4cab48-07e8-4a64-bd54-67c48e9e3a1b.png"
+                },
+                "att3908468829": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/227aaafb-a2cd-48e6-b23d-5e83cb958a46.png"
+                },
+                "att3908468823": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/8522b8fe-5170-4391-b305-8b75725be3d0.png"
+                },
+                "att3908468817": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/0f56f6c7-c6a4-4cab-a218-a0f6f65b7248.png"
+                },
+                "att3908468811": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e41038a4-d752-4a55-8b32-6de81cc2ae26.png"
+                },
+                "att3908468772": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/cd283da9-5562-4ba5-87a2-072d0b5244d7.png"
+                },
+                "att3908468766": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/e1f34d1b-bf34-449b-9bf3-a2fe8b70de12.png"
+                },
+                "att3908468759": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/5d2c0e8a-72bd-4862-bd41-596cc36eefa7.png"
+                }
+              }
+            },
+            "2360508417": {
+              "title": "API FAQ",
+              "version": 12,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API FAQ.md",
+              "attachments": {}
+            },
+            "2360639489": {
+              "title": "EDM Training",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/EDM Training.md",
+              "attachments": {}
+            },
+            "2365227031": {
+              "title": "Publishing guide for 3D content",
+              "version": 24,
+              "export_path": "Europeana Knowledge Base/Publishing guide for 3D content.md",
+              "attachments": {}
+            },
+            "2385313793": {
+              "title": "Europeana APIs Documentation",
+              "version": 33,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation.md",
+              "attachments": {
+                "att2464317469": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/8d6644a3-9718-4ba6-bbda-e6f710608485.png"
+                }
+              }
+            },
+            "2385674279": {
+              "title": "Record API Documentation",
+              "version": 14,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/Record API Documentation.md",
+              "attachments": {}
+            },
+            "2385739812": {
+              "title": "Search API Documentation",
+              "version": 30,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/Search API Documentation.md",
+              "attachments": {
+                "att3784343562": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2f04fb30-2a35-4b53-93d6-ccf9f09669e6.png"
+                }
+              }
+            },
+            "2385870851": {
+              "title": "Annotation API Documentation",
+              "version": 15,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/Annotation API Documentation.md",
+              "attachments": {}
+            },
+            "2385870903": {
+              "title": "SPARQL API Documentation",
+              "version": 5,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/SPARQL API Documentation.md",
+              "attachments": {}
+            },
+            "2385870932": {
+              "title": "Libraries and Plugins",
+              "version": 7,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/Libraries and Plugins.md",
+              "attachments": {
+                "att2385936463": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d80a7df5-8ab3-4e8c-806e-a62ccfd5ad2c.png"
+                }
+              }
+            },
+            "2387836941": {
+              "title": "Europeana usage statistics dashboard for providing cultural heritage institutions",
+              "version": 4,
+              "export_path": "Europeana Knowledge Base/Europeana usage statistics dashboard for providing cultural heritage institutions.md",
+              "attachments": {
+                "att2387705875": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c6fe8695-68cf-4df5-9432-ed7dc2531afa.jpg"
+                },
+                "att2387640336": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/282283d1-faf5-4aa8-ab52-50ec9941832e.jpg"
+                },
+                "att2387542046": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5659ce92-dac4-45ae-ad3f-f9493d59026b.jpg"
+                },
+                "att2387836956": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c6bd9062-a22b-4bf0-af5f-0845bba5fbd5.jpg"
+                },
+                "att2387607574": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e609943a-7f4b-417d-8e5b-7c9ee53350ea.jpg"
+                },
+                "att2387607570": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e99fc679-a8f8-4143-9808-303feddce6cf.jpg"
+                },
+                "att2387673113": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d8a357d7-59e0-4bd8-9a32-37fcfa921ed4.jpg"
+                },
+                "att2387902477": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/9cb0f71c-3287-4fae-be81-39e849570a62.jpg"
+                },
+                "att2387935241": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f3ccd351-5b83-4c52-84b1-29b7518f7eb2.jpg"
+                },
+                "att2387935237": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e4d29b04-1294-469d-981b-68bd8b48185b.jpg"
+                },
+                "att2387705871": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5776b286-24f6-4877-bfec-609f294ee6f2.jpg"
+                },
+                "att2387935233": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6ac2a38f-300c-4641-bccd-4bfe7c79986a.jpg"
+                },
+                "att2387902473": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f74eff8a-7b35-46fe-89e0-462187044001.jpg"
+                },
+                "att2387640332": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c505f23f-94bd-4849-8849-c7f1857a6358.jpg"
+                }
+              }
+            },
+            "2390687745": {
+              "title": "Copyright management guidelines for cultural heritage institutions",
+              "version": 61,
+              "export_path": "Europeana Knowledge Base/Copyright management guidelines for cultural heritage institutions.md",
+              "attachments": {
+                "att2568060951": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c7c8ab67-4467-49b6-9762-c52673796dcb.pdf"
+                },
+                "att2545287360": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/06620377-f1a2-4347-9cc6-2961a3fe6844.jpg"
+                }
+              }
+            },
+            "2398912540": {
+              "title": "IIIF Manifests at Europeana",
+              "version": 21,
+              "export_path": "Europeana Knowledge Base/Europeana and IIIF/IIIF Manifests at Europeana.md",
+              "attachments": {}
+            },
+            "2398978088": {
+              "title": "Europeana and IIIF",
+              "version": 21,
+              "export_path": "Europeana Knowledge Base/Europeana and IIIF.md",
+              "attachments": {}
+            },
+            "2399011019": {
+              "title": "Phase 2. Expansion",
+              "version": 13,
+              "export_path": "Europeana Knowledge Base/Copyright management guidelines for cultural heritage institutions/Phase 2. Expansion.md",
+              "attachments": {}
+            },
+            "2399043640": {
+              "title": "Media Formats/Mime Types",
+              "version": 31,
+              "export_path": "Europeana Knowledge Base/Europeana and IIIF/Media Formats_Mime Types.md",
+              "attachments": {}
+            },
+            "2399207459": {
+              "title": "EDM to IIIF Mapping",
+              "version": 57,
+              "export_path": "Europeana Knowledge Base/Europeana and IIIF/EDM to IIIF Mapping.md",
+              "attachments": {}
+            },
+            "2399404141": {
+              "title": "Phase 1. Foundation",
+              "version": 35,
+              "export_path": "Europeana Knowledge Base/Copyright management guidelines for cultural heritage institutions/Phase 1. Foundation.md",
+              "attachments": {}
+            },
+            "2399895561": {
+              "title": "Phase 3. Integration",
+              "version": 19,
+              "export_path": "Europeana Knowledge Base/Copyright management guidelines for cultural heritage institutions/Phase 3. Integration.md",
+              "attachments": {}
+            },
+            "2399993880": {
+              "title": "Harmonise all approaches to copyright across your organisation",
+              "version": 16,
+              "export_path": "Europeana Knowledge Base/Copyright management guidelines for cultural heritage institutions/Harmonise all approaches to copyright across your organisation.md",
+              "attachments": {}
+            },
+            "2400092179": {
+              "title": "Harmonise a specific approach to risk management for your organisation",
+              "version": 16,
+              "export_path": "Europeana Knowledge Base/Copyright management guidelines for cultural heritage institutions/Harmonise a specific approach to risk management for your organisation.md",
+              "attachments": {}
+            },
+            "2406056109": {
+              "title": "Czechia",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Czechia.md",
+              "attachments": {}
+            },
+            "2406056122": {
+              "title": "France",
+              "version": 3,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/France.md",
+              "attachments": {}
+            },
+            "2406056172": {
+              "title": "Malta",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Malta.md",
+              "attachments": {}
+            },
+            "2406056184": {
+              "title": "Netherlands",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Netherlands.md",
+              "attachments": {}
+            },
+            "2406056199": {
+              "title": "Norway",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Norway.md",
+              "attachments": {}
+            },
+            "2406088764": {
+              "title": "Article 14 National Implementations Overview",
+              "version": 28,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview.md",
+              "attachments": {}
+            },
+            "2406088836": {
+              "title": "Cyprus",
+              "version": 3,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Cyprus.md",
+              "attachments": {}
+            },
+            "2406088883": {
+              "title": "Greece",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Greece.md",
+              "attachments": {}
+            },
+            "2406088902": {
+              "title": "Ireland",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Ireland.md",
+              "attachments": {}
+            },
+            "2406088922": {
+              "title": "Italy",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Italy.md",
+              "attachments": {}
+            },
+            "2406088942": {
+              "title": "Latvia",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Latvia.md",
+              "attachments": {}
+            },
+            "2406088979": {
+              "title": "Slovenia",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Slovenia.md",
+              "attachments": {}
+            },
+            "2406088991": {
+              "title": "Spain",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Spain.md",
+              "attachments": {}
+            },
+            "2406089007": {
+              "title": "Austria",
+              "version": 8,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Austria.md",
+              "attachments": {}
+            },
+            "2406121552": {
+              "title": "Bulgaria",
+              "version": 3,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Bulgaria.md",
+              "attachments": {}
+            },
+            "2406121570": {
+              "title": "Denmark",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Denmark.md",
+              "attachments": {}
+            },
+            "2406121647": {
+              "title": "Lithuania",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Lithuania.md",
+              "attachments": {}
+            },
+            "2406121715": {
+              "title": "Sweden",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Sweden.md",
+              "attachments": {}
+            },
+            "2406122121": {
+              "title": ".Czechia",
+              "version": 7,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Czechia.md",
+              "attachments": {}
+            },
+            "2406122133": {
+              "title": ".Estonia",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Estonia.md",
+              "attachments": {}
+            },
+            "2406122151": {
+              "title": ".Lithuania",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Lithuania.md",
+              "attachments": {}
+            },
+            "2406122188": {
+              "title": ".Spain",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Spain.md",
+              "attachments": {}
+            },
+            "2406187142": {
+              "title": "Belgium",
+              "version": 4,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Belgium.md",
+              "attachments": {}
+            },
+            "2406187164": {
+              "title": "Croatia",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Croatia.md",
+              "attachments": {}
+            },
+            "2406187199": {
+              "title": "Estonia",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Estonia.md",
+              "attachments": {}
+            },
+            "2406187218": {
+              "title": "Finland",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Finland.md",
+              "attachments": {}
+            },
+            "2406187231": {
+              "title": "Germany",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Germany.md",
+              "attachments": {}
+            },
+            "2406187276": {
+              "title": "Hungary",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Hungary.md",
+              "attachments": {}
+            },
+            "2406187291": {
+              "title": "Iceland",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Iceland.md",
+              "attachments": {}
+            },
+            "2406187324": {
+              "title": "Luxembourg",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Luxembourg.md",
+              "attachments": {}
+            },
+            "2406187346": {
+              "title": "Poland",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Poland.md",
+              "attachments": {}
+            },
+            "2406187359": {
+              "title": "Portugal",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Portugal.md",
+              "attachments": {}
+            },
+            "2406187371": {
+              "title": "Romania",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Romania.md",
+              "attachments": {}
+            },
+            "2406187392": {
+              "title": "Slovakia",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Article 14 National Implementations Overview/Slovakia.md",
+              "attachments": {}
+            },
+            "2406514779": {
+              "title": "Out of commerce works National Implementations Overview",
+              "version": 26,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview.md",
+              "attachments": {}
+            },
+            "2406514823": {
+              "title": ".Austria",
+              "version": 5,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Austria.md",
+              "attachments": {}
+            },
+            "2406514877": {
+              "title": ".Croatia",
+              "version": 3,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Croatia.md",
+              "attachments": {}
+            },
+            "2406613080": {
+              "title": ".Belgium",
+              "version": 5,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Belgium.md",
+              "attachments": {}
+            },
+            "2406613092": {
+              "title": ".France",
+              "version": 3,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.France.md",
+              "attachments": {}
+            },
+            "2406645863": {
+              "title": ".Italy",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Italy.md",
+              "attachments": {}
+            },
+            "2406711318": {
+              "title": ".Hungary",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Hungary.md",
+              "attachments": {}
+            },
+            "2406744129": {
+              "title": ".Germany",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Germany.md",
+              "attachments": {}
+            },
+            "2406776857": {
+              "title": ".Netherlands",
+              "version": 12,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Netherlands.md",
+              "attachments": {}
+            },
+            "2407170152": {
+              "title": "Twin it! 3D for Europe’s culture webinar series (part I)",
+              "version": 7,
+              "export_path": "Europeana Knowledge Base/Publishing guide for 3D content/Twin it! 3D for Europe’s culture webinar series (part I).md",
+              "attachments": {
+                "att2411332030": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b92c693a-4470-465f-b408-f0b0c5772606.png"
+                }
+              }
+            },
+            "2461270026": {
+              "title": "API Suite",
+              "version": 6,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite.md",
+              "attachments": {}
+            },
+            "2462351393": {
+              "title": "Accessing the APIs",
+              "version": 20,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/Accessing the APIs.md",
+              "attachments": {
+                "att3758489604": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/3be9f50a-3f13-43d8-ad78-be3b7dc10fce.png"
+                },
+                "att3741941762": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a0bdcba9-5929-4916-8e34-b4294cd7ebbc.png"
+                },
+                "att3740467213": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/bcae6394-967d-4021-a933-13f15ab28b0f.png"
+                },
+                "att3741089801": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7beba99c-3fb3-4793-85b0-12c4e6e86b18.png"
+                }
+              }
+            },
+            "2480209953": {
+              "title": "Thumbnail API Documentation",
+              "version": 4,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/Thumbnail API Documentation.md",
+              "attachments": {}
+            },
+            "2486960140": {
+              "title": "User Set API Documentation",
+              "version": 24,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/User Set API Documentation.md",
+              "attachments": {}
+            },
+            "2493743112": {
+              "title": "Recommendation API",
+              "version": 5,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/Recommendation API.md",
+              "attachments": {}
+            },
+            "2517303316": {
+              "title": "IIIF Guidance",
+              "version": 35,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/IIIF Guidance.md",
+              "attachments": {
+                "att2611609629": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/319acfd6-0dc0-45b5-a8c9-fb2840190f23.png"
+                },
+                "att2611609623": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/09b07cf2-0f16-4543-9046-1a239a979ec6.png"
+                },
+                "att2609512661": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/404b6ac7-8f8b-443e-ba7b-ebbcd8ef16ae.png"
+                }
+              }
+            },
+            "2517368849": {
+              "title": "EDM2IIIF Manifest Creation Tool",
+              "version": 18,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/IIIF Guidance/EDM2IIIF Manifest Creation Tool.md",
+              "attachments": {
+                "att2611511425": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/758f340f-5e2a-4277-a669-a55a416f1da0.png"
+                },
+                "att2611511419": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/8252490d-1dee-4824-a82a-7f526b49b7e9.png"
+                },
+                "att2611511413": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/eb77692b-ac29-4cd3-84b9-a093a601fb7c.png"
+                },
+                "att2611511407": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/16390452-65eb-4b8f-89c5-7a715d16df90.png"
+                },
+                "att2611511401": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b82e87ce-899f-45be-955e-12927a93f16c.png"
+                },
+                "att2611511395": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/17834548-cad0-427a-a5f4-f9b5253a1fe4.png"
+                },
+                "att2611216546": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6064a7ae-24a9-4542-bd58-25085604c5e3.png"
+                },
+                "att2611216540": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/bd3d78c2-107a-4c99-bd4a-046ee3ed0e48.png"
+                },
+                "att2611216534": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7e88601e-aa61-4159-a5a9-64730cf53248.png"
+                },
+                "att2611216528": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c48a25b7-6efa-49a3-90ea-a77fd6796639.png"
+                },
+                "att2611216522": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ea9d1c4a-13c4-487f-96f3-2df789403877.png"
+                },
+                "att2611216516": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d2903c05-22b2-416a-8ace-65c9b134c0d6.png"
+                },
+                "att2611216510": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f813c17e-1710-442e-bb7d-bd3a44bff64f.png"
+                },
+                "att2611216504": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f0006c6c-9a0b-4811-b025-1287d64eea21.png"
+                },
+                "att2611216498": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2dfa0503-cf1f-43cf-90bc-2e64156fe776.png"
+                },
+                "att2611216492": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7905d5bb-dad2-4467-9cf6-abededfc8f0c.png"
+                },
+                "att2611216486": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/668857bb-bfa0-4403-a7ad-0a8571a878ba.png"
+                },
+                "att2611773484": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5f208564-9229-4507-a301-f0f8e3de4ca4.png"
+                },
+                "att2611773478": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/a14ba0a0-717d-4d34-9207-41085ebd009a.png"
+                }
+              }
+            },
+            "2544664771": {
+              "title": ".Luxembourg",
+              "version": 3,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Luxembourg.md",
+              "attachments": {}
+            },
+            "2544795895": {
+              "title": ".Ireland",
+              "version": 1,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Ireland.md",
+              "attachments": {}
+            },
+            "2545778714": {
+              "title": ".Slovakia",
+              "version": 6,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Slovakia.md",
+              "attachments": {}
+            },
+            "2603417619": {
+              "title": "Recommendations for providing temporal metadata",
+              "version": 18,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Recommendations for providing temporal metadata.md",
+              "attachments": {}
+            },
+            "2617442393": {
+              "title": "Management of organisation entities (for aggregators)",
+              "version": 25,
+              "export_path": "Europeana Knowledge Base/Organisation entities in Europeana/Management of organisation entities (for aggregators).md",
+              "attachments": {
+                "att2619899917": {
+                  "version": 3,
+                  "path": "Europeana Knowledge Base/attachments/635fee1b-6f70-49ed-b0cd-b0adb0d62ba5.png"
+                },
+                "att2618425374": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/2bf1084f-68c8-49eb-8bca-6f79c78b902d.png"
+                },
+                "att2618032131": {
+                  "version": 4,
+                  "path": "Europeana Knowledge Base/attachments/8dd5d0d0-3622-4881-8900-310e69c9461a.png"
+                },
+                "att2617802766": {
+                  "version": 5,
+                  "path": "Europeana Knowledge Base/attachments/a85d294b-d241-46d6-a840-a8d4c921d849.png"
+                }
+              }
+            },
+            "2647490571": {
+              "title": "FAQs on digital cultural heritage and the concept of openness",
+              "version": 7,
+              "export_path": "Europeana Knowledge Base/FAQs on digital cultural heritage and the concept of openness.md",
+              "attachments": {
+                "att2647654431": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/28aa2830-437a-4598-82bb-4bfca953bb93.png"
+                }
+              }
+            },
+            "2703458314": {
+              "title": "User guides",
+              "version": 1,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/User guides.md",
+              "attachments": {}
+            },
+            "2704146433": {
+              "title": "Fair use policy & guidelines",
+              "version": 10,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/Fair use policy & guidelines.md",
+              "attachments": {}
+            },
+            "2768535604": {
+              "title": ".Latvia",
+              "version": 1,
+              "export_path": "Europeana Knowledge Base/Out of commerce works National Implementations Overview/.Latvia.md",
+              "attachments": {}
+            },
+            "2806513675": {
+              "title": "Media policy",
+              "version": 22,
+              "export_path": "Europeana Knowledge Base/Media policy.md",
+              "attachments": {}
+            },
+            "2808512557": {
+              "title": "Guidelines for training development and delivery - Short version",
+              "version": 5,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/Guidelines for training development and delivery - Short version.md",
+              "attachments": {}
+            },
+            "2813132810": {
+              "title": "foaf:Organization",
+              "version": 17,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Contextual classes/foaf_Organization.md",
+              "attachments": {}
+            },
+            "2820177937": {
+              "title": "Embeddable resources in EDM (guidelines)",
+              "version": 44,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/Embeddable resources in EDM (guidelines).md",
+              "attachments": {}
+            },
+            "2821128212": {
+              "title": "oEmbed discovery",
+              "version": 16,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/Embeddable resources in EDM (guidelines)/oEmbed discovery.md",
+              "attachments": {}
+            },
+            "2898886659": {
+              "title": "Technical metadata in EDM (definitions)",
+              "version": 7,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/Technical metadata in EDM (definitions).md",
+              "attachments": {}
+            },
+            "2916646965": {
+              "title": "EDM mappings, refinements and extensions",
+              "version": 6,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM mappings, refinements and extensions.md",
+              "attachments": {}
+            },
+            "2916974597": {
+              "title": "Europeana Data Model",
+              "version": 6,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model.md",
+              "attachments": {}
+            },
+            "2953314308": {
+              "title": "Use cases",
+              "version": 8,
+              "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/Use cases.md",
+              "attachments": {
+                "att4128669704": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/026ce68f-3255-4a61-8c7b-d2d92568bc9d.png"
+                },
+                "att3907682307": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/e042373f-b849-4391-856b-1a3103717ada.png"
+                },
+                "att2953642000": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/6c49428e-f0de-4189-9329-4996964e1c11.png"
+                },
+                "att2953543709": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2e320069-b6b3-4768-a68f-b501ef3582c8.png"
+                },
+                "att2953510933": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ec78b5bf-c3c7-4cff-8659-2a9f49c71983.png"
+                },
+                "att2953510926": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/95449b7f-09e6-4960-bbc4-2f016d244cd8.png"
+                },
+                "att2953838596": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c0b40e81-3386-4053-8e32-e289321491db.png"
+                },
+                "att2953510920": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/36853e58-5b17-4698-8e87-6a5c85702019.png"
+                },
+                "att2953576468": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/245af1eb-e8d1-4ad7-abc7-cc04a9484ee9.png"
+                },
+                "att2953904139": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/de1c1456-30f8-4236-a410-a60739981432.png"
+                },
+                "att2953543698": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f82186b2-506a-4866-bacc-0e3d32d3ba0c.png"
+                },
+                "att2953740307": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/130c1a22-c6b1-49e7-a9e1-0aefb23d9830.png"
+                },
+                "att2953543689": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/08a106a1-c64f-4c6d-b9c2-e2dd2d069a1e.png"
+                },
+                "att2953904130": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/812477fa-1da0-4e17-8f73-1ae94caebd96.png"
+                },
+                "att2953576458": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2af4af13-690d-42d2-88d8-80cfffaf07bb.png"
+                },
+                "att2953576451": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/bf4c359a-dd7c-4d1f-bcaf-93b5bee8481c.png"
+                },
+                "att2953740293": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/c5da60e8-aad4-4751-bb81-a2ee5e559d3d.png"
+                },
+                "att2953314325": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/79a44dde-49d8-4bab-ac3d-2ccc5885eff5.png"
+                },
+                "att2953412618": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7f6ff72b-0ccb-44f8-8b22-2842fcef8b46.png"
+                },
+                "att2952986648": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/feceb164-a02f-47ab-8420-f2d18b1ef3fd.png"
+                },
+                "att2953150484": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/809b97f9-bcc2-4925-975a-b86864292852.png"
+                },
+                "att2953084950": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2b327c48-b3bc-47de-bdf8-e93221ea1dea.png"
+                },
+                "att2952888344": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/694a78ee-3019-46f3-9e5e-f2aa12b8b779.png"
+                }
+              }
+            },
+            "3004694572": {
+              "title": "EDM profiles",
+              "version": 4,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles.md",
+              "attachments": {}
+            },
+            "3040477191": {
+              "title": "Guidelines for delivering training and development - Full guide",
+              "version": 2,
+              "export_path": "Europeana Knowledge Base/User Guides & Training/Guidelines for training development and delivery - Short version/Guidelines for delivering training and development - Full guide.md",
+              "attachments": {
+                "att3040444449": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/dcfae8b4-387c-4926-833d-abac1ea04b0c.png"
+                },
+                "att3040411674": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/173d7aff-63ae-4f63-b0d6-61ce13ddfb67.png"
+                },
+                "att3040444434": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/10b5a2f8-633f-4083-bb89-9158f13c167f.png"
+                },
+                "att3039822398": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/5b488248-ba5e-4bd2-950a-ea39485a5eba.jpg"
+                },
+                "att3040346141": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/0714f808-46fb-44f0-8d1e-2dfc1abe53fa.png"
+                },
+                "att3039756569": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/97c4f861-e6ab-4800-9105-06a090020432.png"
+                }
+              }
+            },
+            "3138879489": {
+              "title": "EDM (definitions)",
+              "version": 6,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM (definitions).md",
+              "attachments": {}
+            },
+            "3255468048": {
+              "title": "Providing 3D content in EDM (guidelines)",
+              "version": 39,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/Providing 3D content in EDM (guidelines).md",
+              "attachments": {}
+            },
+            "3261923389": {
+              "title": "Organization profile for data providers and aggregators (definitions)",
+              "version": 10,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/Organization profile for data providers and aggregators (definitions).md",
+              "attachments": {
+                "att3761668097": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/aceaec68-33bc-471f-9e38-67696bb769d6.png"
+                }
+              }
+            },
+            "3265626115": {
+              "title": "Policy for persistent identifiers in the data space",
+              "version": 15,
+              "export_path": "Europeana Knowledge Base/Persistent identifiers/Policy for persistent identifiers in the data space.md",
+              "attachments": {}
+            },
+            "3265789954": {
+              "title": "Persistent identifiers",
+              "version": 5,
+              "export_path": "Europeana Knowledge Base/Persistent identifiers.md",
+              "attachments": {
+                "att3265822722": {
+                  "version": 3,
+                  "path": "Europeana Knowledge Base/attachments/9be2877d-ddf3-4145-84a1-dc83058c508f.png"
+                }
+              }
+            },
+            "3270115340": {
+              "title": "ContentTier 2-4: 3D type",
+              "version": 4,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Content & Metadata Tiers/Tier 2-4 requirements per edm_type/ContentTier 2-4_ 3D type.md",
+              "attachments": {}
+            },
+            "3283517534": {
+              "title": "Glossary of terms",
+              "version": 11,
+              "export_path": "Europeana Knowledge Base/Persistent identifiers/Glossary of terms.md",
+              "attachments": {}
+            },
+            "3283615778": {
+              "title": "PID scheme registry",
+              "version": 32,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/Persistent identifiers in EDM (guidelines)/PID scheme registry.md",
+              "attachments": {}
+            },
+            "3283812357": {
+              "title": "Persistent identifiers in EDM (guidelines)",
+              "version": 20,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/Persistent identifiers in EDM (guidelines).md",
+              "attachments": {}
+            },
+            "3283812376": {
+              "title": "What happens to persistent identifiers during ingestion?",
+              "version": 10,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/Persistent identifiers in EDM (guidelines)/What happens to persistent identifiers during ingestion_.md",
+              "attachments": {}
+            },
+            "3283812410": {
+              "title": "Persistent identifiers in EDM (definitions)",
+              "version": 38,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/Persistent identifiers in EDM (definitions).md",
+              "attachments": {
+                "att3526361090": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/91377d8e-c834-4e1d-8dfa-f78c84cb0c1a.png"
+                }
+              }
+            },
+            "3283812428": {
+              "title": "Role of aggregators in supporting persistent identification in the data space",
+              "version": 8,
+              "export_path": "Europeana Knowledge Base/Persistent identifiers/Role of aggregators in supporting persistent identification in the data space.md",
+              "attachments": {}
+            },
+            "3294363660": {
+              "title": "3D content in EDM (definitions)",
+              "version": 13,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/3D content in EDM (definitions).md",
+              "attachments": {
+                "att4144136193": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/80f3d501-7fc5-460b-98e6-27208382fe64.png"
+                }
+              }
+            },
+            "3297116185": {
+              "title": "EDM namespace classes and properties (definitions)",
+              "version": 12,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM namespace classes and properties (definitions).md",
+              "attachments": {}
+            },
+            "330367111": {
+              "title": "Europeana Knowledge Base",
+              "version": 21,
+              "export_path": "Europeana Knowledge Base/Europeana Knowledge Base.md",
+              "attachments": {
+                "att2298740822": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d8097059-6784-4687-8ef2-419318820513.png"
+                },
+                "att2298740816": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/703b3c77-7695-4e4f-abfe-1e423bb1e400.png"
+                },
+                "att2298740810": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/def1bef5-d05e-4133-a04b-b0ea18101dc0.png"
+                },
+                "att2298740804": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f917f53b-3e58-41e1-be3e-b7a821e50872.png"
+                },
+                "att2298740798": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/08f05a85-f0ce-4a4b-b88a-6017ed6d6363.png"
+                },
+                "att2298740792": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ceda18b7-9cb9-4b6f-a72c-41da43f2b235.png"
+                },
+                "att2298740786": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/445630d2-3117-4ce3-a399-9776969a74e8.png"
+                }
+              }
+            },
+            "331874372": {
+              "title": "Europeana automatic enrichment with contextual resources",
+              "version": 20,
+              "export_path": "Europeana Knowledge Base/Semantic enrichments/Europeana automatic enrichment with contextual resources.md",
+              "attachments": {}
+            },
+            "332070913": {
+              "title": "Licenses & Rights statements",
+              "version": 19,
+              "export_path": "Europeana Knowledge Base/Publishing guide/Licenses & Rights statements.md",
+              "attachments": {}
+            },
+            "3370549267": {
+              "title": "Upgrading existing PIDs in the data",
+              "version": 19,
+              "export_path": "Europeana Knowledge Base/Persistent identifiers/Upgrading existing PIDs in the data.md",
+              "attachments": {}
+            },
+            "3762094082": {
+              "title": "Events profile (definitions)",
+              "version": 4,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/Events profile (definitions).md",
+              "attachments": {}
+            },
+            "3858825224": {
+              "title": "EDM profile for Sound (definitions)",
+              "version": 1,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/EDM profile for Sound (definitions).md",
+              "attachments": {
+                "att3859382274": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f49fef2f-ffbe-42f0-975f-0abcbdef8522.pdf"
+                }
+              }
+            },
+            "4128538629": {
+              "title": "Collections profile (definitions)",
+              "version": 1,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/Collections profile (definitions).md",
+              "attachments": {
+                "att4160520196": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/670cbb3f-12c4-4987-9e75-1775d7cc1fb4.png"
+                }
+              }
+            },
+            "987725857": {
+              "title": "EDM Contextual classes",
+              "version": 11,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Contextual classes.md",
+              "attachments": {
+                "att2165800964": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/85df3c37-8b05-415e-9f85-d7f563e92dc3.png"
+                }
+              }
+            },
+            "987758622": {
+              "title": "EDM Core classes",
+              "version": 28,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/EDM Core classes.md",
+              "attachments": {
+                "att2165637121": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/de4b54cc-c7f2-4aae-a624-f19892182dab.png"
+                }
+              }
+            },
+            "987791389": {
+              "title": "EDM - Mapping guidelines",
+              "version": 25,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines.md",
+              "attachments": {
+                "att2321154056": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2dde35d1-b9fb-4601-bc51-1302be950148.pdf"
+                }
+              }
+            },
+            "988381192": {
+              "title": "Terminology",
+              "version": 10,
+              "export_path": "Europeana Knowledge Base/Terminology.md",
+              "attachments": {}
+            },
+            "988413989": {
+              "title": "Overview of properties per class",
+              "version": 18,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Overview of properties per class.md",
+              "attachments": {}
+            },
+            "988512257": {
+              "title": "Basic metadata quality aspects",
+              "version": 21,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Basic metadata quality aspects.md",
+              "attachments": {}
+            },
+            "988545049": {
+              "title": "Anomalies",
+              "version": 6,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Anomalies.md",
+              "attachments": {}
+            }
+          }
+        }
+      }
+    }
+  }
+}

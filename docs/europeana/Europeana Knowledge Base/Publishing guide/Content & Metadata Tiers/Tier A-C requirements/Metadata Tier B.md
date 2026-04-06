@@ -8,8 +8,6 @@ tags:
   - '#epf'
 ---
 
-[Publishing guide](../../../Publishing%20guide.md) > [Content & Metadata Tiers](../../Content%20&%20Metadata%20Tiers.md) > [Tier A-C requirements](../Tier%20A-C%20requirements.md)
-
 # Metadata Tier B
 
 **Metadata Tier B (Europeana website as an exploration platform)**

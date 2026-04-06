@@ -1,6 +1,4 @@
 
-[Europeana and IIIF](../Europeana%20and%20IIIF.md)
-
 # EDM to IIIF Mapping
 
 Below, you'll find two tables documenting how objects described in EDM can be represented within the IIIF framework. These documents can serve as a valuable resource for individuals interested in crafting their own IIIF manifest from EDM. Please note the mappings do not encompass every field available. For a more exhaustive list, we encourage you to consult the [IIIF API Documentation](https://europeana.atlassian.net/wiki/x/BAAIYQ), specifically Response v3 and v2.1 in the “[IIIF APIs Documentation](../Europeana%20APIs%20Documentation/API%20Suite/IIIF%20APIs%20Documentation.md)” section. This will provide you with a complete overview of all available fields.

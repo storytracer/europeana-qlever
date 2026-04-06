@@ -3,8 +3,6 @@ tags:
   - '#edm-mapping-guidelines'
 ---
 
-
-
 # EDM - Mapping guidelines
 
 The Europeana Data Model (EDM in short) is a theoretical data model that allows data to be presented in different ways according to the practices of the various domains which contribute data to Europeana. To create a practical implementation Europeana has not used all the classes and properties defined in the EDM model. In particular, the **ore:Proxy class** is not included because it is created within Europeana using data provided according to the Guidelines. Additionally, for its internal working Europeana utilises a different set of classes and properties. There are several [case studies](https://pro.europeana.eu/share-your-data/metadata#case-studies) that address particular aspects of using EDM.
@@ -32,4 +30,4 @@ Main contextual classes include:
 >
 > The EDM Mapping Guidelines have been [Documentation update and edit history](EDM%20-%20Mapping%20guidelines/Documentation%20update%20and%20edit%20history.md)and you can get **the most recent version of this documentation via the following sections of the Europeana Knowledge Base.**
 
-[EDM_Mapping_Guidelines_v2.4_102017 (1).pdf](../attachments/2dde35d1-b9fb-4601-bc51-1302be950148.pdf)
+[EDM_Mapping_Guidelines_v2.4_102017 (1).pdf](https://europeana.atlassian.net/wiki/download/attachments/987791389/EDM_Mapping_Guidelines_v2.4_102017%20(1).pdf?version=1&modificationDate=1678117517415&cacheVersion=1&api=v2)

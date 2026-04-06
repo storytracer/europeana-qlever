@@ -3,13 +3,11 @@ tags:
   - '#apidocs'
 ---
 
-[Europeana APIs Documentation](../Europeana%20APIs%20Documentation.md)
-
 # Libraries and Plugins
 
 Interacting with the [Europeana REST API](https://pro.europeana.eu/page/intro) is possible in a multitude of ways, the easiest of which is probably a [Console](https://pro.europeana.eu/page/intro#console). If you want to use your coding language of choice to interact with an API, there are a few different code libraries that can help you access and use the API in exactly the way you want. Below is a list of libraries and plugins for the Europeana API, sorted by coding language/software suite.
 
-![](../../attachments/d80a7df5-8ab3-4e8c-806e-a62ccfd5ad2c.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2385870932/image-20231103-122441.png?version=1&modificationDate=1699014282868&cacheVersion=1&api=v2)
 
 - [Python Libraries](#python-libraries)
 - [Java Libraries](#java-libraries)

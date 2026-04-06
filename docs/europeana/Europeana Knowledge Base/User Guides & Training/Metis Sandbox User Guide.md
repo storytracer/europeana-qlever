@@ -4,8 +4,6 @@ tags:
   - '#metis-sandbox'
 ---
 
-[User Guides & Training](../User%20Guides%20&%20Training.md)
-
 # Metis Sandbox User Guide
 
 *Metis Sandbox Version 11 - February 2026*
@@ -109,7 +107,7 @@ There are several different methods to interact with the sandbox. Below is a lis
 
 The page header contains two navigational elements on the left, both of which are visible at all times.
 
-![](../../attachments/4789a183-ca04-4e0d-96c0-6c9b67a537e7.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230216-082645.png?version=1&modificationDate=1676536009960&cacheVersion=1&api=v2)
 
 The ‘hamburger icon’ (the three horizontal lines) on the left opens the side panel with external links and the theme selection.
 
@@ -119,11 +117,11 @@ In the header you will also find the login or the logout button - exactly one of
 
 Clicking on the login button brings you to the login screen.
 
-![image-20250909-075332.png](../../attachments/9139f43f-d59a-47d1-ba0f-2770dae8e31a.png)
+![image-20250909-075332.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250909-075332.png?version=1&modificationDate=1757404453391&cacheVersion=1&api=v2)
 
 Clicking on the logout button ends your session immediately.
 
-![image-20250909-075556.png](../../attachments/32525b57-d9fe-49fe-8666-06ffe752e33d.png)
+![image-20250909-075556.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250909-075556.png?version=1&modificationDate=1757404597103&cacheVersion=1&api=v2)
 
 ---
 
@@ -131,7 +129,7 @@ Clicking on the logout button ends your session immediately.
 
 Buttons are used to upload a dataset.
 
-![](../../attachments/5a53d42d-eb7b-4b29-9fc4-24ed74249d8d.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-092703.png?version=1&modificationDate=1684229226175&cacheVersion=1&api=v2)
 
 ---
 
@@ -139,11 +137,11 @@ Buttons are used to upload a dataset.
 
 Input fields are the white boxes where information can or must be entered by you. The description with the input field states what information should or can be entered. Input fields that are required to have a value can be recognised by an asterisk\*.
 
-![](../../attachments/cb9c93ef-f872-44a6-b508-d9bde83b31e8.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231006-101334.png?version=1&modificationDate=1696587217646&cacheVersion=1&api=v2)
 
 Invalid or missing entries will result in an error message to be displayed below or next to the input field.
 
-![](../../attachments/6daeae9a-ba4d-4b3e-b690-35e3df2d2085.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-093200.png?version=1&modificationDate=1684229524246&cacheVersion=1&api=v2)
 
 ## 4.4 Page Indicators
 
@@ -151,7 +149,7 @@ Page indicators are shown at the top of the page. They behave as tab headers: cl
 
 The active page is shaded orange with a yellow border (in the image below, the “Upload Dataset” is the active page). This is also indicated by the page title to the left of the orbs.
 
-![](../../attachments/8f9c86a4-62fc-41bf-8ad7-4e168b888acd.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-093533.png?version=1&modificationDate=1684229737772&cacheVersion=1&api=v2)
 
 There are page indicators for the following pages (going clockwise from the orange item):
 
@@ -166,11 +164,11 @@ In addition, a page indicator can display a page’s state.  In the example bel
 - Data has loaded
 - The values in the id fields (supplied by you and always available) reflect the data being displayed, i.e. the form is “clean”
 
-![](../../attachments/e14b5e04-eac8-4398-b92b-789e64671975.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-094114.png?version=1&modificationDate=1684230078215&cacheVersion=1&api=v2)
 
 A cog indicates that the page is busy. An example of this is when a new dataset is still being processed.
 
-![](../../attachments/e1477805-c4d2-45cf-bd6f-e622e42cccbc.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-093940.png?version=1&modificationDate=1684229984984&cacheVersion=1&api=v2)
 
 Note that the page indicator (orb) for Problem Patterns can appear twice: once for viewing problem patterns of a dataset and once for viewing problem patterns and individual records.
 
@@ -184,38 +182,38 @@ For example:
 
 - The “**track a new dataset”** link takes you to the corresponding page.
 
-![](../../attachments/8d1e91a3-848b-4074-9bbf-c89f338548f5.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-094155.png?version=1&modificationDate=1684230119788&cacheVersion=1&api=v2)
 
 - The **view detail** links open up a popup that displays the details of an error.
 
-![](../../attachments/66140cf0-de71-4e6f-91fb-01954e39639c.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/tjI6zcHcOfE-Sbric5MUYVvn6bn2aI6hPkd4SqKJ5ojdCkzglUOcRVUW1_0az2IiwgqKHUVkJyE86W7cLDAOsNIe_0SiRIo_VnEUvkYNU-VP4alUDK0SLftIAX9D0CllfdJvyZjeliNQBh-4s2vguB7BGE3bur4bwvAAEuLtMdfdSVnOTYXCcWUbqt59?version=1&modificationDate=1670831078629&cacheVersion=1&api=v2)
 
 - Links with a **warning sign** open up a pop up with more information.
 
-![](../../attachments/c3444c78-57d8-4a13-8d18-53c829886191.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-094419.png?version=1&modificationDate=1684230263794&cacheVersion=1&api=v2)
 
 - Links with a **light bulb** take you to the page with more information.
 
-![](../../attachments/5ae4c073-5466-4cf4-aad7-515cdcb90bce.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-094532.png?version=1&modificationDate=1684230337013&cacheVersion=1&api=v2)
 
 - **Underlined links** switch from view of the tiers.
 
-![](../../attachments/398c05d7-7dee-431f-8e49-39ac7315613a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-094725.png?version=1&modificationDate=1684230449236&cacheVersion=1&api=v2)
 
 - External links have an icon.
 
-![](../../attachments/cab31d03-a0a2-4a79-8a0a-820d92efdd9f.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-095205.png?version=1&modificationDate=1684230729506&cacheVersion=1&api=v2)
 
 - Some links, when hovered, show a small “copy” button which if clicked will copy the link (the URL) to your clipboard:
 
-![](../../attachments/144fd764-d9f2-4ab7-9baf-ec334b8640dd.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-095333.png?version=1&modificationDate=1684230818020&cacheVersion=1&api=v2)
 
 - Links can be greyed when required information is missing. The image below shows that the Track and Issues links are greyed out because there is no information in the input field left of the links.
 
-  ![](../../attachments/f0d76e65-13cd-4b1d-a67b-1508212d4ab2.png)
+  ![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-095439.png?version=1&modificationDate=1684230883189&cacheVersion=1&api=v2)
 - Some links are greyed out and show a little padlock icon. These links are only available when the user is logged in.
 
-  ![image-20250909-080054.png](../../attachments/52fa23b7-1561-4353-9347-375ad7bf916e.png)
+  ![image-20250909-080054.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250909-080054.png?version=1&modificationDate=1757404895724&cacheVersion=1&api=v2)
 
 ---
 
@@ -223,7 +221,7 @@ For example:
 
 Drop-down menus allow you to make a selection of a list of predetermined values.
 
-![](../../attachments/4dde953b-68a6-44ed-88aa-08512ff0ef2d.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230516-120322.png?version=1&modificationDate=1684238606973&cacheVersion=1&api=v2)
 
 ---
 
@@ -233,7 +231,7 @@ Drop-down menus allow you to make a selection of a list of predetermined values.
 
 The default view, the screen you land on when navigating to the tool, is the Welcome screen.
 
-![image-20260211-082452.png](../../attachments/29415174-21f7-42e8-a566-3288621d1e07.png)
+![image-20260211-082452.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20260211-082452.png?version=1&modificationDate=1770798297279&cacheVersion=1&api=v2)
 
 You can click ‘GET STARTED’ to navigate to the Home screen (see section below).
 
@@ -249,11 +247,11 @@ These two page elements are present and functional at any time, in any Metis San
 
 Most useful is the ‘hamburger icon’:
 
-![](../../attachments/850b0b65-a5af-4bde-91fd-290ae8c52e8b.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230216-084422.png?version=1&modificationDate=1676537065332&cacheVersion=1&api=v2)
 
 This icon opens the side panel. This panel contains three external links, three internal links and a theme related option:
 
-![image-20250127-145615.png](../../attachments/8804706e-1939-4c92-a193-232d5761c9d2.png)
+![image-20250127-145615.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250127-145615.png?version=1&modificationDate=1737989777419&cacheVersion=1&api=v2)
 
 The available links are:
 
@@ -282,11 +280,11 @@ Certain functionality requires you to have a user account and be logged in. This
 
 Clicking on the login button activates the login process:
 
-![image-20250909-075332.png](../../attachments/9139f43f-d59a-47d1-ba0f-2770dae8e31a.png)
+![image-20250909-075332.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250909-075332.png?version=1&modificationDate=1757404453391&cacheVersion=1&api=v2)
 
 The login screen will show:
 
-![image-20250909-090258.png](../../attachments/9c2064aa-c6cc-4652-9fe4-f4bda8f06094.png)
+![image-20250909-090258.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250909-090258.png?version=1&modificationDate=1757408619429&cacheVersion=1&api=v2)
 
 If you click on the ‘Join’ button, you can create your user account. You will need to provide your full name and email address, as well as choose a username and a password.
 
@@ -296,7 +294,7 @@ Once you log in, you will be brought back to the Metis Sandbox, where additional
 
 Also, the login button will have been replaced by a logout button. Clicking it ends your session immediately.
 
-![image-20250909-075556.png](../../attachments/32525b57-d9fe-49fe-8666-06ffe752e33d.png)
+![image-20250909-075556.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250909-075556.png?version=1&modificationDate=1757404597103&cacheVersion=1&api=v2)
 > [!NOTE]
 > Note that the Europeana IAM System features Single Sign-on (SSO). This means that if you log out, you will log out of all Europeana applications, including the Europeana website.
 
@@ -304,7 +302,7 @@ Also, the login button will have been replaced by a logout button. Clicking it e
 
 This screen allows you to start accessing the Metis Sandbox functionality. Here you can track an existing dataset, request information about a record within that dataset or create a new dataset. It looks like this:
 
-![image (11)-20260211-100732.png](../../attachments/0aa0caf4-a7e2-4d7c-b224-9d20889a14a2.png)
+![image (11)-20260211-100732.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image%20(11)-20260211-100732.png?version=1&modificationDate=1770804470535&cacheVersion=1&api=v2)
 
 **A.** Page Indicator: indicates that "Dataset Processing" is the current step.  Once other steps become available then clicking this will return you to this step.  
 **B.** Dataset Id input: used to enter the id of a previously uploaded dataset.   
@@ -321,11 +319,11 @@ This screen allows you to start accessing the Metis Sandbox functionality. Here 
 
 When you type a dataset ID or a record ID, a green link will appear in the input field. If you click it, you will be taken to the dataset or record preview as it would look like on Europeana.
 
-![](../../attachments/45322f1e-8444-4e30-94f8-298144baee2d.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231103-171720.png?version=1&modificationDate=1699031842690&cacheVersion=1&api=v2)
 
-If you are logged in and if you have recently processed datasets, you will see their ids a suggestions popup above the Dataset Id Input field as you start typing. If you click on a suggestion, it will be copied into the Dataset Id Input. When the field is empty, you can also click on the little hamburger icon (![image-20260211-083600.png](../../attachments/5978f277-d8e8-45a4-b8d7-a8be307a81c3.png)) in the field to trigger the suggestions.
+If you are logged in and if you have recently processed datasets, you will see their ids a suggestions popup above the Dataset Id Input field as you start typing. If you click on a suggestion, it will be copied into the Dataset Id Input. When the field is empty, you can also click on the little hamburger icon (![image-20260211-083600.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20260211-083600.png?version=1&modificationDate=1770798965531&cacheVersion=1&api=v2)) in the field to trigger the suggestions.
 
-![image-20260211-083955.png](../../attachments/36016ba0-ef77-49a8-beb7-fe784f99bd6b.png)
+![image-20260211-083955.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20260211-083955.png?version=1&modificationDate=1770799201255&cacheVersion=1&api=v2)
 
 If you click on the '+' icon in this popup, you will see a clickable table with more details about each of the suggested datasets.
 
@@ -342,7 +340,7 @@ To create a new dataset click on the “create a new dataset” link at the bott
 
 The “Upload Dataset” view looks like this:.
 
-![](../../attachments/f8ad7bb2-012c-4365-89ad-d881bc20d0c8.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135012.png?version=1&modificationDate=1684331415863&cacheVersion=1&api=v2)
 
 **A.** Step Indicator: clicking this will take you to the “Dataset Processing” step.  
 **B.** The dataset name input field.  A dataset name is valid if it contains only letters, digits and the underscore character (‘\_’).  
@@ -373,7 +371,7 @@ There are three ways to upload your datasets to the sandbox:
 
 The “File upload” protocol is selected by default. This option allows you to upload an archive file with a dataset that is stored locally. The supported archive types are `.zip`, `.tar` and `.tar.gz` archives.
 
-![](../../attachments/ef644b39-c495-4a18-9a60-68d51ca2a66a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135116.png?version=1&modificationDate=1684331480736&cacheVersion=1&api=v2)
 > [!NOTE]
 > Note that, even though it is not currently possible to upload multiple archive files, you can still achieve the same result by wrapping all your archives in one new zip file. The application fully supports nested archives (i.e. zip files of zip files).
 
@@ -381,25 +379,25 @@ The “File upload” protocol is selected by default. This option allows you to
 
 To use the harvest protocol to OAI-PMH, you should enter values for the harvest URL, the metadata format, and optionally a setSpec value. For more details on these, please see the [OAI-PMH specification](https://www.openarchives.org/OAI/openarchivesprotocol.html).
 
-![](../../attachments/b195d783-4e0c-4054-a017-1321105d013e.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135209.png?version=1&modificationDate=1684331533829&cacheVersion=1&api=v2)
 
 ### 6.2.3 HTTP(S) upload
 
 You can also specify an archive that is accessible with a URL. Set the harvest protocol to “HTTP upload” to be able to enter a value for the URL.  The URL should be the (HTTP or HTTPS) download location of an archive (`.zip`, `.tar` or `.tar.gz` file) that contains the dataset records.
 
-![](../../attachments/523d8bcb-3ea3-44e6-a270-daecd92ef12a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135245.png?version=1&modificationDate=1684331569220&cacheVersion=1&api=v2)
 
 ## 6.3 XSL Transformation to EDM (Optional)
 
 It is possible to transform the records in the dataset to the EDM format, using XSLT before any further processing. Check the option “Records are not provided in the EDM (external) format”.  An additional file input will appear for an XSL file to be specified.
 
-![](../../attachments/fe1ba143-515f-4a5c-a43e-d5bee7213754.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135316.png?version=1&modificationDate=1684331600590&cacheVersion=1&api=v2)
 
 ## 6.4 The step size
 
 This field allows you to influence the sampling behaviour.
 
-![](../../attachments/e91ffcc5-a79d-47fb-a2a5-944c46d253a8.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135342.png?version=1&modificationDate=1684331626366&cacheVersion=1&api=v2)
 
 A step size of *n* tells the Metis Sandbox to select every *n*th record for processing. This value must be a strictly positive whole number (i.e. 1, 2, 3, …). The default value is 1.
 
@@ -429,7 +427,7 @@ A unique dataset id is generated for your upload and displayed at the top-right 
 
 Enter a dataset ID in the Home screen or at the bottom of most other screens and click the ‘Track’ link to track (monitor) the processing of an uploaded dataset, or to see the results after it finishes processing. The “Track” button for the dataset id field is disabled when the field value is empty. This button will enabled when you type in a valid dataset id.
 
-![](../../attachments/6c73668c-b727-4976-bc0e-5cb908c4fba0.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135427.png?version=1&modificationDate=1684331671126&cacheVersion=1&api=v2)
 
 When you click this button you will reach the “Dataset Processing” page for that dataset.
 
@@ -438,11 +436,11 @@ When you click this button you will reach the “Dataset Processing” page for 
 
 Invalid id’s will show a warning, and the submit buttons will be disabled again.
 
-![](../../attachments/6188adb5-8604-4fba-a9c0-c1b2fe01ed21.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135500.png?version=1&modificationDate=1684331704349&cacheVersion=1&api=v2)
 
 A record id can only be entered when a valid dataset id has been entered. The links next to the record field are greyed out when the field is empty or when an invalid value has been entered. The links will be enabled once you enter a valid record id.
 
-![](../../attachments/8d35c29b-596f-4ba3-8050-564eb586ac79.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230517-135546.png?version=1&modificationDate=1684331749835&cacheVersion=1&api=v2)
 
 See “record provider IDs and Europeana IDs” (below) for more information about record ids and record provider ids.
 
@@ -450,7 +448,7 @@ See “record provider IDs and Europeana IDs” (below) for more information abo
 
 A submitted dataset id will bring up the dataset processing view. It will also change the page’s URL to reflect the id of the dataset processing being displayed.  The dataset processing view looks like the picture below.
 
-![image-20250127-172726.png](../../attachments/3fd5b908-fbca-40cf-bb9c-e5fa63d71edb.png)
+![image-20250127-172726.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250127-172726.png?version=1&modificationDate=1737998849633&cacheVersion=1&api=v2)
 
 **A.** The dataset name.  The tick after the dataset name indicates that processing is complete. Clicking will expand the dataset info panel.  
 **B.** The country and language of the dataset selected when the dataset was uploaded.  
@@ -477,16 +475,16 @@ To track the data processing of a different dataset just replace the value in th
 
 Clicking the dataset name will expand the info panel and show additional data:
 
-![image-20250127-173413.png](../../attachments/a8098adf-6e96-4b5a-9c22-113d82353200.png)
+![image-20250127-173413.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250127-173413.png?version=1&modificationDate=1737999256230&cacheVersion=1&api=v2)
 
 **A.** The dataset name - clicking it again will now collapse the panel, hiding the extra info.  
 **B.** The country and language are now shown with titles.  
 **C.** Data about the upload is also now shown.  
 **D.** The (optional) field indicating that an XSL transformation was applied to convert the record to EDM. See the section “XSL Transformation to EDM” above.
 
-Certain datasets can be rerun. For this, a rerun button ![image-20260211-103842.png](../../attachments/11658087-710a-45cd-ab90-42af0d722e89.png) is available.
+Certain datasets can be rerun. For this, a rerun button ![image-20260211-103842.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20260211-103842.png?version=1&modificationDate=1770806327236&cacheVersion=1&api=v2) is available.
 
-![image (12)-20260211-103626.png](../../attachments/a1c21a9c-1035-49f6-978d-28fe3c0e5a23.png)
+![image (12)-20260211-103626.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image%20(12)-20260211-103626.png?version=1&modificationDate=1770806238731&cacheVersion=1&api=v2)
 
 The rerun button can be found next to the dataset ID (**A**) and in the dataset details panel (**B**).
 
@@ -495,11 +493,11 @@ The rerun button can be found next to the dataset ID (**A**) and in the dataset 
 
 By clicking on either of the rerun buttons you can trigger a rerun for this dataset. The Sandbox will attempt to harvest the data from the same source. This is a useful functionality if you have changed or updated the data at source. When you click the button, you will see a condensed upload form where this dataset’s settings are prefilled. Note that the Sandbox will make a suggestion for the name of the new dataset different from this dataset’s name.
 
-![image-20260211-094527.png](../../attachments/a6bffa6e-021b-449d-9211-ad72b16a787d.png)
+![image-20260211-094527.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20260211-094527.png?version=1&modificationDate=1770803132889&cacheVersion=1&api=v2)
 
-You can make any changes you like. Then you can start processing by clicking the ‘upload’ button ![image-20260211-094741.png](../../attachments/6c533657-0243-4a0b-a929-52f3b4b3f2e1.png). If you do, you will see a notification link that a new dataset was created:
+You can make any changes you like. Then you can start processing by clicking the ‘upload’ button ![image-20260211-094741.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20260211-094741.png?version=1&modificationDate=1770803266497&cacheVersion=1&api=v2). If you do, you will see a notification link that a new dataset was created:
 
-![image-20260211-095017.png](../../attachments/f4663d87-2001-4f6d-ba9a-ab92f86c08a6.png)
+![image-20260211-095017.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20260211-095017.png?version=1&modificationDate=1770803422249&cacheVersion=1&api=v2)
 
 Clicking on this notification link will bring you to the new dataset. Clicking on the 'X' will close the form and you stay in the current dataset.
 
@@ -531,7 +529,7 @@ The colours of each step indicate how successful this step was:
 
 Shown below is an example of a dataset that processed with many errors:
 
-![](../../attachments/488e55c3-4d8d-4436-95c2-9e8c1cbabd68.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-104456.png?version=1&modificationDate=1697453099511&cacheVersion=1&api=v2)
 
 **A.** A link to the errors window  
 **B.** The bold font of the number indicates that this is another link to the errors window  
@@ -541,7 +539,7 @@ Errors are flagged by red numbers in the panel, and if an error report is availa
 
 Clicking a link to the errors report will open a pop-up window, allowing you to see the error detail.
 
-![](../../attachments/df523be3-5f0a-4b05-a12e-9fd4774c8269.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-104624.png?version=1&modificationDate=1697453188055&cacheVersion=1&api=v2)
 
 ---
 
@@ -556,24 +554,24 @@ Click on **“view published records”** (item J in the image in 7.1)  to view
 
 It may, for example, appear like the image below.
 
-![](../../attachments/85bddcc2-9f16-4ae1-a544-9e3b874db921.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/swHHFmcn8ygVNrojQfEWgkNvkzaKV-CnWLfM7kpyE-AaheuDBMsamIDYlXFWKsorJtsgY-DYcHejwEfmNvqjOLasjgZKVIZgopQSpe1lcXA7zq3qxcsRk7EaFG3kBaEPRYH5zL8V?version=1&modificationDate=1650874794343&cacheVersion=1&api=v2)
 > [!WARNING]
 > **Tier 0 records hidden by default**   
 > It is possible that not all your items are shown in this view. Records with media Tier 0 are hidden by default. You can make these records visible by clicking on “More filters”, scroll down, click the button “Show only items not meeting our publishing criteria” and click to confirm this filter.
 
-![](../../attachments/478faca7-0643-4a24-88b6-ca408bcc887b.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20220425-084258.png?version=1&modificationDate=1650876180560&cacheVersion=1&api=v2)
 
 ## 7.6 Tier Statistics
 
 Once a dataset has been processed it’s possible to view its tier statistics to help assess the dataset’s quality. The dataset processing tab will look something like this once a dataset has been processed:
 
-![](../../attachments/9548ef82-1430-4f7d-991b-65790601a975.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-193125.png?version=1&modificationDate=1697484688400&cacheVersion=1&api=v2)
 
 **A.** The tier statistics tab opener
 
 When you click the tier statistics tab opener, you will see a tab that looks like this:
 
-![](../../attachments/7577c848-c2dc-4bc2-a6b3-f9a5b092e5e8.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-194719.png?version=1&modificationDate=1697485643128&cacheVersion=1&api=v2)
 
 **A.** The pie chart gives an overview of the statistics - shown by the content tier dimension (by default).
 
@@ -597,7 +595,7 @@ When you click the tier statistics tab opener, you will see a tab that looks lik
 
 Clicking a pie-slice (or its corresponding legend item) will filter the data down to that value. A click on the value "3" in the pie, for example, will restrict the grid to showing only records that have a content tier value of "3".
 
-![](../../attachments/3f35edbf-ca2b-4e7c-90d8-dd8ba72ad00f.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-181831.png?version=1&modificationDate=1697480314392&cacheVersion=1&api=v2)
 
 **A.** The active filter. Clicking the active pie-slice will remove the applied filter.
 
@@ -617,7 +615,7 @@ When dataset tier statistic data is filtered by content tier you can sort it by 
   
 Here we see data that was filtered by content tier (value 3) and sorted by metadata tier (aggregate value).
 
-![](../../attachments/5d469bee-6880-4f61-986d-416967f2babd.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-182129.png?version=1&modificationDate=1697480492287&cacheVersion=1&api=v2)
 
 **A.** Clicking this column-header will not change the dimension (it will remain “content tier”), but it will the sort (by metadata tier) within that dimension.
 
@@ -638,7 +636,7 @@ Every processed record has both a Provider id and a Europeana id.
 
 You can search for a record using either of these record ids, so the “Report” button will enable itself when any sequence of non-whitespace characters has been entered into the record id field.  If, however, the UI detects that you’ve entered an id that matches the format of a valid Europeana record id, then it will show a line connecting the record id with the dataset id, as shown here:
 
-![](../../attachments/73aa3c6c-e32a-4ce1-acd0-025a70806fae.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-105042.png?version=1&modificationDate=1697453445823&cacheVersion=1&api=v2)
 
 **A.** The record id begins with a slash followed by the dataset id, so the id fields are shown as connected.  
 **B.** You can now open the record report by clicking the button labelled “Tier Report”.
@@ -656,7 +654,7 @@ You can navigate between these sections by clicking the corresponding navigation
 
 In the illustration below the computed values are “3” (for the content tier) and “A” (for the metadata tier).
 
-![](../../attachments/7ae4bc05-0507-464e-a345-d7c485a0241b.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-121145.png?version=1&modificationDate=1684498309820&cacheVersion=1&api=v2)
 
 **A.** Page Indicator: the inactive "Dataset Processing" orb, indicates that this page is not active and, if clicked, will bring you to the dataset processing page.  
 **B.** The Record Report summary: top-level information about this record as well as record download and viewing links.  
@@ -672,11 +670,11 @@ In the illustration below the computed values are “3” (for the content tier)
 
 The media information appears under the content tier breakdown section. If there are 5 or fewer items, then a navigation orb corresponding to each item will appear.  The icon of each navigation orb illustrates the type of media item, as shown below.
 
-![](../../attachments/5d1308c1-8d30-4a5e-9013-edb521416afb.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-121319.png?version=1&modificationDate=1684498403004&cacheVersion=1&api=v2)
 
 If there are more than 5 media items available in the record report then the navigation orbs will be replaced with navigation arrows, an editable field and a spinner allowing you to browse the items or jump directly to a specific one, as shown below.
 
-![](../../attachments/a5721694-08e2-4c77-8f22-793412e1fcb5.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-121432.png?version=1&modificationDate=1684498475704&cacheVersion=1&api=v2)
 
 ---
 
@@ -692,15 +690,15 @@ These, like the main sections of the report, are navigable by clicking on the co
 
 **Active language dimension**
 
-![](../../attachments/d64fa3fc-f892-4723-8f75-8bbcebdc5824.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-121522.png?version=1&modificationDate=1684498525641&cacheVersion=1&api=v2)
 
 **Active enabling elements dimension**
 
-![](../../attachments/9d290599-1d82-4790-b7bc-31c6c7eb0fc4.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-121555.png?version=1&modificationDate=1684498558918&cacheVersion=1&api=v2)
 
 **Active contextual classes dimension**
 
-![](../../attachments/2d05fc30-124e-40c2-b031-033fdeed0668.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-121627.png?version=1&modificationDate=1684498591358&cacheVersion=1&api=v2)
 
 ---
 
@@ -708,7 +706,7 @@ These, like the main sections of the report, are navigable by clicking on the co
 
 You can view problem patterns for both a dataset and for a record.  The dataset id and record id fields each have a (secondary) link labelled “Issues”.
 
-![image (13)-20260211-163558.png](../../attachments/b4e90944-abca-4317-b3f0-c90d538a7810.png)
+![image (13)-20260211-163558.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image%20(13)-20260211-163558.png?version=1&modificationDate=1770827787521&cacheVersion=1&api=v2)
 
 Clicking “Issues (Overview)”, next to the dataset id input field **(A)**, will open a problem viewer page for the whole dataset. Clicking “Issues (Record)” **(B)** will open a problem viewer page for an individual record.
 
@@ -716,7 +714,7 @@ Clicking “Issues (Overview)”, next to the dataset id input field **(A)**, wi
 
 The problem pattern viewer for datasets shows all the problem types that occur within a given dataset.
 
-![](../../attachments/d945fd00-a322-4090-adcf-dd8ccfd33cde.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-130253.png?version=1&modificationDate=1684501378238&cacheVersion=1&api=v2)
 
 A key is shown (P1, P2, P3 etc.) together with a list of records in which that problem pattern was found. The little arrows at the top-right corner may be used to navigate between the different problem patterns.
 
@@ -743,19 +741,19 @@ The 8 problem patterns that are in use now are:
 
 Click on the title of a specific problem pattern to see a description.
 
-![](../../attachments/e6dd6d45-8318-482e-be93-d91726479c74.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-130546.png?version=1&modificationDate=1684501550476&cacheVersion=1&api=v2)
 
 ## 9.2 Record
 
 The problem pattern viewer for records shows all the types of problem patterns that occur within a single record.
 
-![](../../attachments/86fb95fe-21e6-40f8-88bc-bce1b5cde3ae.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-131340.png?version=1&modificationDate=1684502024051&cacheVersion=1&api=v2)
 
 Note that two of the page indicators in the image above show the same icon - one for each instance of the problem pattern viewer.
 
 If you click on the “</>” button to the right of the problem pattern viewer, a panel expands that provides access to download links for the record.
 
-![](../../attachments/2c74ff98-962c-45ad-a5da-91cb44b637ec.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-131425.png?version=1&modificationDate=1684502070326&cacheVersion=1&api=v2)
 
 ---
 
@@ -763,15 +761,15 @@ If you click on the “</>” button to the right of the problem pattern viewer,
 
 You will be warned if your dataset contains any records that have a “tier zero” rating, either for the content tier or the metadata tier in the track tab of the dataset processing page.
 
-![](../../attachments/ad30f1c1-4f4d-402a-be58-9383c166837a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-105805.png?version=1&modificationDate=1697453888608&cacheVersion=1&api=v2)
 
 One or two indicators will be shown on the right side of the screen whenever a “tier zero” record was detected. The first is for records with content tier zero (the orb with stars), the second for records with metadata tier zero (the orb with a gauge). Only one may appear, or both, as appropriate.
 
-![](../../attachments/adb5cff0-da22-4fcc-b7c3-e91cf7e09500.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-132039.png?version=1&modificationDate=1684502444715&cacheVersion=1&api=v2)
 
 Click the warning indicators to see the tier-zero warning panel. This panel will show links to at most 10 sample records that were detected as having content or media tier 0.
 
-![](../../attachments/5e3dff6c-45fe-47b7-9ded-4a1649302270.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20231016-110200.png?version=1&modificationDate=1697454123554&cacheVersion=1&api=v2)
 
 These links open the Record Report (see above) for the clicked record, opening the relevant subsection of the report according to whether the tier zero warning pertained to the content-tier or the metadata-tier. The small yellow triangular warning icons will be visible until the warnings have been reviewed. Only one warning is present in the image above, because the content tier zero records have already been viewed.
 
@@ -779,7 +777,7 @@ These links open the Record Report (see above) for the clicked record, opening t
 
 # 11 Detecting contentious terms - the DE-BIAS project
 
-![image-20250102-105552.png](../../attachments/c430a7ca-2879-4238-bc78-6f7ddf130101.png)
+![image-20250102-105552.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250102-105552.png?version=1&modificationDate=1735815355584&cacheVersion=1&api=v2)
 
 One of the results of the DE-BIAS project (2023 - 2024) is functionality to detect contentious or biased terms in your data. From the Sandbox, you may use this functionality to check your dataset for biased terms after your dataset has finished processing.
 
@@ -795,23 +793,23 @@ If the DE-BIAS detection is triggered, the values in certain fields of each succ
 
 Once a dataset has finished processing, you may choose to run DE-BIAS analysis. In order to do this, you can click the "run report" control next to the "DE-BIAS“ icon. You can find this icon in the top right corner of the data processing view (see the section “The Data Processing View” above).
 
-![image-20250217-151341.png](../../attachments/d15449d3-72aa-453b-8c02-6d74c43bdaab.png)
+![image-20250217-151341.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250217-151341.png?version=2&modificationDate=1739958634243&cacheVersion=1&api=v2)
 > [!NOTE]
 > Note: you need to be logged in for the ‘run report’ link to be enabled. See the section on user accounts above.
 
 When you click this control, the detection analysis will begin, and a running count of the detected contentious terms will appear next to the control as this process runs.
 
-![image-20250217-151203.png](../../attachments/5e1ebed8-4a01-4448-9cda-b18046dc5069.png)
+![image-20250217-151203.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250217-151203.png?version=2&modificationDate=1739958635078&cacheVersion=1&api=v2)
 
 Once it is complete, an eye icon will appear. If you click on the detection count or on the eye icon, you will open the DE-BIAS report.
 
-![image-20250217-151327.png](../../attachments/ad5d80ee-d6a0-4827-9d53-f20ff36c702b.png)
+![image-20250217-151327.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250217-151327.png?version=2&modificationDate=1739958635677&cacheVersion=1&api=v2)
 
 ## 11.2 The DE-BIAS report
 
 The DE-BIAS report opens in a modal window.
 
-![image-20250217-151950.png](../../attachments/5a44000b-13b6-4cfb-a5ce-82d1443c117c.png)
+![image-20250217-151950.png](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20250217-151950.png?version=2&modificationDate=1739958637733&cacheVersion=1&api=v2)
 
 **A.** If you click on this “info” button, you will see an information panel describing the DE-BIAS functionality.  
 **B.** If you click on this "download" button, the full report will download as a CSV file.  
@@ -826,6 +824,6 @@ The DE-BIAS report opens in a modal window.
 
 **Dataset not found**
 
-![](../../attachments/545a0662-8dca-48b0-a338-fc09d073f74a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-132917.png?version=1&modificationDate=1684502960800&cacheVersion=1&api=v2)
 
 Every two weeks the sandbox is emptied. It is highly possible that the dataset has been removed because of this.

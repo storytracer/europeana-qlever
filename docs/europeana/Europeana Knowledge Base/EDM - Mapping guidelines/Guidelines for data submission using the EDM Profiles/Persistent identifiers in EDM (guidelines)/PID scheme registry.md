@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../../../EDM%20-%20Mapping%20guidelines.md) > [Guidelines for data submission using the EDM Profiles](../../Guidelines%20for%20data%20submission%20using%20the%20EDM%20Profiles.md) > [Persistent identifiers in EDM (guidelines)](../Persistent%20identifiers%20in%20EDM%20(guidelines).md)
-
 # PID scheme registry
 
 Ensuring that identifiers provided using the property edm:pid are truly persistent is crucial. To support this, we created the PID scheme registry, which lists all PID schemes currently recognised as valid according to our [Policy for persistent identifiers in the data space](../../../Persistent%20identifiers/Policy%20for%20persistent%20identifiers%20in%20the%20data%20space.md):

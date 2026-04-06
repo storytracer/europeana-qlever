@@ -8,8 +8,6 @@ tags:
   - '#epf'
 ---
 
-[Publishing guide](../../../Publishing%20guide.md) > [Content & Metadata Tiers](../../Content%20&%20Metadata%20Tiers.md) > [Tier 1 requirements per edm:type](../Tier%201%20requirements%20per%20edm_type.md)
-
 # ContentTier 1: Video type
 
 The quality of streaming video depends on a number of factors, such as the quality of the source file, the type of encoding chosen for compression, the frame rate and bitrate of the file, and the transfer rates that the network supports. Video streaming relies on a number of standards whose support varies across different browsers. The quality criteria of a video file are therefore as much dependent on the efficiency of the file compression as on the setup of the end-user. In equal parts the robustness and connectedness of the video playout service come into play.

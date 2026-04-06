@@ -3,8 +3,6 @@ tags:
   - '#kb-how-to-article'
 ---
 
-[User Guides & Training](../User%20Guides%20&%20Training.md)
-
 # EDM Training
 
 Placeholder for EDM Training

@@ -4,8 +4,6 @@ tags:
   - '#apidocs'
 ---
 
-[Europeana APIs Documentation](../Europeana%20APIs%20Documentation.md)
-
 # API FAQ
 
 - [General public](#general-public)
@@ -137,7 +135,7 @@ Europeana APIs that allow for POST requests currently are:
 
 If you're a trusted partner from Europeana, you'll receive an API key that allows you to make POST, PUT and DELETE requests, along with one or more User Tokens allowing you to authenticate yourself as that user. If you want to create a new annotation, here's an example of what that POST request could look like:
 
-`POST  http://annotations.europeana.eu/annotation/ HTTP/1.1`
+`POST  http://annotations.europeana.eu/annotation/ HTTP/1.1`
 
 `Accept: application/ld+json`
 

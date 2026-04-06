@@ -1,6 +1,4 @@
 
-
-
 # Semantic enrichments
 
 During Europeana’s data ingestion process, the received metadata undergoes semantic enrichment — a process in which more data is added to records by linking (or exploiting existing links) to contextual resources such as places, concepts, agents, time periods and organisations.

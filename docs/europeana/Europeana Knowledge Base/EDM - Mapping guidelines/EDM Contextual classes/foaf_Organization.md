@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [EDM Contextual classes](../EDM%20Contextual%20classes.md)
-
 # foaf:Organization
 
 Europeana adds foaf:Organizationclass to provided EDM record during ingestion to expose information about organisations providing data, including both aggregators and CHIs. Information about organisations is first recorded in Europeana's customer relationship management tool, Zoho CRM, as outlined in the [guide for aggregators](https://europeana.atlassian.net/wiki/x/WQADn).

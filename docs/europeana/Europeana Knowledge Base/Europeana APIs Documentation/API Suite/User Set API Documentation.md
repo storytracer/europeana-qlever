@@ -1,6 +1,4 @@
 
-[Europeana APIs Documentation](../../Europeana%20APIs%20Documentation.md) > [API Suite](../API%20Suite.md)
-
 # User Set API Documentation
 
 The User Set API allows users to create and maintain their own collection of items (sets) that are available in Europeana. Besides creating sets, users can also search for sets that were created by other users and are available for public viewing. This API supports the gallery functionality that is available in the Europeana website for logged-in users but also, favorite items and curated items for “entity” collections.

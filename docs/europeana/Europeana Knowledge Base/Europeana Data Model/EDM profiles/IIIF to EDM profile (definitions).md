@@ -6,8 +6,6 @@ tags:
   - '#iiiif-classes'
 ---
 
-[Europeana Data Model](../../Europeana%20Data%20Model.md) > [EDM profiles](../EDM%20profiles.md)
-
 # IIIF to EDM profile (definitions)
 
 This page defines the classes and associated properties that are part of the IIIF to EDM profile. In EDM, IIIF resources representing a cultural object are modelled as instances of the edm:WebResource class, like many other digital representations.
@@ -30,7 +28,7 @@ This page defines the classes and associated properties that are part of the III
 
 Below is an overview of classes and properties for the IIIF to EDM profile:
 
-![](../../../attachments/4399c172-09bd-4b07-b1b4-4661bdaa5c1b.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2189262924/IIIF.jpg?version=1&modificationDate=1643275965967&cacheVersion=1&api=v2)
 
 # **Classes**
 

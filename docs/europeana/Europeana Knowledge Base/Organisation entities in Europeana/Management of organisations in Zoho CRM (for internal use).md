@@ -1,6 +1,4 @@
 
-[Organisation entities in Europeana](../Organisation%20entities%20in%20Europeana.md)
-
 # Management of organisations in Zoho CRM (for internal use)
 
 DPS team is managing information about organisations that publish data with Europeana in Institutions and Aggregators module in [Zoho CRM](https://crm.zoho.eu). This guide covers three main types of operations: creating records for new organisations (individually or in bulk), updating existing records, and handling duplicate entries.
@@ -46,7 +44,7 @@ Before processing data, including new dataset submissions or updates with added 
 <details>
 <summary>Select “Create Institution”</summary>
 
-![Institution_module.png](../../attachments/04d0a581-78cd-48d5-938c-74bd3b8cf997.png)
+![Institution_module.png](https://europeana.atlassian.net/wiki/download/attachments/2225471493/Institution_module.png?version=1&modificationDate=1704466097954&cacheVersion=1&api=v2)
 
 </details>
 
@@ -135,15 +133,15 @@ Convert the spreadsheet to a .csv file. Go to “Create Institution” drop-down
 <details>
 <summary>Import institutions</summary>
 
-![](../../attachments/b58b3b74-e7fb-4f73-959b-a9e3f272e3c9.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXeqmqHCX42ru2tdp5bmrN1Wopqy00oDesCneYSUQfm9-804bXT5p8VaE6Q8xC4NiebaiWFTFL1EyZnf24kZD11245roaiXSslJ20prCGqzVOKu2mruucdfSO8itX2XzA9venfYe49CWgNwO1RsS6oL_Cz8c%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=1&modificationDate=1732902180757&cacheVersion=1&api=v2)
 
 Then select “From File” option:
 
-![](../../attachments/d11297cc-ca31-493f-88d6-d8e8ad308f3d.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXcxhUrB-arGkyeKiBqh1VnnmsMTbVLTNyMIW70ArPoP7oW422IIlXomnZPDJDzbsfWrY66WgWt6xWcPhe4dhyet-CfTCAImk5AUPYDtFdjufYITIlQfvaAH5_-VXUEwZwUX2asKMbpIesyRDeqS2ycXQ_Ce%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=1&modificationDate=1732902285335&cacheVersion=1&api=v2)
 
 Upload .csv file and click Next:
 
-![](../../attachments/d71af37f-a0ff-4033-b458-57584fbe4dc6.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXcpGpcuZCknGSQWVeO--hDRDk0Cq6AWNjNv_-WM9myEdkwgzP-kEDCDM6ONs5stUL7keRVtPn5dWOMb1wr13Fl0ia57kTSKm23qKS78aOV2GK0SWVW-SN2xqI0iPm4o76rzFal4dH7KY56mLNrmUxrrXzYa%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=1&modificationDate=1732902336462&cacheVersion=1&api=v2)
 
 </details>
 
@@ -158,7 +156,7 @@ From the drop-down menu for “Skip existing institutions based on” select “
 <details>
 <summary>Select "Institution name" in the drop-down menu</summary>
 
-![](../../attachments/236e6207-668a-4f36-9e4b-31afcc5fdb11.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXdp4N-WZIlv10x2shT8eysOiVtTGCIfMmW2NlJYQmcdc8sgQF_pv6l65KcJbS0rAVlSgz0MATbmSFjdLrg0aQaKWz6utQd8rR_WEvf00Q964AeHIKF_0CIux771q1TckrfI4QakAmyKVnN7XzcHtngL6D-y%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=2&modificationDate=1732902529471&cacheVersion=1&api=v2)
 
 </details>
 
@@ -169,7 +167,7 @@ Choose “Institution  Id” from the drop-down menu under “Find existing ins
 <details>
 <summary>Choose "Institution ID" from the drop-down menu</summary>
 
-![](../../attachments/19c2f77c-39de-47d2-9204-55c34e907aca.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXcXXP5rvFf7betr3W8J-0ImTbW-VYMWHO5TYYoaEh8zlfRZI-1-IHs9uljxA9fALvqaYddOaQL0-I1Gx6VlNNopYokORxGeSBLM2VnbdUgCMLmh0uNA4Jw9Ut-tKSox3FQuQNL3pKz1B_xhInLx3-KQ5LdL%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=2&modificationDate=1732903357952&cacheVersion=1&api=v2)
 
 </details>
 
@@ -182,11 +180,11 @@ Map the columns from the spreadsheet to the corresponding Zoho fields. If column
 <details>
 <summary>Mapping tool in Zoho</summary>
 
-![](../../attachments/64769d77-83e5-4729-ae15-1fe951c2ba74.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXetTXulzDOr5SbUBABWAJ9GFGtzMuDuiZCEZqZrUqGT9LRM9L9S0clHNkV7oUnPjEEjtVFC7GPlvb2pFMkHcfsPgNB1x47T-lgPV2Q3smBO5B9TgmXj2ck_j7gv6H8WKCR0vyLsbxsJfXAixjZ-v4xX1mVa%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=1&modificationDate=1732902840394&cacheVersion=1&api=v2)
 
 Tick “Assign owner based on assignment rules” and select “DPS Ownership assignment” which was pre-set and will set Institution owner of all newly created Zoho records as DPS Team. Also tick “Trigger configured automations and processes for new and updated records” which will apply pre-set rules for checking duplicates and mandatory fields.
 
-![](../../attachments/5602f73d-5e6e-4922-88b0-56df42a1f806.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXeXoqpOP6aQYtscTa8Yep3TwVPu86UxK1ROd8XiQwLY3syLuiGhje88dwaL1-30EyR8ByyAeAaPVnf36bAlUTSy5C_PthZEXJXf3mS1huRaZ4CXPKn8mzqnSwikrgDeOeX1_knSBhc-1dqn7tsaZsL2flU%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=1&modificationDate=1732902903646&cacheVersion=1&api=v2)
 
 </details>
 
@@ -195,7 +193,7 @@ It will take a few minutes before the import is finished. When it is finished, y
 <details>
 <summary>Import status report pop-up message</summary>
 
-![](../../attachments/a18b9489-bdf5-48ce-8390-5a6eb29d39ed.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXcZB8wLerjoGs4dh_xwOHFmLgcuOVWY6_WaZ2nlE-ZAzldKFPvIro8nqa4I75aVttVPkNCLK9aeOuPdS7Cz5CAad79ODry8tmFd1MZi6X1NuBesu0dbNrA7aOn2C-JBceuCBcoX5AaK3hGgTU6DivN5exr3%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=1&modificationDate=1732903449175&cacheVersion=1&api=v2)
 
 </details>
 
@@ -206,7 +204,7 @@ Access the report by clicking on the link in the pop-up message. Have a good loo
 
 In this case, Zoho correctly recognised that spreadsheet contained two organisations for which we already have records in Zoho and it did not create duplicates. It only imported the two remaining organisations. To see more information about Skipped records, download the list of records with errors, which will provide more information about errors. In my case, the error is “*Duplicate records exist in system. - Institution Name (ideally in English, or in original language if no English translation is available).*”
 
-![](../../attachments/bbe0db19-9c00-477e-a039-5d3f2932891f.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXcyR8dFNP5kc3CTJcF65D-lekCZ-KCHy0KyU_Ff9t-7MXZqM58J0rD0EkBG8EIw0qA0EL7tMh40oaJJWHr6o01p1_ZkvLMTtrWGNV_4OJ9eOLVTx9v580aitRe2I9ndl58Xa32h3GQBgus53-TlhxVYLCFd%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=2&modificationDate=1732903695420&cacheVersion=1&api=v2)
 
 </details>
 
@@ -215,7 +213,7 @@ Once the import is finished, Zoho will send report to [content@europeana.eu](mai
 <details>
 <summary>Undo import</summary>
 
-![](../../attachments/291308d8-1fc4-4458-889c-262920557bf8.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2225471493/AD_4nXegzaNGkX7flvM7mpLgvrSgEfn60qlkVjGKGTRJ8yMZDUbfZk2oQWMzCKOw68Ez17BfUXyvsquqIA7ErJpq4AD75lAhsp1NfwabOQ2jAnz0LcQ43N1myVBOkcRCKWE98DNQ0yGqOLcX6CxxpKU-yq-1Pnw%3Fkey=gJNdtSOikOaSaZYNJSU-OA?version=1&modificationDate=1732903775582&cacheVersion=1&api=v2)
 
 </details>
 
@@ -260,7 +258,7 @@ When only one of the Zoho duplicates has items associated with it, use ***Find &
 <details>
 <summary>Screen capture of this step</summary>
 
-![FindingDuplicates.png](../../attachments/eb3bcaa0-f0e6-4501-a84e-a41054f21f79.png)
+![FindingDuplicates.png](https://europeana.atlassian.net/wiki/download/attachments/2225471493/FindingDuplicates.png?version=1&modificationDate=1704469803368&cacheVersion=1&api=v2)
 
 </details>
 
@@ -271,7 +269,7 @@ Specify the matching criteria for finding all duplicates in the *Search Criteria
 <details>
 <summary>Screen capture of this step</summary>
 
-![SearchCriteria.png](../../attachments/8b5c340e-3e35-4e1f-a94d-a84497935f43.png)
+![SearchCriteria.png](https://europeana.atlassian.net/wiki/download/attachments/2225471493/SearchCriteria.png?version=1&modificationDate=1704470300830&cacheVersion=1&api=v2)
 
 </details>
 
@@ -280,7 +278,7 @@ Once the list of duplicate records has been displayed, select the records from t
 <details>
 <summary>Screen capture of this step</summary>
 
-![clickNext.png](../../attachments/af418895-c717-49e7-af83-ea64fd6f7739.png)
+![clickNext.png](https://europeana.atlassian.net/wiki/download/attachments/2225471493/clickNext.png?version=1&modificationDate=1704470497061&cacheVersion=1&api=v2)
 
 </details>
 
@@ -291,7 +289,7 @@ On the Deduplicate Institutions page select the record that you wish to keep as 
 <details>
 <summary>Screen capture of this step</summary>
 
-![DeduplicateInstitutions.png](../../attachments/9413c2b5-4c51-47ca-97fa-ea026a4ad094.png)
+![DeduplicateInstitutions.png](https://europeana.atlassian.net/wiki/download/attachments/2225471493/DeduplicateInstitutions.png?version=1&modificationDate=1704471645550&cacheVersion=1&api=v2)
 
 </details>
 
@@ -306,7 +304,7 @@ On the record page of the other (deprecated) organisation tick Scheduled for del
 <details>
 <summary>Screen capture of this step</summary>
 
-![Screenshot 2024-10-02 at 13.11.39.png](../../attachments/e51ffa66-fdc7-4de3-bcc5-794e13ef067c.png)
+![Screenshot 2024-10-02 at 13.11.39.png](https://europeana.atlassian.net/wiki/download/attachments/2225471493/Screenshot%202024-10-02%20at%2013.11.39.png?version=1&modificationDate=1727871145057&cacheVersion=1&api=v2)
 
 </details>
 
@@ -320,7 +318,7 @@ To make sure deprecated organisation redirects to the Master record, add the Org
 <details>
 <summary>Screen capture of this step</summary>
 
-![Screenshot 2024-10-02 at 13.07.35.png](../../attachments/4221f486-ca59-4513-98f1-8b016f1ab673.png)
+![Screenshot 2024-10-02 at 13.07.35.png](https://europeana.atlassian.net/wiki/download/attachments/2225471493/Screenshot%202024-10-02%20at%2013.07.35.png?version=1&modificationDate=1727870937278&cacheVersion=1&api=v2)
 
 </details>
 

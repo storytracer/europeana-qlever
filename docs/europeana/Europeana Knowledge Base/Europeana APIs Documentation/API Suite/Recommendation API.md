@@ -1,6 +1,4 @@
 
-[Europeana APIs Documentation](../../Europeana%20APIs%20Documentation.md) > [API Suite](../API%20Suite.md)
-
 # Recommendation API
 
 The Recommendation API offers users recommendations for items available in Europeana based on other items, entities or galleries (ie. user sets). It uses a technology from machine learning (a subfield in artificial inteligence), more specifically vector embeddings, to compute similarity between information resources based on a selective number of parameters/dimensions.

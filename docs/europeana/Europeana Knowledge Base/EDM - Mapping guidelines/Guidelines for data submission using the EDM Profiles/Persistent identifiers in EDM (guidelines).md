@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../../EDM%20-%20Mapping%20guidelines.md) > [Guidelines for data submission using the EDM Profiles](../Guidelines%20for%20data%20submission%20using%20the%20EDM%20Profiles.md)
-
 # Persistent identifiers in EDM (guidelines)
 
 We encourage data partners to include [Glossary of terms](../../Persistent%20identifiers/Glossary%20of%20terms.md) for their resources in the metadata. This strengthens the role of existing identifiers in the data space and ensures your resources remain reliably referenced. By adopting PIDs at source and sharing them through data exchange activities, you help maintain the stability of these services and make your resources easier to find, cite and reuse. For example, many Europeana services (such as, User Galleries, Liked items, partnerships like Transcribathon and Crowdsourcing platforms) currently rely on stable object references in order to work properly.

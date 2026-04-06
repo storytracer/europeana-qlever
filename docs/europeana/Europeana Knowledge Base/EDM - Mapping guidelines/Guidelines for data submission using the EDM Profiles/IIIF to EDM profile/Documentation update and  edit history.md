@@ -1,6 +1,4 @@
 
-[EDM - Mapping guidelines](../../../EDM%20-%20Mapping%20guidelines.md) > [Guidelines for data submission using the EDM Profiles](../../Guidelines%20for%20data%20submission%20using%20the%20EDM%20Profiles.md) > [IIIF to EDM profile](../IIIF%20to%20EDM%20profile.md)
-
 # Documentation update and edit history
 
 2025-01-22 V 1.5. - Updated the link to the EDM technical metadata profile; amended the order of the steps to follow the original document; updated the latest version of IIIF image API (from 2.1 to 3.0)

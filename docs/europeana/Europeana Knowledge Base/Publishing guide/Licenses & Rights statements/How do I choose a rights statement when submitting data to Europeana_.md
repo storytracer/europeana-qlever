@@ -3,8 +3,6 @@ tags:
   - '#copyright'
 ---
 
-[Publishing guide](../../Publishing%20guide.md) > [Licenses & Rights statements](../Licenses%20&%20Rights%20statements.md)
-
 # How do I choose a rights statement when submitting data to Europeana?
 
 > [!WARNING]

@@ -1,6 +1,4 @@
 
-[User Guides & Training](../User%20Guides%20&%20Training.md)
-
 # Guidelines for training development and delivery - Short version
 
 <details>

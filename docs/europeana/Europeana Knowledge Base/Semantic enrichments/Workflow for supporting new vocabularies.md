@@ -1,6 +1,4 @@
 
-[Semantic enrichments](../Semantic%20enrichments.md)
-
 # Workflow for supporting new vocabularies
 
 Controlled vocabularies are powerful tools to consistently describe and categorise  things primarily to enhance access to cultural heritage collections by standardising the representation of concepts. To make use of their benefits,  Europeana supports vocabularies used by data providers that meet criteria defined by the Europeana Tech Task Force. When providers include URIs of supported vocabularies in their data, Europeana retrieves their information directly from the source through mappings between the vocabulary’s data model and the contextual classes of the Europeana Data Model (EDM). This process, known as dereferencing, enriches the records with contextual information obtained from the vocabularies.

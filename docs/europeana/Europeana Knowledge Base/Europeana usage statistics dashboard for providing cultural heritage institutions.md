@@ -1,6 +1,4 @@
 
-
-
 # Europeana usage statistics dashboard for providing cultural heritage institutions
 
 Thank you for your interest in our usage statistics dashboard!
@@ -36,7 +34,7 @@ Your dashboard consists of two *databoards* which you can click between (also kn
 
 ## **Your institution's databoard**
 
-![](../attachments/5776b286-24f6-4877-bfec-609f294ee6f2.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_13_for_2387836941.jpeg?version=1&modificationDate=1699447135122&cacheVersion=1&api=v2)
 
 This board shows the institution's name at the top with the Europeana logo to its left. It is important to bear in mind that if your institution has published data on Europeana.eu under different names in the past, the board may not show the usage statistics for all the name variations.
 
@@ -56,13 +54,13 @@ These are all visitors that we were able to track as visiting your institution's
 
 It is good to compare the numbers on your board with the overall number for the entire Europeana website. If Europeana.eu receives 500,000 visits a month for than 50 million item pages and editorial, and if your institution accounts for e.g. 10,000 item pages on Europeana, excluding editorial, then 100 visits per month would indicate that your content performs well compared to the Europeana average.
 
-![](../attachments/c505f23f-94bd-4849-8849-c7f1857a6358.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_14_for_2387836941.jpeg?version=1&modificationDate=1699447135051&cacheVersion=1&api=v2)
 
 ### ***Average Time***
 
 This widget shows the average time which visitors (the same ones recorded in no. of visits) have spent looking at your institution's content in the period selected. You can compare with the overall Europeana.eu figure in the next databoard, but please bear in mind that the overall Europeana data includes other content from the site, not just item pages, but also blogs and other editorial content. Editorial content will have longer average visiting times due to the time it takes to read through the page.
 
-![](../attachments/c6fe8695-68cf-4df5-9432-ed7dc2531afa.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_15_for_2387836941.jpeg?version=1&modificationDate=1699447135356&cacheVersion=1&api=v2)
 
 ### ***Bounce Rate***
 
@@ -70,13 +68,13 @@ This widget shows the percentage of people who leave Europeana after viewing one
 
 It is not always negative if people leave quickly after finding your page. It could be that they quickly found exactly what they were looking for!
 
-![](../attachments/d8a357d7-59e0-4bd8-9a32-37fcfa921ed4.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_16_for_2387836941.jpeg?version=1&modificationDate=1699447135212&cacheVersion=1&api=v2)
 
 ### ***Page Views***
 
 This widget shows how many times your institution's pages are viewed per day. The large number is the total pageviews and refers to the number of page views for all your institution's item pages within the period specified next to the title Pageviews. This is different from visits, which are lower as one person can view several pages within the course of one visit.
 
-![](../attachments/9cb0f71c-3287-4fae-be81-39e849570a62.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_17_for_2387836941.jpeg?version=1&modificationDate=1699447135210&cacheVersion=1&api=v2)
 
 ## **The Europeana Board**
 
@@ -90,7 +88,7 @@ If you want to change the date for the whole board you can do so using the grey 
 
 The small dots in the centre at the bottom of the board can be used to move back and forth between your institution's board and the overall Europeana board.
 
-![](../attachments/e4d29b04-1294-469d-981b-68bd8b48185b.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_18_for_2387836941.jpeg?version=1&modificationDate=1699447135128&cacheVersion=1&api=v2)
 
 ### ***Total number of visito*****rs**
 
@@ -98,43 +96,43 @@ This widget shows the number of visitors to content made available through Europ
 
 As with the institution's pages, sometimes this can be the same person coming back later on in a day or a month which means these are not true ‘unique visitors’ either but the overall number.
 
-![](../attachments/f3ccd351-5b83-4c52-84b1-29b7518f7eb2.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_19_for_2387836941.jpeg?version=1&modificationDate=1699447135194&cacheVersion=1&api=v2)
 
 ### ***Page Views***
 
 This is the number of Europeana.eu pages which are viewed, measured per day. The large number is the total page views and refers to the number of page views within the period specified next to the title Pageviews. This is different from the total number of visitors which are lower as one person can view several pages within the course of one visit.
 
-![](../attachments/e609943a-7f4b-417d-8e5b-7c9ee53350ea.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_20_for_2387836941.jpeg?version=1&modificationDate=1699447135246&cacheVersion=1&api=v2)
 
 ### ***Average time on site***
 
 This widget shows the average time which the visitors (the same ones recorded in no. of visits) have spent looking at Europeana.eu in the period selected. This includes all editorial content which requires a longer time to read through, in addition to the item pages.
 
-![](../attachments/5659ce92-dac4-45ae-ad3f-f9493d59026b.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_21_for_2387836941.jpeg?version=1&modificationDate=1699447135263&cacheVersion=1&api=v2)
 
 ### ***Bounce Rate***
 
 This widget shows the percentage of people who leave Europeana after viewing one page. This means that they found a page immediately and then did not take another action on the page such as downloading something or moving to another page on the site. It is expressed as a percentage of all the visitors to Europeana.eu in the period selected.
 
-![](../attachments/e99fc679-a8f8-4143-9808-303feddce6cf.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_22_for_2387836941.jpeg?version=1&modificationDate=1699447135234&cacheVersion=1&api=v2)
 
 ### ***Downloads***
 
 This is the number of times a download button was clicked in the specified period.
 
-![](../attachments/c6bd9062-a22b-4bf0-af5f-0845bba5fbd5.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_23_for_2387836941.jpeg?version=1&modificationDate=1699447135258&cacheVersion=1&api=v2)
 
 ### ***Click-through to provider website***
 
 This is the number of times that a visitor has clicked the link to any providing institutions’ websites in the specified period.
 
-![](../attachments/282283d1-faf5-4aa8-ab52-50ec9941832e.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_24_for_2387836941.jpeg?version=1&modificationDate=1699447135270&cacheVersion=1&api=v2)
 
 ### ***Visits by country***
 
 This metric refers to the number of visitors coming from the countries specified, within the selected period.
 
-![](../attachments/6ac2a38f-300c-4641-bccd-4bfe7c79986a.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_25_for_2387836941.jpeg?version=1&modificationDate=1699447135111&cacheVersion=1&api=v2)
 
 ### ***Visits by channel***
 
@@ -150,7 +148,7 @@ Websites refer to the visitors who come to Europeana.eu via another website. Thi
 
 Campaigns refer to visitors who come to Europeana.eu via special targeted links which can be used to track the performance of some specific promotional activities.
 
-![](../attachments/f74eff8a-7b35-46fe-89e0-462187044001.jpg)
+![](https://europeana.atlassian.net/wiki/download/attachments/2387836941/att_26_for_2387836941.jpeg?version=1&modificationDate=1699447135095&cacheVersion=1&api=v2)
 
 ## **Where does the data come from?**
 

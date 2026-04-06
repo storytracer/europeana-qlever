@@ -1,6 +1,4 @@
 
-[Publishing guide](../Publishing%20guide.md)
-
 # Digital objects vs Non digital objects
 
 **Digital objects and media resources in Europeana**

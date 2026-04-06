@@ -8,8 +8,6 @@ tags:
   - '#quality'
 ---
 
-[Publishing guide](../../Publishing%20guide.md) > [Content & Metadata Tiers](../Content%20&%20Metadata%20Tiers.md)
-
 # Tier A-C requirements
 
 Good quality metadata allows you to make your collections more discoverable and reusable in the Europeana website and beyond. It also allows Europeana to market your material to a greater extent, include it in our thematic collections and exhibitions, incorporate it into projects and applications, and facilitate its use in research and education.
@@ -51,7 +49,7 @@ For the contextual classes, we recommend the use of references (links) to multil
 
 *Note that if (links to) contextual classes are not provided in the source metadata, some may still be generated as a result of Europeana’s own semantic enrichment.*
 
-*Enrichment, in Europeana context, refers to the  process of adding additional information based on the terms (string values) used in certain metadata fields. The enrichment process matches those values with the same values found in LOD vocabularies.*
+*Enrichment, in Europeana context, refers to the  process of adding additional information based on the terms (string values) used in certain metadata fields. The enrichment process matches those values with the same values found in LOD vocabularies.*
 
 *These Europeana references to contextual metadata do not count for the tier classification, however.*
 

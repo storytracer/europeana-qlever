@@ -4,8 +4,6 @@ tags:
   - '#training'
 ---
 
-[User Guides & Training](../User%20Guides%20&%20Training.md)
-
 # Metis Sandbox Training
 
 - [1 What is the Europeana Metis Sandbox?](#key-1-what-is-the-europeana-metis-sandbox)
@@ -92,7 +90,7 @@ There are several exercises in this training. You are asked to complete these ex
 
 There are 3 files that you need for exercises 2.1 and 2.3. The filenames describe for which exercises they are.
 
-![](../../attachments/c6696c20-46f4-48ce-9035-d7f5b38cd20b.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/image-20220520-061131.png?version=1&modificationDate=1653027093508&cacheVersion=1&api=v2)
 
 1. 🖱 Click on [this link](https://drive.google.com/file/d/1vyeUXsQ3H6-9U85cBLuJwS4_Elo6XWVz/view?usp=sharing) to go to the files for exercise 2.1.
 2. 🖱 Click on the download button in the top right corner to download the files as a zip file.
@@ -143,7 +141,7 @@ OAI-PMH harvesting is currently excluded from this training, please contact [Hen
 
 ### 2.1.1 Create a new dataset
 
-![](../../attachments/f73aa0f2-43de-4965-945b-84f1a4657af9.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2011-12-45.png?version=4&modificationDate=1665652720512&cacheVersion=1&api=v2)
 
 1. Go to the Metis Sandbox by going to <https://metis-sandbox.europeana.eu/> .
 2. Create a new dataset by clicking on the “**create new dataset**” link.
@@ -152,7 +150,7 @@ OAI-PMH harvesting is currently excluded from this training, please contact [Hen
 
 ### 2.1.2 Specify and upload the dataset
 
-![](../../attachments/e42b453c-9f38-4e0a-ac1b-1205bc2249ba.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2011-20-17.png?version=1&modificationDate=1665652833567&cacheVersion=1&api=v2)
 
 1. ✏ Enter a name for the dataset. The name of a dataset is important to be able to identify the dataset later, by you and others. Choose something that is descriptive for this exercise, components to consider are:
 
@@ -169,7 +167,7 @@ OAI-PMH harvesting is currently excluded from this training, please contact [Hen
 
 ### 2.1.3 Processing the dataset
 
-![](../../attachments/c0fb449c-185d-44a4-8ad7-67bae24d73e7.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2011-55-16.png?version=2&modificationDate=1665654977927&cacheVersion=1&api=v2)
 
 The processing of the dataset will start. Processing has completed when you see a checkmark appear below the upload icon.
 
@@ -184,7 +182,7 @@ You will already see the Dataset ID of the dataset you just uploaded in two loca
 
 ### 2.1.4 Review the dataset (basic review)
 
-![](../../attachments/503c8a55-7596-4231-9e82-b086a8b04dca.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-05-35.png?version=1&modificationDate=1665655550805&cacheVersion=1&api=v2)
 
 Review any results that are already shown while the dataset is being processed. You will be asked to review the results of the entire processed dataset in exercise 3.1. Look for the processing steps that have
 
@@ -223,7 +221,7 @@ This scenario is for testing purposes of your data, but is not used for ingestio
 
 ### 2.2.2 Specify and upload the dataset
 
-![](../../attachments/a9b9335d-0e28-4685-8604-054b8cc22beb.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-11-52.png?version=1&modificationDate=1665655939648&cacheVersion=1&api=v2)
 
 1. Enter a name for the dataset. Spaces are not allowed in names of datasets.
 2. Select a random Country and random Language from the drop down menus.
@@ -236,7 +234,7 @@ This scenario is for testing purposes of your data, but is not used for ingestio
 
 ### 2.2.3 Processing the dataset
 
-![](../../attachments/22669769-6cef-4981-8744-2140c9e60992.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2011-39-46.png?version=2&modificationDate=1665656110026&cacheVersion=1&api=v2)
 
 The processing of the dataset will start. Processing has completed when you see a checkmark appear below the upload icon.
 
@@ -272,7 +270,7 @@ Review any results that are already shown while the dataset is being processed. 
 
 ### 2.3.2 Specify and upload the dataset
 
-![](../../attachments/5a35b6bf-eb7c-4683-ac75-1fcf391d0068.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-18-09.png?version=1&modificationDate=1665656308854&cacheVersion=1&api=v2)
 
 1. ✏ Enter a name for the dataset. See 2.1.2 for more detail if needed.
 2. 🔽 Select a random Country and random Language from the drop down menus.
@@ -286,7 +284,7 @@ Review any results that are already shown while the dataset is being processed. 
 
 ### 2.3.3 Processing the dataset
 
-![](../../attachments/35b34532-9b40-428b-bbbb-891432e3be17.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-18%2010-38-49.png?version=1&modificationDate=1666082358045&cacheVersion=1&api=v2)
 
 The processing of the dataset will start. Processing has completed when you see a checkmark appear below the upload icon.
 
@@ -327,7 +325,7 @@ You will practice this in the following exercises.
 
 ### 3.1.1 Enter the dataset ID
 
-![](../../attachments/d3f3136e-30cd-4c60-95fe-c16f5b4f3ea2.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-28-34.png?version=1&modificationDate=1665656931801&cacheVersion=1&api=v2)
 
 1. Open the <https://metis-sandbox.europeana.eu/> in a new window.
 2. Enter the ID of the dataset of exercise 2.1.3  in the text box on the homepage.
@@ -339,11 +337,11 @@ You will practice this in the following exercises.
 
 ### 3.1.2 Preview the dataset on Europeana
 
-![](../../attachments/0f6de7de-7e16-4031-b13e-58c2f7f5099b.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-31-32.png?version=1&modificationDate=1665657275219&cacheVersion=1&api=v2)
 
 🖱 Click on the **“View published records”** link in the top right corner, below the dataset ID, to open a preview of the dataset in Europeana. This preview will open a in a new tab or window. Please keep the sandbox tab open too for the next exercise.
 
-![](../../attachments/159c27a5-6adf-4786-a9b9-248cd79722cc.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-36-10.png?version=1&modificationDate=1665657400459&cacheVersion=1&api=v2)
 
 🖱 Click on any item in the preview for a more detailed look at the record.
 
@@ -356,7 +354,7 @@ You will practice this in the following exercises.
 
 ### 3.2.1 Open a record report
 
-![](../../attachments/233f8606-4ea3-4a92-901b-2cc5c2fca10b.png)![](../../attachments/9c784bf5-de2d-4beb-a65e-d39893e3c10a.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-38-30.png?version=1&modificationDate=1665658318271&cacheVersion=1&api=v2)![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-53-59.png?version=2&modificationDate=1665658551809&cacheVersion=1&api=v2)
 
 1. 🖱 Copy the record ID of the item you previewed in step 7 of exercise 3.1.2. The record ID can be found in the URL of the item. In the URL this is the part after “item” and consists of the dataset ID and record ID. Make sure to include the first forward slash, resulting in *”/dataset\_id/record\_id”*.
 2. Go back to the Sandbox and paste the record ID in the **“Enter the id of a record”** field.
@@ -367,7 +365,7 @@ You will practice this in the following exercises.
 
 ### 3.2.2 Review a record report
 
-![](../../attachments/66f84e35-7df8-4a1d-96e0-39e0660156fe.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/Screenshot%20from%202022-10-13%2012-55-34.png?version=1&modificationDate=1665658561635&cacheVersion=1&api=v2)
 
 1. Review the *Content Tier Breakdown* for the record. This is shown by default.
 2. 🖱 Click on the link **“Metadata Tier”** in the summary or the Metadata Tier icon to review the *Metadata Tier* *Breakdown* for the record.
@@ -411,7 +409,7 @@ You can now see the differences between both records and the enrichments that ha
 
 ## 3.4 Problem patterns
 
-![](../../attachments/fff374a0-eaec-4b4f-baa5-23a5401f7adb.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/image-20221206-102750.png?version=1&modificationDate=1670322473763&cacheVersion=1&api=v2)
 
 This exercise allows you to gain insight in the problem patterns that have been identified for a dataset.
 
@@ -419,13 +417,13 @@ When reviewing a dataset’s progress (section 3.3.1 above) you will also gain a
 
 🖱 Click on the **“Issues (Overview)”** button, below the dataset tracking report, to open a listing of the problem patterns that were identified for this dataset.
 
-![](../../attachments/0a46737f-cc8b-4716-87d5-0ef0c5744086.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/image-20221206-103117.png?version=1&modificationDate=1670322680861&cacheVersion=1&api=v2)
 
 The listing contains problem patterns (e.g. P9 – very short description) with underneath a sample of records where the pattern was encountered along with offending values.
 
 ​🖱 Click on the problem pattern title of P9 **“Very short description”**.
 
-![](../../attachments/109eec09-bb06-4d40-af5e-5abe7e8c0205.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2227765249/image-20221206-102719.png?version=1&modificationDate=1670322441848&cacheVersion=1&api=v2)
 
 You now see a detailed description of a problem pattern.
 

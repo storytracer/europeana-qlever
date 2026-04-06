@@ -1,6 +1,4 @@
 
-[Europeana APIs Documentation](../../Europeana%20APIs%20Documentation.md) > [API Suite](../API%20Suite.md)
-
 # Annotation API Documentation
 
 The Annotation API is allows users to search, obtain and contribute annotations about items in Europeana. Annotations are user-contributed or software-generated enhancements, additions or corrections to (or a selection of) metadata or content resources. We adopted the [Web Annotation Data Model](https://www.w3.org/TR/annotation-model/) as a base model for the representation of annotations and as a format for exchanging annotations between client applications and the API, but also the [Web Annotation Protocol](https://www.w3.org/TR/annotation-protocol/) as base protocol for the API.

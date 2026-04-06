@@ -1,6 +1,4 @@
 
-[Semantic enrichments](../Semantic%20enrichments.md)
-
 # How to confirm if your vocabulary supports content negotiation?
 
 Content negotiation is a mechanism defined in the HTTP specification that makes it possible to serve different representations of a resource using the same URI, so that user agents can indicate what kind(s) of representation(s) they prefer and how well they can understand them. More precisely, the user agent provides an [Accept HTTP header](http://tools.ietf.org/html/rfc7231#section-5.3) that lists acceptable media types and associated quality factors, the server is then able to supply the representation of the resource that best fits the user agent's needs. A concrete example is your own browser which indicates its preference for HTML formats (ie. “`text/html,application/xhtml+xml,application/xml`") so that it can display a page to an end-user, while a data consumer might otherwise indicate its preference for machine readable formats such as XML or JSON.
@@ -28,7 +26,7 @@ Content-Type: application/rdf+xml; charset=UTF-8
 
 ### 303 redirect approach
 
-![](../../attachments/4f287e6a-01da-476f-b81f-5c7dbc8e2bd3.png)
+![](https://europeana.atlassian.net/wiki/download/attachments/2168848385/99ttX1DBSiTpjES2AzE_9og8wa3RjDUQyH5LpKrhYXHSSIFVbuwMqSd12xys9w4BKtB_ZA8P86dL3lanOOskRfesS-HUlzz-jcDtafJ2vE_i0p9Ttb5AW03_FbMppMR4hTwqgMg?version=1&modificationDate=1639068511576&cacheVersion=1&api=v2)
 
 Alternative to responding directly to the user agent with a HTTP “`200 OK`", the server can also redirect with an HTTP "`303 See Other`" pointing to an URL which can serve directly the resource.
 

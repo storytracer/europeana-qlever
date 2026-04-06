@@ -4,8 +4,6 @@ tags:
   - '#edm'
 ---
 
-[EDM - Mapping guidelines](../EDM%20-%20Mapping%20guidelines.md)
-
 # Recommendations for providing temporal metadata
 
 - [Scope of this documentation](#scope-of-this-documentation)
@@ -185,7 +183,7 @@ The different ways to provide temporal data of time periods in Europeana come wi
 
 **Complete dates or dates with reduced precision**
 
-- *Pattern 1 (‘**yyyy-mm-dd**’ or ‘**dd-mm-yyyy**’) with variations in the separators (hyphens, slash, dots)*
+- *Pattern 1 (‘**yyyy-mm-dd**’ or ‘**dd-mm-yyyy**’) with variations in the separators (hyphens, slash, dots)*
 
   - *Examples:*
 
@@ -218,7 +216,7 @@ The different ways to provide temporal data of time periods in Europeana come wi
 
 **Date ranges**
 
-- *Pattern 3 (’**date/date**’) with variations in the separators (commas, hyphens, pipe, slash, white spaces)*
+- *Pattern 3 (’**date/date**’) with variations in the separators (commas, hyphens, pipe, slash, white spaces)*
 
   - Examples:
 

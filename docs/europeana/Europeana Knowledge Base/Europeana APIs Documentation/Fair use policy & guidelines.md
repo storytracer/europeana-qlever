@@ -1,6 +1,4 @@
 
-[Europeana APIs Documentation](../Europeana%20APIs%20Documentation.md)
-
 # Fair use policy & guidelines
 
 The Europeana Foundation (EF) is committed to provide the same level of service to all of our users. For this reason we have established a fair use policy to be applied to all of Europeana APIs.

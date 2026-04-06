@@ -8,8 +8,6 @@ tags:
   - '#content'
 ---
 
-[Publishing guide](../../../Publishing%20guide.md) > [Content & Metadata Tiers](../../Content%20&%20Metadata%20Tiers.md) > [Tier 1 requirements per edm:type](../Tier%201%20requirements%20per%20edm_type.md)
-
 # ContentTier 1: Image type
 
 Images are visual resources for users to look at. It is best practice for image files to be published in a quality for a user to tell what the image is about. Image quality is also expected to reflect the changes in technologies over the last years: displays’ screen resolutions have increased significantly since then. Correspondingly, user expectations have changed too, which requires image quality to be significantly higher than in 2008 when Europeana started.

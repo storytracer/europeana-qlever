@@ -8,8 +8,6 @@ tags:
   - '#content'
 ---
 
-[Publishing guide](../../../Publishing%20guide.md) > [Content & Metadata Tiers](../../Content%20&%20Metadata%20Tiers.md) > [Tier 1 requirements per edm:type](../Tier%201%20requirements%20per%20edm_type.md)
-
 # ContentTier 1: Text type
 
 Text materials are meant to be read and not looked at; therefore, best practice for text-based materials is to publish documents in full, scanned in an adequate resolution to support their legibility, and, if possible, with an added plain-text layer to allow for searching within the content of a document. For easy reuse of your text materials it is recommended to allow users to download the documents in file formats that allow users to extract text.
