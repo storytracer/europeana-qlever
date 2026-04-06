@@ -1452,7 +1452,7 @@ def pipeline(
 
 
 # ---------------------------------------------------------------------------
-# metrics
+# report
 # ---------------------------------------------------------------------------
 
 @cli.command()
@@ -1474,7 +1474,7 @@ def pipeline(
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget.")
 @click.pass_context
-def metrics(
+def report(
     ctx: click.Context,
     types: tuple[str, ...],
     reuse_level: str | None,
@@ -1488,9 +1488,9 @@ def metrics(
     """Assess quality and coverage of exported Parquet files.
 
     Reads items_resolved.parquet and entity Parquets from the exports
-    directory. Produces JSON and Markdown reports in <work-dir>/metrics/.
+    directory. Produces JSON and Markdown reports in <work-dir>/reports/.
     """
-    from .metrics import MetricsFilter, run_metrics
+    from .report import ReportFilter, run_report
     from .telemetry import command_span
 
     telemetry = ctx.obj["telemetry"]
@@ -1500,7 +1500,7 @@ def metrics(
     if duckdb_memory == "auto":
         duckdb_memory = budget.duckdb_memory()
 
-    filters = MetricsFilter(
+    filters = ReportFilter(
         types=list(types) if types else None,
         reuse_level=reuse_level,
         countries=list(countries) if countries else None,
@@ -1512,14 +1512,14 @@ def metrics(
         "filter": filters.description(),
         "probe_urls": probe_urls,
     }) as counters:
-        report = run_metrics(
+        result = run_report(
             exports_dir=exports_dir,
-            output_dir=ctx.obj["work_dir"] / "metrics",
+            output_dir=ctx.obj["work_dir"] / "reports",
             filters=filters,
             probe_urls=probe_urls,
             sample_size=sample_size,
             memory_limit=duckdb_memory,
         )
-        counters["sections"] = report.sections_computed
-        counters["json_path"] = str(report.json_path)
-        counters["markdown_path"] = str(report.markdown_path)
+        counters["sections"] = result.sections_computed
+        counters["json_path"] = str(result.json_path)
+        counters["markdown_path"] = str(result.markdown_path)

@@ -25,7 +25,7 @@ src/europeana_qlever/
   compose.py                      # DuckDB composition SQL for hybrid SPARQL/DuckDB pipeline
   export.py                       # Export types (Export, QueryExport, CompositeExport), ExportRegistry, ExportPipeline
   merge.py                        # Parallel TTL extraction, inline validation, prefix discovery
-  metrics.py                      # DuckDB analytics over exported Parquet files (quality/coverage report)
+  report.py                       # DuckDB analytics over exported Parquet files (quality/coverage report)
   monitor.py                      # Background resource monitor (CPU, memory, disk, process tracking)
   query.py                        # SPARQL query generation (Query, QueryFilters, QueryRegistry, SparqlHelpers)
   resources.py                    # Auto-detection of system resources & budget calculation
@@ -82,8 +82,8 @@ uv run europeana-qlever -d WORK_DIR export --all                 # Export all pi
 uv run europeana-qlever -d WORK_DIR export --set all             # Export everything
 uv run europeana-qlever -d WORK_DIR export items_resolved        # Export the flagship resolved composite
 uv run europeana-qlever -d WORK_DIR pipeline TTL_DIR             # Run full pipeline end-to-end
-uv run europeana-qlever -d WORK_DIR metrics                      # Quality/coverage report over exported Parquets
-uv run europeana-qlever -d WORK_DIR metrics --probe-urls         # Include live URL reachability probing
+uv run europeana-qlever -d WORK_DIR report                       # Quality/coverage report over exported Parquets
+uv run europeana-qlever -d WORK_DIR report --probe-urls          # Include live URL reachability probing
 ```
 
 All commands require `-d WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Output paths are derived automatically. Always use `uv run` — never bare `python` or `pip install`.
@@ -108,7 +108,7 @@ All commands require `-d WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Out
 - **Pipeline** (`pipeline` command) runs all stages end-to-end: merge → write-qleverfile → index → start → export → stop. Progress is checkpointed to `pipeline_state.json` so a failed or interrupted run resumes automatically; `--force` clears the checkpoint. Supports `--skip-merge` and `--skip-index` flags. The entire pipeline runs inside a `ResourceMonitor` + `Dashboard` context for continuous resource tracking and live terminal display.
 - **Composition SQL** (`compose.py`) generates DuckDB SQL templates as `ComposeStep` objects (23 steps for `items_resolved` via `ComposeStep.items_resolved_steps()`). Templates use `{exports_dir}` as a placeholder replaced at execution time. The flagship resolved export composes 14 component tables + agents + concepts + web resources, with multi-valued property aggregation using native Parquet types (`LIST<STRUCT<label VARCHAR, uri VARCHAR>>` for subjects/dc_types/formats, `LIST<STRUCT<name VARCHAR, uri VARCHAR>>` for creators/contributors/publishers, `LIST<VARCHAR>` for dates/years/languages/identifiers/dc_rights), agent/concept label resolution via entity joins, and a computed `reuse_level` column (open/restricted/prohibited) derived from `edm:rights` URIs. Web resource metadata (MIME type, dimensions, file size, IIIF service detection) is aggregated per item. The final step is marked `is_final=True` for COPY-to-Parquet wrapping.
 - **Export execution** is orchestrated by `ExportPipeline` (`export.py`). The `export --all` flag runs the pipeline export set; `--set` runs a named set; positional arguments select individual exports by name (composites like `items_resolved` transparently trigger dependencies). The `--keep-base / --no-keep-base` flag controls cleanup of intermediate component table Parquets.
-- **Metrics** (`metrics.py`): The `metrics` command runs DuckDB analytics over exported Parquet files to produce a quality/coverage Markdown report. Seven analysis sections: volume (row counts, unique items), rights (reuse level breakdown), language (coverage, top languages), completeness (field fill rates), entities (entity counts, link density), content (MIME types, dimensions, IIIF), and optional URL probing (async HTTP HEAD checks via httpx). Requires `items_resolved.parquet` at minimum; entity core/links Parquets are optional. Supports `--type`, `--country`, `--reuse-level` filters and `--probe-urls` for live URL reachability checks.
+- **Report** (`report.py`): The `report` command runs DuckDB analytics over exported Parquet files to produce a quality/coverage Markdown report. Seven analysis sections: volume (row counts, unique items), rights (reuse level breakdown), language (coverage, top languages), completeness (field fill rates), entities (entity counts, link density), content (MIME types, dimensions, IIIF), and optional URL probing (async HTTP HEAD checks via httpx). Requires `items_resolved.parquet` at minimum; entity core/links Parquets are optional. Supports `--type`, `--country`, `--reuse-level` filters and `--probe-urls` for live URL reachability checks.
 
 ## Documentation
 
@@ -150,7 +150,7 @@ The provider proxy (identified by `FILTER NOT EXISTS { ?proxy edm:europeanaProxy
 ## Conventions
 
 - All data-processing logic is in the Python CLI. No bash scripts for pipeline steps.
-- CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`/`query.py`/`validate.py`/`throttle.py`, configuration in `constants.py`, resource detection in `resources.py`, live display in `dashboard.py`/`display.py`, state tracking in `state.py`, telemetry in `telemetry.py`, post-export analytics in `metrics.py`.
+- CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`/`query.py`/`validate.py`/`throttle.py`, configuration in `constants.py`, resource detection in `resources.py`, live display in `dashboard.py`/`display.py`, state tracking in `state.py`, telemetry in `telemetry.py`, post-export analytics in `report.py`.
 - **No unit tests.** This project does not use unit tests. Do not create test files or run pytest.
 - Use `rich.console.Console` for all terminal output (not bare `print`).
 - Click options use `Path` type with `path_type=Path`.

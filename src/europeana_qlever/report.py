@@ -23,8 +23,8 @@ from . import display
 # ---------------------------------------------------------------------------
 
 @dataclass
-class MetricsReport:
-    """Result of a metrics run."""
+class Report:
+    """Result of a report run."""
 
     json_path: Path = Path()
     markdown_path: Path = Path()
@@ -36,7 +36,7 @@ class MetricsReport:
 # Filter dataclass
 # ---------------------------------------------------------------------------
 
-# Each spec maps a MetricsFilter field to its SQL column and filter style.
+# Each spec maps a ReportFilter field to its SQL column and filter style.
 # Styles: "in_list" → col IN (...), "eq" → col = '...', "bool" → col = true
 _FilterSpec = tuple[str, str, str]  # (field_name, sql_column, style)
 
@@ -50,8 +50,8 @@ _FILTER_SPECS: list[_FilterSpec] = [
 
 
 @dataclass
-class MetricsFilter:
-    """Composable filter for metrics queries over items_resolved."""
+class ReportFilter:
+    """Composable filter for report queries over items_resolved."""
 
     types: list[str] | None = None
     reuse_level: str | None = None
@@ -439,9 +439,9 @@ async def _probe_urls(urls: list[str], sample_size: int) -> dict:
 # ---------------------------------------------------------------------------
 
 def _render_markdown(data: dict) -> str:
-    """Render metrics data as a Markdown report."""
+    """Render report data as a Markdown document."""
     lines: list[str] = []
-    lines.append(f"# Europeana Metrics Report")
+    lines.append(f"# Europeana Report")
     meta = data.get("_meta", {})
     lines.append(f"\n**Generated:** {meta.get('timestamp', 'N/A')}")
     lines.append(f"**Filter:** {meta.get('filter', 'all')}")
@@ -603,20 +603,20 @@ def _render_markdown(data: dict) -> str:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def run_metrics(
+def run_report(
     *,
     exports_dir: Path,
     output_dir: Path,
-    filters: MetricsFilter | None = None,
+    filters: ReportFilter | None = None,
     probe_urls: bool = False,
     sample_size: int = 1000,
     memory_limit: str = "4GB",
-) -> MetricsReport:
+) -> Report:
     """Run DuckDB analytics and produce JSON + Markdown reports."""
     from . import __version__
 
     if filters is None:
-        filters = MetricsFilter()
+        filters = ReportFilter()
 
     resolved_path = exports_dir / "items_resolved.parquet"
     if not resolved_path.exists():
@@ -661,7 +661,7 @@ def run_metrics(
     data: dict = {}
     sections = 0
 
-    display.console.print("[bold]Running metrics analysis…[/bold]")
+    display.console.print("[bold]Running report…[/bold]")
 
     # Section 1: Volume
     display.console.print("  [dim]Section 1: Volume and composition[/dim]")
@@ -725,17 +725,17 @@ def run_metrics(
     }
 
     # Write outputs
-    json_path = output_dir / f"metrics_{slice_id}.json"
-    md_path = output_dir / f"metrics_{slice_id}.md"
+    json_path = output_dir / f"report_{slice_id}.json"
+    md_path = output_dir / f"report_{slice_id}.md"
 
     json_path.write_text(json.dumps(data, indent=2, default=str))
     md_path.write_text(_render_markdown(data))
 
-    display.console.print(f"\n[green]Metrics complete ({sections} sections)[/green]")
+    display.console.print(f"\n[green]Report complete ({sections} sections)[/green]")
     display.console.print(f"  JSON: {json_path}")
     display.console.print(f"  Markdown: {md_path}")
 
-    return MetricsReport(
+    return Report(
         json_path=json_path,
         markdown_path=md_path,
         sections_computed=sections,
