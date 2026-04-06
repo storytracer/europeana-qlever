@@ -12,6 +12,7 @@ Europeana FTP (15,000+ ZIPs)
   → QLever index (~2-5 hours)
   → SPARQL endpoint (localhost:7001)
   → Parquet export (Phase 1: SPARQL → TSV → Parquet, Phase 2: DuckDB composition)
+  → report (quality/coverage analytics over exported Parquets)
 ```
 
 ## Dataset sizing
@@ -41,7 +42,7 @@ Each pipeline stage has explicit memory controls:
 | **Parquet export (Phase 1)** | bounded | TSV-to-Parquet conversion uses parallel rdflib parsing with bounded submission (at most `workers * 2` batches in-flight), keeping memory constant regardless of file size |
 | **Parquet export (Phase 2)** | 75% available RAM | DuckDB composition uses 75% of available RAM (min 4 GB). Spills to disk when memory limit is exceeded. Configurable via `--duckdb-memory` |
 
-A background **resource monitor** runs throughout the pipeline, sampling RSS, available memory, disk space, and CPU usage every 1-2 seconds. Samples are logged to `<work-dir>/monitor.log` (CSV). Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, an **adaptive throttle** dynamically adjusts worker concurrency based on CPU and memory pressure, using hysteresis to avoid jitter.
+A background **resource monitor** runs throughout the pipeline, sampling RSS, available memory, disk space, and CPU usage every 1-2 seconds. Samples are logged as structured JSONL events to `<work-dir>/telemetry.jsonl`. Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, an **adaptive throttle** dynamically adjusts worker concurrency based on CPU and memory pressure, using hysteresis to avoid jitter.
 
 A **live dashboard** (Rich-based terminal UI) displays real-time system resources (CPU, memory, disk), pipeline stage progress, and a scrolling log tail during the full `pipeline` command.
 
@@ -212,14 +213,30 @@ Export runs SPARQL queries against the server and writes Parquet files to `<work
 # Export all pipeline exports
 uv run europeana-qlever -d /data/europeana export --all
 
-# Export a specific named export (composite dependencies auto-exported)
-uv run europeana-qlever -d /data/europeana export items_enriched
+# Export the flagship resolved composite (dependencies auto-exported)
+uv run europeana-qlever -d /data/europeana export items_resolved
 
 # Export all registered exports
 uv run europeana-qlever -d /data/europeana export --set all
 ```
 
-#### 7. Stop the server
+#### 7. Quality/coverage report
+
+After exporting, generate a Markdown report analysing data quality and coverage:
+
+```bash
+uv run europeana-qlever -d /data/europeana report
+
+# Include live URL reachability probing
+uv run europeana-qlever -d /data/europeana report --probe-urls
+
+# Filtered report
+uv run europeana-qlever -d /data/europeana report --type IMAGE --country Netherlands
+```
+
+The report covers volume, rights distribution, language coverage, field completeness, entity link density, content types (MIME, dimensions, IIIF), and optional URL probing. Requires `items_resolved.parquet` at minimum.
+
+#### 8. Stop the server
 
 ```bash
 uv run europeana-qlever -d /data/europeana stop
@@ -236,13 +253,14 @@ europeana-qlever -d WORK_DIR
 ├── merge TTL_DIR              Merge all Europeana TTL ZIPs into chunked TTL files
 ├── write-qleverfile           Generate a Qleverfile configured for the Europeana dataset
 ├── index                      Build the QLever index from merged TTL chunks
-├── start [--ui]                Start the QLever SPARQL server (and optionally the web UI)
+├── start [--ui]               Start the QLever SPARQL server (and optionally the web UI)
 ├── stop                       Stop the QLever SPARQL server
 ├── list-exports               List all available exports
 ├── analyze
 │   ├── qlever                 Profile SPARQL exports against a running QLever server
 │   └── static                 Offline structural analysis via SPARQL algebra
 ├── export                     Export data as Parquet files
+├── report                     Quality/coverage report over exported Parquet files
 └── pipeline TTL_DIR           Run the full pipeline: merge → index → start → export → stop
 ```
 
@@ -252,13 +270,15 @@ Exports are organized into named, non-exclusive **export sets**:
 
 | Set | Count | Description |
 |-----|-------|-------------|
-| **pipeline** | 14 | Full Parquet export pipeline: standalone entity exports + component tables + `items_enriched` composite |
-| **summary** | 13 | Dataset statistics: items by type, country, language, year, provider, rights URI, reuse level, MIME type, etc. |
-| **items** | 22 | All item-related exports (pipeline + summary) |
-| **entities** | 5 | Contextual entities: agents, places, concepts, timespans, geolocated places |
-| **rights** | 2 | Rights and licensing: items by rights URI, items by reuse level |
+| **pipeline** | 24 | Full Parquet export pipeline: entity exports + component tables + `items_resolved` composite |
+| **summary** | 18 | Dataset statistics: items by type, country, language, year, provider, rights URI, reuse level, MIME type, etc. |
+| **items** | 33 | All item-related exports (pipeline + summary) |
+| **entities** | 10 | Contextual entities: agents, places, concepts, timespans (core + links pattern) |
+| **rights** | 5 | Rights and licensing: items by rights URI, items by reuse level |
 
-There are 27 registered exports: 26 SPARQL-based (`QueryExport`) and 1 DuckDB composite (`CompositeExport`). Each export can belong to multiple sets.
+There are 42 SPARQL queries (`QueryExport`) and 1 DuckDB composite (`CompositeExport`). Each export can belong to multiple sets.
+
+Entity queries follow a **core + links** pattern: `*_core` queries export single-valued properties (one row per prefLabel), while `*_links` queries export multi-valued/linked properties in long format (`?property`, `?value`, `?lang` columns). This applies to all four entity types: agents, places, concepts, and timespans.
 
 List all exports:
 
@@ -268,12 +288,14 @@ uv run europeana-qlever -d /data/europeana list-exports
 
 ### Hybrid export architecture
 
-Composite exports like `items_enriched` use a two-phase pipeline:
+The flagship export `items_resolved` uses a two-phase pipeline:
 
 - **Phase 1 (QLever):** `QueryExport` objects run simple, flat SPARQL scans to Parquet "base tables" -- no GROUP BY, no GROUP_CONCAT, minimal OPTIONALs. QLever does what it's best at: index scans and triple pattern matching over billions of triples.
-- **Phase 2 (DuckDB):** `CompositeExport` objects join the base table Parquet files, resolve entity labels, aggregate multi-valued properties (using native `LIST` and `STRUCT` Parquet types), and produce the final denormalized export.
+- **Phase 2 (DuckDB):** `CompositeExport` joins the base table Parquet files via 23 DuckDB SQL steps, resolving entity labels, aggregating multi-valued properties (using native `LIST` and `STRUCT` Parquet types), and producing the final denormalized export.
 
-Dependencies are resolved automatically -- exporting `items_enriched` transparently exports all 8 component tables + entity tables first.
+Multi-valued columns use native Parquet types: `LIST<STRUCT<label, uri>>` for subjects/dc_types/formats, `LIST<STRUCT<name, uri>>` for creators/contributors/publishers, `LIST<VARCHAR>` for dates/years/languages/identifiers. A computed `reuse_level` column classifies `edm:rights` URIs into open/restricted/prohibited. Web resource metadata (MIME type, dimensions, file size, IIIF detection) is aggregated per item.
+
+Dependencies are resolved automatically -- exporting `items_resolved` transparently exports all 14 component tables + entity tables first.
 
 ### Export examples
 
@@ -281,8 +303,8 @@ Dependencies are resolved automatically -- exporting `items_enriched` transparen
 # All pipeline exports
 uv run europeana-qlever -d /data/europeana export --all
 
-# A specific named export (composite dependencies auto-exported)
-uv run europeana-qlever -d /data/europeana export items_enriched
+# The flagship resolved composite (dependencies auto-exported)
+uv run europeana-qlever -d /data/europeana export items_resolved
 
 # All summary exports
 uv run europeana-qlever -d /data/europeana export --set summary
@@ -291,11 +313,11 @@ uv run europeana-qlever -d /data/europeana export --set summary
 uv run europeana-qlever -d /data/europeana export --set all
 
 # Filtered export: openly-licensed images from the Netherlands
-uv run europeana-qlever -d /data/europeana export items_enriched \
+uv run europeana-qlever -d /data/europeana export items_resolved \
   --country Netherlands --type IMAGE --reuse-level open
 
 # Sample 10,000 items for development
-uv run europeana-qlever -d /data/europeana export items_enriched --limit 10000
+uv run europeana-qlever -d /data/europeana export items_resolved --limit 10000
 ```
 
 ### Filter options
@@ -347,10 +369,13 @@ Both modes produce Markdown reports in `<work-dir>/analysis/`. The `qlever` mode
 
 | Directory / File | Purpose |
 |-----------|---------|
-| `src/europeana_qlever/` | Python CLI source code (14 modules) |
-| `EDM.md` | Europeana Data Model reference -- entity relationships, RDF namespaces, rights framework |
+| `src/europeana_qlever/` | Python CLI source code (15 modules) |
+| `scripts/` | Standalone uv scripts for syncing documentation |
+| `scripts/update-qlever-docs.py` | Sync QLever docs from upstream GitHub repo |
+| `scripts/update-europeana-docs.py` | Sync Europeana KB from Confluence (anonymous, incremental) |
+| `docs/europeana/EDM.md` | Europeana Data Model reference -- entity relationships, RDF namespaces, rights framework |
 | `docs/qlever/docs/` | QLever documentation (upstream MkDocs source) -- Qleverfile format, SPARQL compliance, text/geo/path search, troubleshooting |
-| `docs/europeana/` | Europeana Knowledge Base -- EDM mapping guidelines, publishing guides, semantic enrichments, API docs |
+| `docs/europeana/Europeana Knowledge Base/` | Europeana Knowledge Base -- EDM mapping guidelines, publishing guides, semantic enrichments, API docs. Exported from Confluence with images referencing live remote URLs |
 
 **Work directory** (specified via `-d`):
 
@@ -360,8 +385,19 @@ Both modes produce Markdown reports in `<work-dir>/analysis/`. The `qlever` mode
 | `index/` | Qleverfile, settings.json, Qleverfile-ui.yml, and QLever index files |
 | `exports/` | Parquet output files (TSV intermediates are deleted) |
 | `analysis/` | Query performance analysis Markdown reports |
-| `monitor.log` | Resource monitor log (CSV: timestamp, RSS, available memory, disk free, CPU) |
+| `telemetry.jsonl` | Structured JSONL telemetry log (command spans, resource samples, stage events) |
 | `pipeline_state.json` | Pipeline checkpoint for resume-on-failure |
+
+## Updating documentation
+
+Both local doc sets are updated via standalone uv scripts:
+
+```bash
+uv run scripts/update-qlever-docs.py       # Sync QLever docs from GitHub (full replace)
+uv run scripts/update-europeana-docs.py     # Sync Europeana KB from Confluence (incremental)
+```
+
+The Europeana script uses `confluence-markdown-exporter` with anonymous access. A lockfile (`docs/europeana/confluence-lock.json`) tracks Confluence page version numbers so subsequent runs only re-export changed pages. Local attachment references are rewritten to remote Confluence download URLs so no binary files are committed.
 
 ## Refreshing the data
 
