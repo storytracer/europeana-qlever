@@ -25,3 +25,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/europeana_qlever"]
 
+[dependency-groups]
+dev = [
+    "websockets>=16.0",
+]
+

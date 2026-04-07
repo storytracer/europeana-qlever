@@ -1,0 +1,88 @@
+questions:
+  # === 1. Volume & Type Breakdown ===
+  - How many items are there for each media type?
+  - How many items with open reuse rights are there per media type?
+  - How many image items have a direct link to the digital object via edm:isShownBy?
+
+  # === 2. Rights & Reuse Filtering ===
+  - What are the 10 most common rights statements and how many items does each have?
+  - How many items have open reuse rights?
+  - How many image items have open reuse rights, and how many do not?
+
+  # === 3. Multilingual Coverage ===
+  - What are the top 15 languages by number of items?
+  - How many items have titles in more than one language?
+  - How many items have an English-language title?
+  - How many items have both an English and a non-English title?
+
+  # === 4. Geographic & Provider Distribution ===
+  - What are the top 10 countries by number of openly-reusable image items?
+  - What are the top 10 data providers by number of items with open reuse rights?
+  - How many distinct data providers contribute items with open reuse rights?
+
+  # === 5. Technical Metadata for Computer Vision ===
+  - How many image items with open reuse rights have web resources with width and height metadata?
+  - How many openly-reusable image items have web resources with resolution above 1 megapixel?
+  - What are the 10 most common MIME types for web resources of openly-reusable image items?
+
+  # === 6. Subject & Concept Coverage ===
+  - How many openly-reusable image items have at least one subject?
+  - What are the 20 most common dc:type values for openly-reusable image items?
+
+  # === 7. Text & OCR Exports ===
+  - How many text items have open reuse rights?
+  - How many text items with open reuse rights are in English?
+
+  # === 8. Entity Enrichment Quality ===
+  - How many items have at least one enriched entity link on the Europeana proxy?
+  - How many openly-reusable image items have an enriched subject entity on the Europeana proxy?
+
+  # === 9. Temporal Coverage ===
+  - How many openly-reusable items are from the 19th century?
+  - What are the top 10 centuries by number of openly-reusable items?
+
+  # === 10. Sound & Video ===
+  - How many sound items and how many video items have open reuse rights?
+
+  # === 11. AI Training Dataset Viability ===
+  - How many openly-reusable image items have both a subject and a title?
+  - How many openly-reusable image items have a web resource with file size above 100KB and resolution above 0.5 megapixels?
+  - What are the top 10 countries by number of openly-reusable image items that have both a title and a subject?
+
+  # === 12. Cross-domain Content Analysis ===
+  - What are the 15 most common dc:type values across all openly-reusable items, and how many items does each have?
+  - How many openly-reusable items mention 'photograph' or 'fotografie' or 'photographie' in their dc:type?
+  - How many openly-reusable items have dc:type values containing 'painting' or 'schilderij' or 'peinture'?
+
+  # === 13. Provider Concentration & Diversity ===
+  - How many data providers contribute more than 100,000 openly-reusable items?
+  - What percentage of all openly-reusable image items come from the top 5 data providers? Show the top 5 providers with their counts and the total.
+  - Which countries have more than 10 distinct data providers contributing openly-reusable content?
+
+  # === 14. Metadata Completeness for AI ===
+  - How many openly-reusable image items have all of title, creator, subject, and date on the provider proxy?
+  - How many openly-reusable items have a description longer than 50 characters?
+  - What fraction of openly-reusable image items have at least one creator on the provider proxy?
+
+  # === 15. Multilingual AI Training Potential ===
+  - For openly-reusable image items with titles, what are the top 10 title languages?
+  - How many openly-reusable items have descriptions available in 3 or more distinct languages?
+  - How many openly-reusable image items have a title in both English and French?
+
+  # === 16. Temporal Distribution for Historical AI ===
+  - What is the decade-by-decade count of openly-reusable image items from 1800 to 2020?
+  - How many openly-reusable items have no year at all?
+  - How many openly-reusable image items are from before 1500?
+
+  # === 17. Entity-Linked Knowledge Graph Potential ===
+  - How many distinct agents appear as creator on the Europeana proxy of openly-reusable items?
+  - How many distinct places appear as spatial subject on the Europeana proxy of openly-reusable items?
+  - How many openly-reusable image items link to a creator entity that has a Wikidata identifier?
+
+  # === 18. Media Quality & Accessibility ===
+  - How many openly-reusable image items have web resources in JPEG format with both width and height above 1000 pixels?
+  - What is the total file size in terabytes of all web resources belonging to openly-reusable image items?
+  - How many openly-reusable sound items have a duration, and what is the average duration in seconds?
+
+  # === 19. Data Freshness & Provenance ===
+  - How many distinct dataset names exist, and which 10 datasets have the most openly-reusable items?
