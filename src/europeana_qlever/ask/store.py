@@ -4,8 +4,8 @@ Provides a :class:`ParquetStore` that registers all Parquet files in the
 exports directory as DuckDB views, applies :class:`ReportFilters` to
 ``items_resolved``, and creates convenience views (``items``, ``org_names``).
 
-Used by :class:`~europeana_qlever.ask.parquet.AskParquet`,
-:class:`~europeana_qlever.report.ExportReport`, and
+Used by the composable report runner (:func:`~europeana_qlever.report.run_report`),
+:class:`~europeana_qlever.ask.parquet.AskParquet`, and
 :class:`~europeana_qlever.ask.benchmark.Benchmark`.
 """
 

@@ -1,0 +1,119 @@
+name: Entity Enrichment
+description: Entity counts, label coverage, and authority linking for agents, places, concepts, and timespans.
+
+questions:
+  - id: entity_counts
+    question: "Total entities and average prefLabel variants per entity type"
+    backend: parquet
+    query: |
+      SELECT 'agents' AS entity_type,
+             count(DISTINCT agent) AS total_entities,
+             round(avg(cnt), 2) AS avg_pref_label_variants
+      FROM (SELECT agent, count(*) AS cnt FROM agents_core GROUP BY agent)
+      UNION ALL
+      SELECT 'places',
+             count(DISTINCT place),
+             round(avg(cnt), 2)
+      FROM (SELECT place, count(*) AS cnt FROM places_core GROUP BY place)
+      UNION ALL
+      SELECT 'concepts',
+             count(DISTINCT concept),
+             round(avg(cnt), 2)
+      FROM (SELECT concept, count(*) AS cnt FROM concepts_core GROUP BY concept)
+      UNION ALL
+      SELECT 'timespans',
+             count(DISTINCT timespan),
+             round(avg(cnt), 2)
+      FROM (SELECT timespan, count(*) AS cnt FROM timespans_core GROUP BY timespan)
+
+  - id: same_as_coverage
+    question: "owl:sameAs coverage per entity type"
+    backend: parquet
+    query: |
+      WITH totals AS (
+          SELECT 'agents' AS entity_type, count(DISTINCT agent) AS total FROM agents_core
+          UNION ALL
+          SELECT 'places', count(DISTINCT place) FROM places_core
+          UNION ALL
+          SELECT 'concepts', count(DISTINCT concept) FROM concepts_core
+          UNION ALL
+          SELECT 'timespans', count(DISTINCT timespan) FROM timespans_core
+      ),
+      linked AS (
+          SELECT 'agents' AS entity_type, count(DISTINCT agent) AS with_same_as
+          FROM agents_links WHERE property = 'same_as'
+          UNION ALL
+          SELECT 'places', count(DISTINCT place)
+          FROM places_links WHERE property = 'same_as'
+          UNION ALL
+          SELECT 'concepts', count(DISTINCT concept)
+          FROM concepts_links WHERE property = 'same_as'
+          UNION ALL
+          SELECT 'timespans', count(DISTINCT timespan)
+          FROM timespans_links WHERE property = 'same_as'
+      )
+      SELECT t.entity_type,
+             t.total,
+             l.with_same_as,
+             round(l.with_same_as * 100.0 / t.total, 2) AS coverage_pct
+      FROM totals t
+      JOIN linked l ON t.entity_type = l.entity_type
+
+  - id: alt_label_coverage
+    question: "altLabel coverage per entity type"
+    backend: parquet
+    query: |
+      WITH totals AS (
+          SELECT 'agents' AS entity_type, count(DISTINCT agent) AS total FROM agents_core
+          UNION ALL
+          SELECT 'places', count(DISTINCT place) FROM places_core
+          UNION ALL
+          SELECT 'concepts', count(DISTINCT concept) FROM concepts_core
+          UNION ALL
+          SELECT 'timespans', count(DISTINCT timespan) FROM timespans_core
+      ),
+      with_alt AS (
+          SELECT 'agents' AS entity_type, count(DISTINCT agent) AS with_alt_label
+          FROM agents_links WHERE property = 'alt_label'
+          UNION ALL
+          SELECT 'places', count(DISTINCT place)
+          FROM places_links WHERE property = 'alt_label'
+          UNION ALL
+          SELECT 'concepts', count(DISTINCT concept)
+          FROM concepts_links WHERE property = 'alt_label'
+          UNION ALL
+          SELECT 'timespans', count(DISTINCT timespan)
+          FROM timespans_links WHERE property = 'alt_label'
+      )
+      SELECT t.entity_type,
+             t.total,
+             a.with_alt_label,
+             round(a.with_alt_label * 100.0 / t.total, 2) AS coverage_pct
+      FROM totals t
+      JOIN with_alt a ON t.entity_type = a.entity_type
+
+  - id: concept_hierarchy
+    question: "Concept hierarchy coverage (exact_match, broader, narrower)"
+    backend: parquet
+    query: |
+      SELECT property,
+             count(DISTINCT concept) AS concepts_with_property,
+             round(count(DISTINCT concept) * 100.0 / (
+                 SELECT count(DISTINCT concept) FROM concepts_core
+             ), 2) AS coverage_pct
+      FROM concepts_links
+      WHERE property IN ('exact_match', 'broader', 'narrower')
+      GROUP BY property
+
+  - id: top_subjects
+    question: "Top 20 subject labels used across items"
+    backend: parquet
+    query: |
+      SELECT s.label AS subject,
+             s.uri,
+             count(*) AS count
+      FROM (SELECT UNNEST(subjects) AS s FROM items)
+      WHERE s.label IS NOT NULL
+      GROUP BY s.label, s.uri
+      ORDER BY count DESC
+      LIMIT 20

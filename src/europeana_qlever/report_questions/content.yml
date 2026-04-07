@@ -1,0 +1,32 @@
+name: Content Accessibility
+description: Availability of direct content URLs, IIIF services, and MIME types.
+
+questions:
+  - id: content_availability
+    question: "Content availability counts and percentages"
+    backend: parquet
+    query: |
+      SELECT count(*) AS total,
+             count(*) FILTER (WHERE is_shown_by IS NOT NULL) AS has_direct_url,
+             round(count(*) FILTER (WHERE is_shown_by IS NOT NULL) * 100.0 / count(*), 2) AS has_direct_url_pct,
+             count(*) FILTER (WHERE is_shown_at IS NOT NULL) AS has_landing_page,
+             round(count(*) FILTER (WHERE is_shown_at IS NOT NULL) * 100.0 / count(*), 2) AS has_landing_page_pct,
+             count(*) FILTER (WHERE preview IS NOT NULL) AS has_thumbnail,
+             round(count(*) FILTER (WHERE preview IS NOT NULL) * 100.0 / count(*), 2) AS has_thumbnail_pct,
+             count(*) FILTER (WHERE has_iiif) AS has_iiif_service,
+             round(count(*) FILTER (WHERE has_iiif) * 100.0 / count(*), 2) AS has_iiif_service_pct,
+             count(*) FILTER (WHERE mime_type IS NOT NULL) AS has_mime_type,
+             round(count(*) FILTER (WHERE mime_type IS NOT NULL) * 100.0 / count(*), 2) AS has_mime_type_pct
+      FROM items
+
+  - id: mime_distribution
+    question: "Top 15 MIME types by item count"
+    backend: parquet
+    query: |
+      SELECT mime_type,
+             count(*) AS count
+      FROM items
+      WHERE mime_type IS NOT NULL
+      GROUP BY mime_type
+      ORDER BY count DESC
+      LIMIT 15

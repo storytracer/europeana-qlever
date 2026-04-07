@@ -1566,7 +1566,44 @@ def pipeline(
 # report
 # ---------------------------------------------------------------------------
 
+@cli.command("write-report-config")
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite existing question files.")
+@click.pass_context
+def write_report_config(ctx: click.Context, force: bool):
+    """Generate default report question files in <work-dir>/reports/questions/.
+
+    Copies bundled YAML question files that cover volume, rights, language,
+    completeness, entity enrichment, and content accessibility.  Customise
+    the generated files to add, remove, or modify report questions.
+    """
+    import shutil
+
+    from .report_questions import DEFAULTS_DIR
+
+    questions_dir = ctx.obj["work_dir"] / "reports" / "questions"
+    questions_dir.mkdir(parents=True, exist_ok=True)
+
+    copied = 0
+    for src in sorted(DEFAULTS_DIR.glob("*.yml")):
+        dst = questions_dir / src.name
+        if dst.exists() and not force:
+            display.console.print(f"  [yellow]exists:[/yellow] {dst.name} (use --force to overwrite)")
+            continue
+        shutil.copy2(src, dst)
+        display.console.print(f"  {dst.name}")
+        copied += 1
+
+    display.console.print(
+        f"\n[green]{copied} question file(s) written to {questions_dir}[/green]"
+    )
+
+
 @cli.command()
+@click.option("--sections", "-s", default=None,
+              help="Comma-separated section IDs to include (e.g. volume,rights).")
+@click.option("--questions", "-q", default=None,
+              help="Comma-separated question IDs to include (e.g. total_items,by_type).")
 @click.option("--filters", "-f", "filter_string", default=None,
               help='Filter expression, e.g. "country=NL,FR type=IMAGE reuse_level=open has_iiif completeness>=5"')
 @click.option("--probe-urls", is_flag=True, default=False,
@@ -1575,51 +1612,85 @@ def pipeline(
               help="Number of URLs to probe (with --probe-urls).")
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget.")
+@click.option("--model", default=None,
+              help="Override LLM model for agent questions (default: gpt-4.1-mini).")
+@click.option("--max-steps", default=None, type=int,
+              help="Maximum agent steps per question (default: 15).")
+@click.option("--grasp-url", default="ws://localhost:6789/live", show_default=True,
+              help="GRASP WebSocket URL for SPARQL questions.")
+@click.option("--timeout", type=float, default=180.0, show_default=True,
+              help="Timeout per agent question in seconds.")
+@click.option("--verbose", "-v", is_flag=True, default=False,
+              help="Show full agent traces for each question.")
 @click.pass_context
 def report(
     ctx: click.Context,
+    sections: str | None,
+    questions: str | None,
     filter_string: str | None,
     probe_urls: bool,
     sample_size: int,
     duckdb_memory: str,
+    model: str | None,
+    max_steps: int | None,
+    grasp_url: str,
+    timeout: float,
+    verbose: bool,
 ):
-    """Assess quality and coverage of exported Parquet files.
+    """Composable report over exported Parquet files.
 
-    Reads items_resolved.parquet and entity Parquets from the exports
-    directory. Produces JSON and Markdown reports in <work-dir>/reports/.
+    Runs questions defined in <work-dir>/reports/questions/*.yml.
+    Questions with a pre-defined query execute as static DuckDB SQL;
+    questions without a query are answered by the ask agent.
 
-    Filter on any Item schema field with --filters/-f:
+    Select sections or individual questions:
 
     \b
+        report -s volume,rights
+        report -q total_items,by_reuse_level
         report -f "country=NL,FR type=IMAGE"
-        report -f "reuse_level=open has_iiif completeness>=5"
-        report -f "subjects=History languages=en,fr width>=100"
     """
+    import asyncio
+
     from .report import ReportFilters, run_report
     from .telemetry import command_span
 
     telemetry = ctx.obj["telemetry"]
     exports_dir: Path = ctx.obj["exports_dir"]
     budget = ctx.obj["budget"]
+    work_dir: Path = ctx.obj["work_dir"]
 
     if duckdb_memory == "auto":
         duckdb_memory = budget.duckdb_memory()
 
     filters = ReportFilters.parse(filter_string) if filter_string else ReportFilters()
+    section_ids = sections.split(",") if sections else None
+    question_ids = questions.split(",") if questions else None
 
     with command_span(telemetry, {
         "filter": filters.description(),
         "probe_urls": probe_urls,
+        "sections": sections,
+        "questions": questions,
     }) as counters:
-        result = run_report(
+        result = asyncio.run(run_report(
             exports_dir=exports_dir,
-            output_dir=ctx.obj["work_dir"] / "reports",
+            questions_dir=work_dir / "reports" / "questions",
+            output_dir=work_dir / "reports",
             filters=filters,
+            section_ids=section_ids,
+            question_ids=question_ids,
             probe_urls=probe_urls,
             sample_size=sample_size,
             memory_limit=duckdb_memory,
-        )
+            model=model,
+            max_steps=max_steps,
+            grasp_url=grasp_url,
+            verbose=verbose,
+            timeout=timeout,
+        ))
         counters["sections"] = result.sections_computed
+        counters["questions"] = result.questions_computed
         counters["json_path"] = str(result.json_path)
         counters["markdown_path"] = str(result.markdown_path)
 

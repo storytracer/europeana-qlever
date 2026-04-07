@@ -1,0 +1,26 @@
+name: Rights Distribution
+description: Distribution of rights statements and reuse levels.
+
+questions:
+  - id: by_reuse_level
+    question: "Distribution by reuse level"
+    backend: parquet
+    query: |
+      SELECT reuse_level,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM items
+      GROUP BY reuse_level
+      ORDER BY count DESC
+
+  - id: top_rights_uris
+    question: "Top 10 specific rights URIs by item count"
+    backend: parquet
+    query: |
+      SELECT rights,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM items
+      GROUP BY rights
+      ORDER BY count DESC
+      LIMIT 10

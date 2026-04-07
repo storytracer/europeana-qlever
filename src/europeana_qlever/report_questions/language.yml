@@ -1,0 +1,30 @@
+name: Language Coverage
+description: Language distribution and multilingual metadata coverage.
+
+questions:
+  - id: top_languages
+    question: "Top 30 languages by item count"
+    backend: parquet
+    query: |
+      SELECT lang AS language,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM (SELECT UNNEST(languages) AS lang FROM items)
+      GROUP BY lang
+      ORDER BY count DESC
+      LIMIT 30
+
+  - id: title_description_coverage
+    question: "Title and description coverage and language variant averages"
+    backend: parquet
+    query: |
+      SELECT count(*) AS total_items,
+             count(*) FILTER (WHERE titles IS NOT NULL AND len(titles) > 0) AS with_title,
+             round(count(*) FILTER (WHERE titles IS NOT NULL AND len(titles) > 0)
+                   * 100.0 / count(*), 2) AS pct_with_title,
+             count(*) FILTER (WHERE descriptions IS NOT NULL AND len(descriptions) > 0) AS with_description,
+             round(count(*) FILTER (WHERE descriptions IS NOT NULL AND len(descriptions) > 0)
+                   * 100.0 / count(*), 2) AS pct_with_description,
+             round(avg(len(titles)) FILTER (WHERE titles IS NOT NULL AND len(titles) > 0), 2) AS avg_title_variants,
+             round(avg(len(descriptions)) FILTER (WHERE descriptions IS NOT NULL AND len(descriptions) > 0), 2) AS avg_description_variants
+      FROM items
