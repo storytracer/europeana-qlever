@@ -366,20 +366,28 @@ def _resolve_key(key: str, specs: dict) -> str:
 # Static query execution — format DuckDB result as Markdown table
 # ---------------------------------------------------------------------------
 
-def _format_result_table(result: duckdb.DuckDBPyRelation) -> str:
-    """Format a DuckDB query result as a Markdown table."""
-    columns = result.columns
-    types = result.types
+def _format_result_table(result: duckdb.DuckDBPyConnection) -> str:
+    """Format a DuckDB query result as a Markdown table.
+
+    Accepts either a ``DuckDBPyConnection`` (from ``con.execute()``)
+    or a ``DuckDBPyRelation`` (from ``con.sql()``).
+    """
+    # DuckDBPyConnection uses .description; DuckDBPyRelation uses .columns
+    if hasattr(result, "columns") and hasattr(result, "types"):
+        columns = result.columns
+    elif hasattr(result, "description") and result.description:
+        columns = [desc[0] for desc in result.description]
+    else:
+        return "_No results._"
     rows = result.fetchall()
     if not rows:
         return "_No results._"
 
     # Format cell values
-    def fmt(val: object, dtype: str) -> str:
+    def fmt(val: object) -> str:
         if val is None:
             return ""
         if isinstance(val, float):
-            # Keep precision from query (already rounded in most cases)
             if val == int(val):
                 return f"{int(val):,}"
             return f"{val:,.2f}"
@@ -387,7 +395,7 @@ def _format_result_table(result: duckdb.DuckDBPyRelation) -> str:
             return f"{val:,}"
         return str(val)
 
-    str_rows = [[fmt(v, str(t)) for v, t in zip(row, types)] for row in rows]
+    str_rows = [[fmt(v) for v in row] for row in rows]
 
     # Column widths
     widths = [len(c) for c in columns]
@@ -429,6 +437,16 @@ async def run_report(
     timeout: float = 180.0,
 ) -> Report:
     """Run the report by dispatching questions to static SQL or ask backends."""
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+    from rich.table import Table
+
     from .ask import AskResult
     from .ask.store import ParquetStore
 
@@ -461,9 +479,10 @@ async def run_report(
         q.backend == "sparql" for s in sections for q in s.questions
     )
 
+    filter_desc = filters.description() if filters else "all"
+    console.rule(f"[bold]Europeana Report[/bold]  [dim]filter: {filter_desc}[/dim]")
     console.print(
-        f"Running report: {total_questions} questions across "
-        f"{len(sections)} sections"
+        f"  {total_questions} questions, {len(sections)} sections"
     )
 
     # -- create backends -----------------------------------------------------
@@ -490,108 +509,145 @@ async def run_report(
     # -- run questions -------------------------------------------------------
     output_dir.mkdir(parents=True, exist_ok=True)
     results_by_section: dict[str, list[ReportQuestionResult]] = {}
+    all_results: list[ReportQuestionResult] = []
     question_counter = 0
 
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=20),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    )
+    task_id = progress.add_task("Questions", total=total_questions)
+
     try:
-        for section in sections:
-            console.print(f"\n[bold]{section.name}[/bold]")
-            section_results: list[ReportQuestionResult] = []
+        with progress:
+            for section in sections:
+                progress.console.rule(
+                    f"[bold]{section.name}[/bold]", style="dim"
+                )
+                section_results: list[ReportQuestionResult] = []
 
-            for q in section.questions:
-                question_counter += 1
-                label = f"  [{question_counter}/{total_questions}] {q.question}"
-                t0 = time.perf_counter()
-
-                if q.query:
-                    # Static execution — run pre-defined SQL directly
-                    try:
-                        console.print(f"{label} [dim](static)[/dim]")
-                        rel = store.connection.execute(q.query)
-                        result_text = _format_result_table(rel)
-                        elapsed = time.perf_counter() - t0
-                        section_results.append(ReportQuestionResult(
-                            id=q.id,
-                            section_id=q.section_id,
-                            question=q.question,
-                            backend=q.backend,
-                            query=q.query.strip(),
-                            result_text=result_text,
-                            elapsed=elapsed,
-                        ))
-                        console.print(f"    [green]done[/green] ({elapsed:.1f}s)")
-                    except Exception as exc:
-                        elapsed = time.perf_counter() - t0
-                        section_results.append(ReportQuestionResult(
-                            id=q.id,
-                            section_id=q.section_id,
-                            question=q.question,
-                            backend=q.backend,
-                            query=q.query.strip(),
-                            error=str(exc),
-                            elapsed=elapsed,
-                        ))
-                        console.print(f"    [red]error:[/red] {exc}")
-                else:
-                    # Agent execution — NL question via ask backend
-                    console.print(f"{label} [dim](agent)[/dim]")
-                    backend = (
-                        sparql_backend
-                        if q.backend == "sparql"
-                        else parquet_backend
+                for q in section.questions:
+                    question_counter += 1
+                    q_label = q.question
+                    mode = "static" if q.query else "agent"
+                    progress.update(
+                        task_id,
+                        description=f"[dim]{mode}[/dim] {q_label}",
                     )
-                    if backend is None:
-                        section_results.append(ReportQuestionResult(
-                            id=q.id,
-                            section_id=q.section_id,
-                            question=q.question,
-                            backend=q.backend,
-                            error=f"No {q.backend} backend available",
-                            elapsed=0.0,
-                        ))
-                        console.print(f"    [red]no backend[/red]")
-                        continue
+                    t0 = time.perf_counter()
 
-                    prompt = q.question
-                    if q.rationale:
-                        prompt += f"\n\nContext: {q.rationale}"
-                    # For SPARQL with filters, prepend filter context
-                    if (
-                        q.backend == "sparql"
-                        and filters
-                        and not filters.is_empty()
-                    ):
-                        prompt = (
-                            f"Restrict your analysis to items matching: "
-                            f"{filters.description()}. {prompt}"
-                        )
-
-                    ask_result: AskResult = await backend.ask(
-                        prompt, timeout=timeout, verbose=verbose,
-                    )
-                    elapsed = time.perf_counter() - t0
-                    section_results.append(ReportQuestionResult(
-                        id=q.id,
-                        section_id=q.section_id,
-                        question=q.question,
-                        backend=q.backend,
-                        answer=ask_result.answer,
-                        query=ask_result.query,
-                        result_text=ask_result.result_text,
-                        elapsed=elapsed,
-                        steps=len(ask_result.steps),
-                        error=ask_result.error,
-                    ))
-                    if ask_result.error:
-                        console.print(f"    [red]error:[/red] {ask_result.error}")
+                    if q.query:
+                        # Static execution — run pre-defined SQL directly
+                        try:
+                            rel = store.connection.execute(q.query)
+                            result_text = _format_result_table(rel)
+                            elapsed = time.perf_counter() - t0
+                            qr = ReportQuestionResult(
+                                id=q.id,
+                                section_id=q.section_id,
+                                question=q.question,
+                                backend=q.backend,
+                                query=q.query.strip(),
+                                result_text=result_text,
+                                elapsed=elapsed,
+                            )
+                        except Exception as exc:
+                            elapsed = time.perf_counter() - t0
+                            qr = ReportQuestionResult(
+                                id=q.id,
+                                section_id=q.section_id,
+                                question=q.question,
+                                backend=q.backend,
+                                query=q.query.strip(),
+                                error=str(exc),
+                                elapsed=elapsed,
+                            )
                     else:
-                        console.print(f"    [green]done[/green] ({elapsed:.1f}s)")
+                        # Agent execution — NL question via ask backend
+                        backend = (
+                            sparql_backend
+                            if q.backend == "sparql"
+                            else parquet_backend
+                        )
+                        if backend is None:
+                            qr = ReportQuestionResult(
+                                id=q.id,
+                                section_id=q.section_id,
+                                question=q.question,
+                                backend=q.backend,
+                                error=f"No {q.backend} backend available",
+                                elapsed=0.0,
+                            )
+                        else:
+                            prompt = q.question
+                            if q.rationale:
+                                prompt += f"\n\nContext: {q.rationale}"
+                            if (
+                                q.backend == "sparql"
+                                and filters
+                                and not filters.is_empty()
+                            ):
+                                prompt = (
+                                    f"Restrict your analysis to items matching: "
+                                    f"{filters.description()}. {prompt}"
+                                )
 
-            results_by_section[section.id] = section_results
+                            ask_result: AskResult = await backend.ask(
+                                prompt, timeout=timeout, verbose=verbose,
+                            )
+                            elapsed = time.perf_counter() - t0
+
+                            # Capture result table if the agent didn't provide one
+                            result_text = ask_result.result_text
+                            if (
+                                ask_result.query
+                                and not result_text
+                                and q.backend == "parquet"
+                            ):
+                                try:
+                                    rel = store.connection.execute(ask_result.query)
+                                    result_text = _format_result_table(rel)
+                                except Exception:
+                                    pass
+
+                            qr = ReportQuestionResult(
+                                id=q.id,
+                                section_id=q.section_id,
+                                question=q.question,
+                                backend=q.backend,
+                                answer=ask_result.answer,
+                                query=ask_result.query,
+                                result_text=result_text,
+                                elapsed=elapsed,
+                                steps=len(ask_result.steps),
+                                error=ask_result.error,
+                            )
+
+                    section_results.append(qr)
+                    all_results.append(qr)
+                    progress.advance(task_id)
+
+                    # Compact result line
+                    status = (
+                        "[red]error[/red]" if qr.error
+                        else "[green]ok[/green]"
+                    )
+                    progress.console.print(
+                        f"  {status} [dim]{qr.id}[/dim]  {qr.elapsed:.1f}s"
+                        + (f"  {qr.steps} steps" if qr.steps else "")
+                    )
+
+                results_by_section[section.id] = section_results
 
         # -- URL probing (special section) -----------------------------------
         url_liveness_data: dict | None = None
         if probe_urls:
-            console.print("\n[bold]URL Liveness[/bold]")
+            console.rule("[bold]URL Liveness[/bold]", style="dim")
             urls = store.connection.execute(
                 "SELECT is_shown_by FROM items "
                 "WHERE is_shown_by IS NOT NULL "
@@ -611,9 +667,46 @@ async def run_report(
     finally:
         store.close()
 
+    # -- summary table -------------------------------------------------------
+    console.print()
+    summary = Table(
+        show_header=True, header_style="bold", padding=(0, 1),
+    )
+    summary.add_column("#", justify="right", width=3)
+    summary.add_column("Section", width=14)
+    summary.add_column("Question", no_wrap=False)
+    summary.add_column("Type", width=7)
+    summary.add_column("Status", justify="center", width=7)
+    summary.add_column("Time", justify="right", width=7)
+
+    for i, qr in enumerate(all_results, 1):
+        status_text = (
+            "[red]error[/red]" if qr.error
+            else "[green]ok[/green]"
+        )
+        mode = "static" if qr.steps == 0 and not qr.answer else "agent"
+        summary.add_row(
+            str(i),
+            qr.section_id,
+            qr.question,
+            mode,
+            status_text,
+            f"{qr.elapsed:.1f}s",
+        )
+    console.print(summary)
+
+    total_elapsed = sum(r.elapsed for r in all_results)
+    errors = sum(1 for r in all_results if r.error)
+    console.print(
+        f"\n  {len(all_results)} questions, "
+        f"{len(all_results) - errors} ok, "
+        f"{errors} errors, "
+        f"{total_elapsed:.1f}s total"
+    )
+
     # -- assemble output data ------------------------------------------------
-    filter_desc = filters.description() if filters else "all"
     slice_id = filters.slice_name() if filters else "all"
+    ts = int(time.time())
 
     data: dict = {
         "_meta": {
@@ -621,19 +714,13 @@ async def run_report(
             "filter": filter_desc,
             "questions_dir": str(questions_dir),
             "total_questions": question_counter,
-            "total_elapsed": round(
-                sum(
-                    r.elapsed
-                    for results in results_by_section.values()
-                    for r in results
-                ),
-                2,
-            ),
+            "total_elapsed": round(total_elapsed, 2),
         },
         "sections": [
             {
                 "id": section.id,
                 "name": section.name,
+                "description": section.description,
                 "questions": [
                     {
                         k: v
@@ -650,8 +737,8 @@ async def run_report(
         data["url_liveness"] = url_liveness_data
 
     # -- write output files --------------------------------------------------
-    json_path = output_dir / f"report_{slice_id}.json"
-    md_path = output_dir / f"report_{slice_id}.md"
+    json_path = output_dir / f"report_{slice_id}_{ts}.json"
+    md_path = output_dir / f"report_{slice_id}_{ts}.md"
 
     with open(json_path, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -660,11 +747,7 @@ async def run_report(
     with open(md_path, "w") as f:
         f.write(md_text)
 
-    console.print(
-        f"\n[green]Report complete "
-        f"({len(sections)} sections, {question_counter} questions)[/green]"
-    )
-    console.print(f"  JSON: {json_path}")
+    console.print(f"\n  JSON:     {json_path}")
     console.print(f"  Markdown: {md_path}")
 
     return Report(
@@ -729,15 +812,41 @@ def _render_report_markdown(data: dict) -> str:
     """Render the report as a Markdown document."""
     lines: list[str] = []
     meta = data.get("_meta", {})
+    sections = data.get("sections", [])
 
+    # -- header --------------------------------------------------------------
     lines.append("# Europeana Report")
-    lines.append(f"\n**Generated:** {meta.get('timestamp', 'N/A')}")
-    lines.append(f"**Filter:** {meta.get('filter', 'all')}")
+    lines.append("")
+    lines.append(f"| | |")
+    lines.append(f"|---|---|")
+    lines.append(f"| **Generated** | {meta.get('timestamp', 'N/A')} |")
+    lines.append(f"| **Filter** | {meta.get('filter', 'all')} |")
+    total_q = meta.get("total_questions", 0)
+    total_t = meta.get("total_elapsed", 0)
+    lines.append(f"| **Questions** | {total_q} |")
+    lines.append(f"| **Total time** | {total_t:.1f}s |")
     lines.append("")
 
-    for i, section in enumerate(data.get("sections", []), 1):
+    # -- table of contents ---------------------------------------------------
+    if len(sections) > 1:
+        lines.append("## Contents")
+        lines.append("")
+        for i, section in enumerate(sections, 1):
+            n = len(section.get("questions", []))
+            lines.append(f"{i}. [{section['name']}](#{_anchor(section['name'])}) ({n} questions)")
+        if "url_liveness" in data:
+            lines.append(f"{len(sections) + 1}. [URL Liveness](#url-liveness)")
+        lines.append("")
+
+    # -- sections ------------------------------------------------------------
+    for i, section in enumerate(sections, 1):
+        lines.append("---")
+        lines.append("")
         lines.append(f"## {i}. {section['name']}")
         lines.append("")
+        if section.get("description"):
+            lines.append(f"*{section['description']}*")
+            lines.append("")
 
         for qr in section.get("questions", []):
             lines.append(f"### {qr['question']}")
@@ -758,11 +867,20 @@ def _render_report_markdown(data: dict) -> str:
                 lines.append(qr["result_text"])
                 lines.append("")
 
-            # Query in collapsible block
+            # Query and metadata in collapsible block
             if qr.get("query"):
                 lang = "sparql" if qr.get("backend") == "sparql" else "sql"
+                backend = qr.get("backend", "sql")
+                elapsed = qr.get("elapsed", 0)
+                steps = qr.get("steps", 0)
+                meta_parts = [f"{backend}"]
+                if elapsed:
+                    meta_parts.append(f"{elapsed:.1f}s")
+                if steps:
+                    meta_parts.append(f"{steps} steps")
+                meta_str = ", ".join(meta_parts)
                 lines.append("<details>")
-                lines.append(f"<summary>Query ({qr.get('backend', 'sql')})</summary>")
+                lines.append(f"<summary>Query ({meta_str})</summary>")
                 lines.append("")
                 lines.append(f"```{lang}")
                 lines.append(qr["query"])
@@ -771,18 +889,29 @@ def _render_report_markdown(data: dict) -> str:
                 lines.append("</details>")
                 lines.append("")
 
-    # URL liveness section
+    # -- URL liveness section ------------------------------------------------
     if "url_liveness" in data:
         ul = data["url_liveness"]
+        lines.append("---")
+        lines.append("")
         lines.append("## URL Liveness")
-        lines.append(f"\n- Sample size: **{ul['sample_size']}**")
+        lines.append("")
+        lines.append(f"| | |")
+        lines.append(f"|---|---|")
+        lines.append(f"| **Sample size** | {ul['sample_size']} |")
         if ul.get("median_response_time"):
-            lines.append(f"- Median response time: **{ul['median_response_time']}s**")
-        lines.append(f"- Harvestability rate: **{ul['harvestability_rate_pct']}%**")
-        lines.append("\n| Status | Count |")
+            lines.append(f"| **Median response time** | {ul['median_response_time']}s |")
+        lines.append(f"| **Harvestability rate** | {ul['harvestability_rate_pct']}% |")
+        lines.append("")
+        lines.append("| Status | Count |")
         lines.append("|--------|------:|")
         for status, count in sorted(ul.get("status_distribution", {}).items()):
             lines.append(f"| {status} | {count} |")
         lines.append("")
 
     return "\n".join(lines) + "\n"
+
+
+def _anchor(text: str) -> str:
+    """Convert a heading to a GitHub-flavored Markdown anchor."""
+    return re.sub(r"[^\w\s-]", "", text.lower()).replace(" ", "-")
