@@ -4,14 +4,17 @@ Sends natural-language questions to the GRASP NL-to-SPARQL server
 over WebSocket, displays per-step agent traces live with spinners
 and elapsed time, and streams results to a JSONL file.
 
-Questions are loaded from grasp/benchmark.yml.
+Questions are loaded from grasp/benchmark.yml by default, or from a
+positional argument.
 
 Usage:
     uv run python grasp/benchmark.py
+    uv run python grasp/benchmark.py questions.yml
     uv run python grasp/benchmark.py --timeout 120
     uv run python grasp/benchmark.py --question 5
     uv run python grasp/benchmark.py --overwrite
     uv run python grasp/benchmark.py --retry-failed
+    uv run python grasp/benchmark.py --with-rationale
 """
 
 from __future__ import annotations
@@ -40,8 +43,6 @@ from rich.text import Text
 
 GRASP_WS_URL = "ws://localhost:6789/live"
 BENCHMARK_PATH = Path(__file__).parent / "benchmark.yml"
-REPORT_PATH = Path(__file__).parent / "benchmark-results.jsonl"
-CONFIG_PATH = Path(__file__).parent / "benchmark-config.json"
 
 console = Console()
 
@@ -120,14 +121,36 @@ _SERVER_ERROR_PHRASES = [
 ]
 
 
-def load_questions() -> list[str]:
-    return yaml.safe_load(BENCHMARK_PATH.read_text())["questions"]
+def _derive_paths(questions_file: Path) -> tuple[Path, Path]:
+    """Derive report and config paths from the questions file."""
+    stem = questions_file.stem
+    parent = questions_file.parent
+    return (
+        parent / f"{stem}-results.jsonl",
+        parent / f"{stem}-config.json",
+    )
 
 
-def load_existing_results() -> dict[int, dict]:
+def load_questions(path: Path, with_rationale: bool = False) -> list[str]:
+    with open(path) as f:
+        raw = yaml.safe_load(f)
+    entries = raw["questions"] if isinstance(raw, dict) else raw
+    out = []
+    for q in entries:
+        if isinstance(q, dict):
+            text = q["question"]
+            if with_rationale and q.get("rationale"):
+                text += f"\n\nContext: {q['rationale']}"
+            out.append(text)
+        else:
+            out.append(q)
+    return out
+
+
+def load_existing_results(report_path: Path) -> dict[int, dict]:
     results: dict[int, dict] = {}
-    if REPORT_PATH.exists():
-        for line in REPORT_PATH.read_text().splitlines():
+    if report_path.exists():
+        for line in report_path.read_text().splitlines():
             if not (line := line.strip()):
                 continue
             try:
@@ -334,7 +357,7 @@ def display_result_footer(r: BenchmarkResult) -> None:
     console.print()
 
 
-def display_summary(results: list[BenchmarkResult], total_wall: float = 0) -> None:
+def display_summary(results: list[BenchmarkResult], total_wall: float = 0, *, with_rationale: bool = False) -> None:
     console.rule("[bold]Summary[/]")
 
     table = Table(show_header=True, header_style="bold", padding=(0, 1))
@@ -377,6 +400,7 @@ def display_summary(results: list[BenchmarkResult], total_wall: float = 0) -> No
     console.print(f"  Total steps:    {total_steps} (avg {total_steps / n:.1f})")
     console.print(f"  SPARQL execs:   {total_exec} (avg {total_exec / n:.1f})")
     console.print(f"  Time p50/p90:   {times[len(times) // 2]:.1f}s / {times[int(len(times) * 0.9)]:.1f}s")
+    console.print(f"  Rationale:      {'yes' if with_rationale else 'no'}")
     console.print()
 
 
@@ -385,12 +409,13 @@ def display_summary(results: list[BenchmarkResult], total_wall: float = 0) -> No
 # ---------------------------------------------------------------------------
 
 
-async def save_server_config(ws_url: str) -> dict:
+async def save_server_config(ws_url: str, config_path: Path, *, with_rationale: bool = False) -> dict:
     http_base = ws_url.replace("ws://", "http://").replace("/live", "")
     async with httpx.AsyncClient() as client:
         resp = await client.get(f"{http_base}/config", timeout=5)
     config = resp.json()
-    CONFIG_PATH.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n")
+    config["with_rationale"] = with_rationale
+    config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n")
     return config
 
 
@@ -471,6 +496,8 @@ async def run_question(
 
 async def run_benchmark() -> None:
     parser = argparse.ArgumentParser(description="GRASP benchmark")
+    parser.add_argument("questions_file", nargs="?", default=None,
+                        help="YAML question file (default: benchmark.yml)")
     parser.add_argument("--timeout", type=float, default=180.0,
                         help="Total timeout per question in seconds (default: 180)")
     parser.add_argument("--question", type=int, default=None,
@@ -480,13 +507,24 @@ async def run_benchmark() -> None:
                         help="Overwrite results file instead of appending")
     parser.add_argument("--retry-failed", action="store_true",
                         help="Re-run questions that previously failed (timeout, server error)")
+    parser.add_argument("--with-rationale", action="store_true",
+                        help="Include rationale context in prompts sent to the server")
     args = parser.parse_args()
 
-    all_questions = load_questions()
+    # Resolve question file and derived paths
+    if args.questions_file is not None:
+        questions_path = Path(args.questions_file).resolve()
+    else:
+        questions_path = BENCHMARK_PATH
+    report_path, config_path = _derive_paths(questions_path)
+
+    all_questions = load_questions(questions_path, with_rationale=args.with_rationale)
 
     # Check server reachability and save config
     try:
-        config = await save_server_config(args.url)
+        config = await save_server_config(
+            args.url, config_path, with_rationale=args.with_rationale,
+        )
         model = config.get("model", "unknown")
     except Exception:
         console.print("[red]ERROR: GRASP server not reachable[/]")
@@ -495,7 +533,7 @@ async def run_benchmark() -> None:
     # Load existing results for skip/retry logic
     existing: dict[int, dict] = {}
     if not args.overwrite and not args.question:
-        existing = load_existing_results()
+        existing = load_existing_results(report_path)
 
     # Select questions to run
     if args.question is not None:
@@ -525,9 +563,11 @@ async def run_benchmark() -> None:
     # Banner
     console.print(f"\n[bold blue]GRASP Benchmark[/]")
     console.print(f"  Model: {model}")
+    console.print(f"  Questions: {questions_path}")
     console.print(f"  Running {len(questions)} question(s) against {args.url}")
     console.print(f"  Timeout: {args.timeout}s per question")
-    console.print(f"  Results: {REPORT_PATH} ({'overwrite' if args.overwrite else 'append'})")
+    console.print(f"  Rationale: {'included in prompts' if args.with_rationale else 'off'}")
+    console.print(f"  Results: {report_path} ({'overwrite' if args.overwrite else 'append'})")
     if skip_count:
         console.print(f"  Skipping {skip_count} already-completed question(s)")
     if retry_count:
@@ -536,7 +576,7 @@ async def run_benchmark() -> None:
 
     # Run questions, streaming results to JSONL
     results: list[BenchmarkResult] = []
-    results_file = open(REPORT_PATH, "w" if args.overwrite else "a")
+    results_file = open(report_path, "w" if args.overwrite else "a")
     t0_total = time.time()
 
     try:
@@ -558,10 +598,10 @@ async def run_benchmark() -> None:
         total_wall = time.time() - t0_total
 
     if len(results) > 1:
-        display_summary(results, total_wall)
+        display_summary(results, total_wall, with_rationale=args.with_rationale)
 
-    console.print(f"  Results saved to {REPORT_PATH}")
-    console.print(f"  Config saved to {CONFIG_PATH}")
+    console.print(f"  Results saved to {report_path}")
+    console.print(f"  Config saved to {config_path}")
 
 
 # ---------------------------------------------------------------------------

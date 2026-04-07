@@ -132,6 +132,7 @@ classes:
         range: uri
         required: true
         identifier: true
+        description: Item URI identifier (e.g. http://data.europeana.eu/item/123/abc).
         annotations:
           rdf_source: aggregation
 
@@ -140,6 +141,7 @@ classes:
         slot_uri: edm:type
         range: EdmType
         required: true
+        description: "edm:type enum: IMAGE, TEXT, SOUND, VIDEO, 3D."
         annotations:
           rdf_source: proxy
           proxy_source: europeana
@@ -147,20 +149,26 @@ classes:
       # -- Single-valued from aggregation --
       country:
         slot_uri: edm:country
+        range: string
         required: true
+        description: Country of the providing institution.
         annotations:
           rdf_source: europeana_aggregation
 
       institution:
         slot_uri: edm:dataProvider
+        range: string
         required: true
+        description: Data provider organisation URI.
         annotations:
           sparql_variable: dataProvider
           rdf_source: aggregation
 
       aggregator:
         slot_uri: edm:provider
+        range: string
         required: true
+        description: Aggregator organisation URI.
         annotations:
           sparql_variable: provider
           rdf_source: aggregation
@@ -169,26 +177,29 @@ classes:
         slot_uri: edm:rights
         range: uri
         required: true
+        description: edm:rights URI (license/rights statement).
         annotations:
           rdf_source: aggregation
 
       reuse_level:
         range: ReuseLevel
+        description: >-
+          Computed from edm:rights URI via pattern matching.
+          Values: open, restricted, closed, unknown.
         annotations:
           computed: "true"
-        description: >-
-          Derived from edm:rights URI via pattern matching.
-          open / restricted / prohibited.
 
       completeness:
         slot_uri: edm:completeness
         range: integer
+        description: Metadata completeness score (0–15).
         annotations:
           rdf_source: europeana_aggregation
 
       is_shown_at:
         slot_uri: edm:isShownAt
         range: uri
+        description: Landing page URL at provider website.
         annotations:
           sparql_variable: isShownAt
           rdf_source: aggregation
@@ -196,6 +207,7 @@ classes:
       is_shown_by:
         slot_uri: edm:isShownBy
         range: uri
+        description: Direct content URL (downloadable digital object).
         annotations:
           sparql_variable: isShownBy
           rdf_source: aggregation
@@ -203,18 +215,22 @@ classes:
       preview:
         slot_uri: edm:preview
         range: uri
+        description: Thumbnail URL.
         annotations:
           rdf_source: europeana_aggregation
 
       landing_page:
         slot_uri: edm:landingPage
         range: uri
+        description: Europeana portal URL for this item.
         annotations:
           sparql_variable: landingPage
           rdf_source: europeana_aggregation
 
       dataset_name:
         slot_uri: edm:datasetName
+        range: string
+        description: Dataset/collection name.
         annotations:
           sparql_variable: datasetName
           rdf_source: europeana_aggregation
@@ -224,6 +240,7 @@ classes:
         slot_uri: dc:title
         range: LangValue
         multivalued: true
+        description: dc:title values with language tags from provider proxy.
         annotations:
           base_table: items_titles
           rdf_source: proxy
@@ -234,6 +251,7 @@ classes:
         slot_uri: dc:description
         range: LangValue
         multivalued: true
+        description: dc:description values with language tags from provider proxy.
         annotations:
           base_table: items_descriptions
           rdf_source: proxy
@@ -245,6 +263,7 @@ classes:
         slot_uri: dc:creator
         range: NamedEntity
         multivalued: true
+        description: dc:creator — resolved agent names with entity URIs where available.
         annotations:
           base_table: items_creators
           rdf_source: proxy
@@ -256,6 +275,7 @@ classes:
         slot_uri: dc:contributor
         range: NamedEntity
         multivalued: true
+        description: dc:contributor — resolved agent names with entity URIs.
         annotations:
           base_table: items_contributors
           rdf_source: proxy
@@ -267,6 +287,7 @@ classes:
         slot_uri: dc:publisher
         range: NamedEntity
         multivalued: true
+        description: dc:publisher — resolved agent names with entity URIs.
         annotations:
           base_table: items_publishers
           rdf_source: proxy
@@ -279,6 +300,7 @@ classes:
         slot_uri: dc:subject
         range: LabeledEntity
         multivalued: true
+        description: dc:subject — resolved concept labels with entity URIs.
         annotations:
           base_table: items_subjects
           rdf_source: proxy
@@ -290,6 +312,9 @@ classes:
         slot_uri: dc:type
         range: LabeledEntity
         multivalued: true
+        description: >-
+          dc:type — free-text type labels from providers with entity URIs.
+          Not to be confused with edm:type (the type column).
         annotations:
           base_table: items_dc_types
           rdf_source: proxy
@@ -301,6 +326,7 @@ classes:
         slot_uri: dc:format
         range: LabeledEntity
         multivalued: true
+        description: dc:format — MIME types or physical format labels with entity URIs.
         annotations:
           base_table: items_formats
           rdf_source: proxy
@@ -311,7 +337,9 @@ classes:
       # -- Multi-valued: simple string lists --
       dates:
         slot_uri: dc:date
+        range: string
         multivalued: true
+        description: dc:date, dcterms:created, dcterms:issued values as strings.
         annotations:
           base_table: items_dates
           rdf_source: proxy
@@ -320,7 +348,9 @@ classes:
 
       years:
         slot_uri: edm:year
+        range: string
         multivalued: true
+        description: edm:year from Europeana proxy (normalised integer years stored as strings).
         annotations:
           base_table: items_years
           rdf_source: proxy
@@ -329,7 +359,9 @@ classes:
 
       languages:
         slot_uri: dc:language
+        range: string
         multivalued: true
+        description: dc:language codes from provider proxy.
         annotations:
           base_table: items_languages
           rdf_source: proxy
@@ -338,7 +370,9 @@ classes:
 
       identifiers:
         slot_uri: dc:identifier
+        range: string
         multivalued: true
+        description: dc:identifier values.
         annotations:
           base_table: items_identifiers
           rdf_source: proxy
@@ -347,7 +381,9 @@ classes:
 
       dc_rights:
         slot_uri: dc:rights
+        range: string
         multivalued: true
+        description: dc:rights literal values (not to be confused with edm:rights URI in the rights column).
         annotations:
           base_table: items_dc_rights
           rdf_source: proxy
@@ -357,6 +393,8 @@ classes:
       # -- Web resource scalars --
       mime_type:
         slot_uri: ebucore:hasMimeType
+        range: string
+        description: MIME type of the primary web resource.
         annotations:
           sparql_variable: mime
           rdf_source: web_resource
@@ -364,18 +402,21 @@ classes:
       width:
         slot_uri: ebucore:width
         range: integer
+        description: Pixel width of the primary web resource (NULL if unknown).
         annotations:
           rdf_source: web_resource
 
       height:
         slot_uri: ebucore:height
         range: integer
+        description: Pixel height of the primary web resource (NULL if unknown).
         annotations:
           rdf_source: web_resource
 
       file_bytes:
         slot_uri: ebucore:fileByteSize
         range: integer
+        description: File size in bytes of the primary web resource (NULL if unknown).
         annotations:
           sparql_variable: bytes
           rdf_source: web_resource
@@ -383,6 +424,7 @@ classes:
       has_iiif:
         slot_uri: svcs:has_service
         range: boolean
+        description: Whether any web resource exposes a IIIF image service.
         annotations:
           sparql_variable: has_service
           rdf_source: web_resource
@@ -414,29 +456,40 @@ classes:
         range: uri
         required: true
         identifier: true
+        description: Agent entity URI.
       pref_label:
         slot_uri: skos:prefLabel
         required: true
+        description: Preferred label (skos:prefLabel).
       pref_label_lang:
-        description: Language tag of pref_label
+        description: Language tag of pref_label.
       date_of_birth:
         slot_uri: rdaGr2:dateOfBirth
+        description: Date of birth.
       date_of_death:
         slot_uri: rdaGr2:dateOfDeath
+        description: Date of death.
       date_of_establishment:
         slot_uri: rdaGr2:dateOfEstablishment
+        description: Date the organisation was established.
       date_of_termination:
         slot_uri: rdaGr2:dateOfTermination
+        description: Date the organisation was terminated.
       gender:
         slot_uri: rdaGr2:gender
+        description: Gender of the person.
       place_of_birth:
         slot_uri: rdaGr2:placeOfBirth
+        description: Place of birth URI or literal.
       place_of_death:
         slot_uri: rdaGr2:placeOfDeath
+        description: Place of death URI or literal.
       begin:
         slot_uri: edm:begin
+        description: Start of activity period.
       end:
         slot_uri: edm:end
+        description: End of activity period.
 
   Concept:
     description: Contextual entity representing a SKOS concept.
@@ -464,14 +517,17 @@ classes:
         range: uri
         required: true
         identifier: true
+        description: Concept entity URI.
       pref_label:
         slot_uri: skos:prefLabel
         required: true
+        description: Preferred label (skos:prefLabel).
       pref_label_lang:
-        description: Language tag of pref_label
+        description: Language tag of pref_label.
       scheme:
         slot_uri: skos:inScheme
         range: uri
+        description: SKOS concept scheme URI (skos:inScheme).
 
   Place:
     description: Contextual entity representing a geographic location.
@@ -493,20 +549,25 @@ classes:
         range: uri
         required: true
         identifier: true
+        description: Place entity URI.
       pref_label:
         slot_uri: skos:prefLabel
         required: true
+        description: Preferred label (skos:prefLabel).
       pref_label_lang:
-        description: Language tag of pref_label
+        description: Language tag of pref_label.
       lat:
         slot_uri: wgs84_pos:lat
         range: float
+        description: WGS84 latitude.
       lon:
         slot_uri: wgs84_pos:long
         range: float
+        description: WGS84 longitude.
       alt:
         slot_uri: wgs84_pos:alt
         range: float
+        description: WGS84 altitude.
 
   TimeSpan:
     description: Contextual entity representing a time period.
@@ -527,17 +588,22 @@ classes:
         range: uri
         required: true
         identifier: true
+        description: TimeSpan entity URI.
       pref_label:
         slot_uri: skos:prefLabel
         required: true
+        description: Preferred label (skos:prefLabel).
       pref_label_lang:
-        description: Language tag of pref_label
+        description: Language tag of pref_label.
       begin:
         slot_uri: edm:begin
+        description: Start of the time period.
       end:
         slot_uri: edm:end
+        description: End of the time period.
       notation:
         slot_uri: skos:notation
+        description: Notation or code for this time period.
 
   Organization:
     description: Data provider or aggregator organisation.
@@ -549,21 +615,26 @@ classes:
         range: uri
         required: true
         identifier: true
+        description: Organisation entity URI.
       name:
         slot_uri: skos:prefLabel
         required: true
+        description: Organisation name (skos:prefLabel).
       lang:
-        description: Language tag of name
+        description: Language tag of the name.
       acronym:
         slot_uri: edm:acronym
+        description: Organisation acronym.
       country:
         slot_uri: edm:country
+        description: Country of the organisation.
       role:
         slot_uri: edm:europeanaRole
+        description: Europeana role (data provider, aggregator, etc.).
       wikidata:
         slot_uri: owl:sameAs
         range: uri
-        description: Filtered to Wikidata entity URIs only.
+        description: Wikidata entity URI (owl:sameAs, filtered to wikidata.org).
 
   # =================================================================
   # Scan exports — flat SPARQL with custom patterns
@@ -600,46 +671,58 @@ classes:
       item:
         range: uri
         required: true
+        description: Item URI identifier.
         annotations:
           sparql_binding: "?item"
       type:
         range: EdmType
+        description: "edm:type enum: IMAGE, TEXT, SOUND, VIDEO, 3D."
         annotations:
           sparql_binding: "?type"
       rights:
         range: uri
+        description: edm:rights URI (license/rights statement).
         annotations:
           sparql_binding: "?rights"
       country:
+        description: Country of the providing institution.
         annotations:
           sparql_binding: "?country"
       dataProvider:
+        description: Data provider organisation URI or literal.
         annotations:
           sparql_binding: "?dataProvider"
       provider:
+        description: Aggregator organisation URI or literal.
         annotations:
           sparql_binding: "?provider"
       isShownAt:
         range: uri
+        description: Landing page URL at provider website.
         annotations:
           sparql_binding: "OPTIONAL { ?agg edm:isShownAt ?isShownAt }"
       isShownBy:
         range: uri
+        description: Direct content URL (downloadable digital object).
         annotations:
           sparql_binding: "OPTIONAL { ?agg edm:isShownBy ?isShownBy }"
       completeness:
         range: integer
+        description: Metadata completeness score (0–15).
         annotations:
           sparql_binding: "OPTIONAL { ?eAgg edm:completeness ?completeness }"
       preview:
         range: uri
+        description: Thumbnail URL.
         annotations:
           sparql_binding: "OPTIONAL { ?eAgg edm:preview ?preview }"
       landingPage:
         range: uri
+        description: Europeana portal URL for this item.
         annotations:
           sparql_binding: "OPTIONAL { ?eAgg edm:landingPage ?landingPage }"
       datasetName:
+        description: Dataset/collection name.
         annotations:
           sparql_binding: "OPTIONAL { ?eAgg edm:datasetName ?datasetName }"
 
@@ -659,30 +742,38 @@ classes:
       item:
         range: uri
         required: true
+        description: Item URI this web resource belongs to.
         annotations:
           sparql_binding: "?item"
       url:
         range: uri
+        description: Web resource URL (edm:isShownBy).
         annotations:
           sparql_binding: "?url"
       mime:
+        description: MIME type (ebucore:hasMimeType).
         annotations:
           sparql_binding: "OPTIONAL { ?url ebucore:hasMimeType ?mime }"
       width:
+        description: Pixel width (ebucore:width).
         annotations:
           sparql_binding: "OPTIONAL { ?url ebucore:width ?width }"
       height:
+        description: Pixel height (ebucore:height).
         annotations:
           sparql_binding: "OPTIONAL { ?url ebucore:height ?height }"
       bytes:
+        description: File size in bytes (ebucore:fileByteSize).
         annotations:
           sparql_binding: "OPTIONAL { ?url ebucore:fileByteSize ?bytes }"
       wr_rights:
         range: uri
+        description: Rights statement for this specific web resource.
         annotations:
           sparql_binding: "OPTIONAL { ?url edm:rights ?wr_rights }"
       has_service:
         range: boolean
+        description: Whether a IIIF or other service is attached.
         annotations:
           sparql_binding: |
             OPTIONAL { ?url svcs:has_service ?_svc }
@@ -705,25 +796,32 @@ classes:
       org:
         range: uri
         required: true
+        description: Organisation URI.
         annotations:
           sparql_binding: "?org"
       name:
+        description: Organisation name (skos:prefLabel value).
         annotations:
           sparql_binding: "?name"
       lang:
+        description: Language tag of the name.
         annotations:
           sparql_binding: "?lang"
       acronym:
+        description: Organisation acronym.
         annotations:
           sparql_binding: "OPTIONAL { ?org edm:acronym ?acronym }"
       country:
+        description: Country of the organisation.
         annotations:
           sparql_binding: "OPTIONAL { ?org edm:country ?country }"
       role:
+        description: Europeana role (data provider, aggregator, etc.).
         annotations:
           sparql_binding: "OPTIONAL { ?org edm:europeanaRole ?role }"
       wikidata:
         range: uri
+        description: Wikidata entity URI (owl:sameAs, filtered to wikidata.org).
         annotations:
           sparql_binding: >-
             OPTIONAL { ?org owl:sameAs ?wikidata .

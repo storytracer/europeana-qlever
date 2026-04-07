@@ -75,6 +75,14 @@ DEFAULT_EXPORT_RETRY_DELAYS = (5, 15)  # seconds between retry attempts
 # Note: num-triples-per-batch is NOT included here — it is injected
 # dynamically by cli.py from ResourceBudget.qlever_triples_per_batch().
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# NL→DuckDB agent defaults (``ask`` command)
+# ---------------------------------------------------------------------------
+ASK_MODEL = "gpt-4.1-mini"
+ASK_MAX_STEPS = 15
+ASK_MAX_RESULT_ROWS = 50
+ASK_TEMPERATURE = 0.0
+
 QLEVER_INDEX_SETTINGS = {
     "languages-internal": [],
     "prefixes-external": [

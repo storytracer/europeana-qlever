@@ -1622,3 +1622,79 @@ def report(
         counters["sections"] = result.sections_computed
         counters["json_path"] = str(result.json_path)
         counters["markdown_path"] = str(result.markdown_path)
+
+
+# ---------------------------------------------------------------------------
+# ask — NL→DuckDB agent
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.argument("question")
+@click.option("--filters", "-f", "filter_string", default=None,
+              help='Pre-filter items_resolved, e.g. "country=NL type=IMAGE reuse_level=open"')
+@click.option("--model", default=None, show_default=True,
+              help="Override the LLM model (default: gpt-4.1-mini).")
+@click.option("--max-steps", default=None, type=int, show_default=True,
+              help="Maximum agent steps (default: 15).")
+@click.option("--verbose", "-v", is_flag=True, default=False,
+              help="Show full agent trace (tool calls and results).")
+@click.option("--duckdb-memory", default="auto", show_default=True,
+              help="DuckDB memory budget.")
+@click.pass_context
+def ask(
+    ctx: click.Context,
+    question: str,
+    filter_string: str | None,
+    model: str | None,
+    max_steps: int | None,
+    verbose: bool,
+    duckdb_memory: str,
+):
+    """Ask a natural language question about the exported Parquet data.
+
+    Uses an LLM agent (gpt-4.1-mini) to translate your question to DuckDB SQL,
+    execute it over the exported Parquet files, and return a natural language answer.
+
+    Requires OPENAI_API_KEY environment variable (or set in grasp/.env).
+
+    \b
+    Examples:
+        ask "How many openly-reusable items are there?"
+        ask "What is the resolution distribution for open images?"
+        ask -f "country=NL" "What are the top 10 subjects?"
+        ask --verbose "How many PDM items have no year data?"
+    """
+    from .ask import run_ask
+    from .constants import ASK_MAX_STEPS, ASK_MODEL
+    from .report import ReportFilters
+    from .telemetry import command_span
+
+    telemetry = ctx.obj["telemetry"]
+    exports_dir: Path = ctx.obj["exports_dir"]
+    budget = ctx.obj["budget"]
+
+    if duckdb_memory == "auto":
+        duckdb_memory = budget.duckdb_memory()
+
+    filters = ReportFilters.parse(filter_string) if filter_string else None
+
+    with command_span(telemetry, {
+        "question": question,
+        "filter": filters.description() if filters else "none",
+        "model": model or ASK_MODEL,
+    }) as counters:
+        result = run_ask(
+            exports_dir=exports_dir,
+            question=question,
+            filters=filters,
+            model=model or ASK_MODEL,
+            max_steps=max_steps or ASK_MAX_STEPS,
+            verbose=verbose,
+            memory_limit=duckdb_memory,
+        )
+        counters["steps"] = result.steps
+        counters["elapsed"] = result.elapsed
+        counters["has_answer"] = result.answer is not None
+        if result.error:
+            counters["error"] = result.error

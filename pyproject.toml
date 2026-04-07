@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=23.0.1",
     "psutil>=7.0.0",
     "linkml-runtime>=1.8.0",
+    "mlcroissant>=1.0",
 ]
 
 [project.scripts]

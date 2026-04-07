@@ -1,88 +1,178 @@
-questions:
-  # === 1. Volume & Type Breakdown ===
-  - How many items are there for each media type?
-  - How many items with open reuse rights are there per media type?
-  - How many image items have a direct link to the digital object via edm:isShownBy?
+# ───────────────────────────────────────────────────────────────────
+# GRASP Benchmark — AI data offering analysis questions
+#
+# Format: each entry has `question` and `rationale` keys.
+# If your loader expects plain strings, either:
+#   a) update load_questions() to handle dicts, or
+#   b) strip rationale and flatten to strings.
+#
+# To benchmark whether rationale helps GRASP, you could pass
+# "{question}\n\nContext: {rationale}" as the prompt and compare
+# accuracy against the question alone.
+# ───────────────────────────────────────────────────────────────────
 
-  # === 2. Rights & Reuse Filtering ===
-  - What are the 10 most common rights statements and how many items does each have?
-  - How many items have open reuse rights?
-  - How many image items have open reuse rights, and how many do not?
+# Multi-page items: structural depth
+- question: >-
+    How many openly-reusable items have more than one web resource via
+    edm:hasView on their aggregation? Show the distribution: how many
+    items have exactly 1 web resource, how many have 2 to 5, how many
+    have 6 to 20, how many have 21 to 100, and how many have more than
+    100 web resources?
+  rationale: >-
+    Multi-page items (books, manuscripts, archival folders) look like
+    one item in Europeana but contain dozens or hundreds of images.
+    This changes how you structure a Parquet export — object-level rows
+    vs. content-level rows — and changes the true volume of
+    downloadable content. An item with 200 scanned pages is 200
+    training images for a CV model, not one. It also determines how
+    close we are to the 30M digitised objects target when counting
+    actual digital representations rather than catalogue records.
 
-  # === 3. Multilingual Coverage ===
-  - What are the top 15 languages by number of items?
-  - How many items have titles in more than one language?
-  - How many items have an English-language title?
-  - How many items have both an English and a non-English title?
+# Cultural heritage images minus biodiversity specimens
+- question: >-
+    How many openly-reusable image items that do NOT have a dc:type
+    containing 'Preserved Specimen' or 'biological specimen' or
+    'herbarium' have an edm:isShownBy link, a title, and at least one
+    subject? Break this down by the top 15 countries.
+  rationale: >-
+    The existing benchmark showed natural history specimens dominate
+    the open-image pool (~10.8M 'Preserved Specimen' alone). Without
+    excluding them, any 'cultural heritage image dataset' claim is
+    misleading. This question isolates the core cultural heritage
+    vision dataset, and the country breakdown shows geographic coverage
+    for a non-specimen offering. Essential for the briefing's data
+    offering definition.
 
-  # === 4. Geographic & Provider Distribution ===
-  - What are the top 10 countries by number of openly-reusable image items?
-  - What are the top 10 data providers by number of items with open reuse rights?
-  - How many distinct data providers contribute items with open reuse rights?
+# EU 24 official language coverage in titles
+- question: >-
+    For each of the 24 EU official languages (bg, hr, cs, da, nl, en,
+    et, fi, fr, de, el, hu, ga, it, lv, lt, mt, pl, pt, ro, sk, sl,
+    es, sv), how many openly-reusable items have at least one dc:title
+    on the provider proxy with a language tag matching that language?
+  rationale: >-
+    The whitepaper states many EU languages account for less than 0.6%
+    of web content and that AI systems trained predominantly on English
+    'sideline Europe's rich cultural perspective.' This measures
+    whether Europeana's data can correct that imbalance. If Estonian or
+    Maltese titles number in the hundreds of thousands, that is a
+    concrete contribution to linguistic diversity in AI. If some
+    languages are near-zero, that is a gap to flag. The existing
+    benchmark only showed top-10 languages, masking the long tail that
+    matters most for EU policy.
 
-  # === 5. Technical Metadata for Computer Vision ===
-  - How many image items with open reuse rights have web resources with width and height metadata?
-  - How many openly-reusable image items have web resources with resolution above 1 megapixel?
-  - What are the 10 most common MIME types for web resources of openly-reusable image items?
+# Untagged titles: the multilinguality dark matter
+- question: >-
+    How many openly-reusable items have at least one dc:title on the
+    provider proxy where the language tag is empty (i.e. no language
+    tag at all)? And how many openly-reusable items have all their
+    dc:title values with a non-empty language tag?
+  rationale: >-
+    Untagged titles cannot be used for language-specific filtering,
+    monolingual exports, or cross-lingual alignment. If most titles
+    lack language tags, the 'multilingual vs. monolingual export'
+    question becomes moot — you cannot segment by language because the
+    language is unknown. This determines whether extra processing
+    (language detection) is needed before any language-based offering
+    is viable, and how much Europeana must invest in data quality to
+    make its multilingual promise real.
 
-  # === 6. Subject & Concept Coverage ===
-  - How many openly-reusable image items have at least one subject?
-  - What are the 20 most common dc:type values for openly-reusable image items?
+# IIIF content: the premium harvestable tier
+- question: >-
+    How many openly-reusable items have a web resource with a
+    svcs:has_service linking to a svcs:Service that has
+    dcterms:conformsTo containing 'iiif.io'? Break down by edm:type
+    and by the top 10 data providers.
+  rationale: >-
+    IIIF items can be harvested programmatically at any resolution
+    without scraping, and they guarantee the image is actually
+    reachable. This is the premium content access tier — the subset
+    where Europeana can offer a genuine 'data + content' product
+    rather than 'metadata + broken links.' The provider breakdown
+    shows which institutions have the infrastructure for scalable
+    content delivery, directly informing the briefing's section on
+    options for providing data (scenario 2: prepare specific datasets
+    with full content).
 
-  # === 7. Text & OCR Exports ===
-  - How many text items have open reuse rights?
-  - How many text items with open reuse rights are in English?
+# Multilingual depth of enriched subject concepts
+- question: >-
+    For openly-reusable items that have an enriched dc:subject entity
+    (as IRI) on the Europeana proxy linking to a skos:Concept, how
+    many of those concepts have skos:prefLabel in 3 or more distinct
+    languages? And how many have prefLabel in 10 or more languages?
+  rationale: >-
+    This measures the depth of Europeana's multilingual knowledge
+    infrastructure — not just whether items have multilingual titles
+    (which depends on providers), but whether the enrichment layer
+    provides cross-lingual bridges. A concept with labels in 15 EU
+    languages means an image tagged with that concept can be searched,
+    captioned, and aligned across all those languages, even if the
+    original title is monolingual Dutch. This is Europeana's unique
+    value-add for multilingual AI: the knowledge graph turns
+    monolingual metadata into multilingual training signal.
 
-  # === 8. Entity Enrichment Quality ===
-  - How many items have at least one enriched entity link on the Europeana proxy?
-  - How many openly-reusable image items have an enriched subject entity on the Europeana proxy?
+# Long descriptions as text corpus by language
+- question: >-
+    How many openly-reusable items have a dc:description on the
+    provider proxy with more than 200 characters? Show the top 15
+    language tags of those descriptions.
+  rationale: >-
+    Long descriptions are the closest thing to text content in the
+    metadata itself — human-written catalogue entries describing
+    cultural heritage objects. For vision-language models (CLIP-style
+    training, image captioning), these are directly usable as
+    image-text pairs without needing OCR or fulltext. The 200-character
+    threshold filters out stubs while keeping genuine narratives. The
+    language breakdown tells you which languages have substantial
+    descriptive text, critical for the whitepaper's argument about
+    cultural heritage contributing to linguistic diversity in AI.
 
-  # === 9. Temporal Coverage ===
-  - How many openly-reusable items are from the 19th century?
-  - What are the top 10 centuries by number of openly-reusable items?
+# Public Domain Mark: the zero-friction tier
+- question: >-
+    How many items have specifically the rights statement
+    http://creativecommons.org/publicdomain/mark/1.0/ ? Break down by
+    edm:type and by whether they have an edm:isShownBy link on their
+    aggregation.
+  rationale: >-
+    Public Domain Mark items are the gold standard for AI training —
+    no attribution requirement, no share-alike clause, no legal
+    friction. The AI Act Article 53 requires training data transparency
+    but does not create new rights; PDM items are the cleanest legal
+    basis. Separating PDM from CC0 (a waiver) and CC-BY (attribution
+    required) gives three distinct legal tiers for the briefing. The
+    edm:isShownBy cross-tabulation shows how many PDM items have
+    actually downloadable content vs. metadata-only records.
 
-  # === 10. Sound & Video ===
-  - How many sound items and how many video items have open reuse rights?
+# Image resolution distribution
+- question: >-
+    For openly-reusable image items with web resources that have both
+    ebucore:width and ebucore:height, show the distribution of pixel
+    counts: how many have width times height less than 100000, how
+    many between 100000 and 500000, between 500000 and 1000000,
+    between 1000000 and 4000000, between 4000000 and 16000000, and
+    how many above 16000000?
+  rationale: >-
+    Resolution distribution is the most important quality metric for
+    any computer vision offering. Modern CV models need at least
+    224x224 pixels (0.05 MP) for classification and 512x512 (0.26 MP)
+    for generation. The existing benchmark showed 3.6M images have
+    dimensions and 1.8M exceed 1MP, but the distribution between
+    thresholds is unknown. This directly determines whether to market
+    the offering for large vision models or lightweight classification.
 
-  # === 11. AI Training Dataset Viability ===
-  - How many openly-reusable image items have both a subject and a title?
-  - How many openly-reusable image items have a web resource with file size above 100KB and resolution above 0.5 megapixels?
-  - What are the top 10 countries by number of openly-reusable image items that have both a title and a subject?
-
-  # === 12. Cross-domain Content Analysis ===
-  - What are the 15 most common dc:type values across all openly-reusable items, and how many items does each have?
-  - How many openly-reusable items mention 'photograph' or 'fotografie' or 'photographie' in their dc:type?
-  - How many openly-reusable items have dc:type values containing 'painting' or 'schilderij' or 'peinture'?
-
-  # === 13. Provider Concentration & Diversity ===
-  - How many data providers contribute more than 100,000 openly-reusable items?
-  - What percentage of all openly-reusable image items come from the top 5 data providers? Show the top 5 providers with their counts and the total.
-  - Which countries have more than 10 distinct data providers contributing openly-reusable content?
-
-  # === 14. Metadata Completeness for AI ===
-  - How many openly-reusable image items have all of title, creator, subject, and date on the provider proxy?
-  - How many openly-reusable items have a description longer than 50 characters?
-  - What fraction of openly-reusable image items have at least one creator on the provider proxy?
-
-  # === 15. Multilingual AI Training Potential ===
-  - For openly-reusable image items with titles, what are the top 10 title languages?
-  - How many openly-reusable items have descriptions available in 3 or more distinct languages?
-  - How many openly-reusable image items have a title in both English and French?
-
-  # === 16. Temporal Distribution for Historical AI ===
-  - What is the decade-by-decade count of openly-reusable image items from 1800 to 2020?
-  - How many openly-reusable items have no year at all?
-  - How many openly-reusable image items are from before 1500?
-
-  # === 17. Entity-Linked Knowledge Graph Potential ===
-  - How many distinct agents appear as creator on the Europeana proxy of openly-reusable items?
-  - How many distinct places appear as spatial subject on the Europeana proxy of openly-reusable items?
-  - How many openly-reusable image items link to a creator entity that has a Wikidata identifier?
-
-  # === 18. Media Quality & Accessibility ===
-  - How many openly-reusable image items have web resources in JPEG format with both width and height above 1000 pixels?
-  - What is the total file size in terabytes of all web resources belonging to openly-reusable image items?
-  - How many openly-reusable sound items have a duration, and what is the average duration in seconds?
-
-  # === 19. Data Freshness & Provenance ===
-  - How many distinct dataset names exist, and which 10 datasets have the most openly-reusable items?
+# Dated items under strictest open rights
+- question: >-
+    How many openly-reusable items have an edm:year on the Europeana
+    proxy AND have rights statement starting with
+    http://creativecommons.org/publicdomain/ (i.e. Public Domain Mark
+    or CC0 only)? Break down by century from before 1500 to 2000s.
+    And separately, how many openly-reusable items under these same
+    public domain rights have no edm:year at all?
+  rationale: >-
+    The benchmark showed ~36.7M open items but only ~7.3M have year
+    data, meaning ~29M lack temporal metadata. For the 30M target this
+    is critical: are undated items still useful, or does the lack of
+    temporal context reduce their value for AI needing historical
+    grounding? The PDM/CC0 restriction isolates the zero-friction
+    subset with dates — the strongest possible offering for
+    pre-training corpora where provenance documentation including
+    temporal context is required by the AI Act.

@@ -729,6 +729,17 @@ class ExportPipeline:
                     dep_path.unlink()
                     logger.info("Removed intermediate base table: %s", dep_name)
 
+        # Generate Croissant metadata if any exports succeeded
+        if result.succeeded:
+            try:
+                from .croissant import generate_croissant
+
+                display.console.print("\n[bold]━━━ Croissant metadata ━━━[/bold]")
+                generate_croissant(self._output_dir)
+            except Exception as exc:
+                logger.warning("Croissant generation failed: %s", exc)
+                display.console.print(f"  [yellow]Croissant skipped: {exc}[/yellow]")
+
         self._print_summary(result, dependency_only)
         return result
 

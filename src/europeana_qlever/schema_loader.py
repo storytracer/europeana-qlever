@@ -70,6 +70,7 @@ class AttributeInfo:
     multivalued: bool
     required: bool
     identifier: bool
+    description: str | None = None
     annotations: dict[str, str] = field(default_factory=dict)
 
 
@@ -133,6 +134,7 @@ def class_attributes(cls_name: str) -> dict[str, AttributeInfo]:
             multivalued=bool(attr.multivalued),
             required=bool(attr.required),
             identifier=bool(attr.identifier),
+            description=attr.description or None,
             annotations=_annots(attr),
         )
     return result
@@ -547,6 +549,7 @@ def edm_class_properties(cls_name: str) -> dict[str, AttributeInfo]:
             multivalued=bool(attr.multivalued),
             required=bool(attr.required),
             identifier=bool(attr.identifier),
+            description=attr.description or None,
             annotations=_annots(attr),
         )
     return result
@@ -776,3 +779,101 @@ def pyarrow_schema(export_name: str):
         else:
             cols.append(pa.field(attr_name, _pa_type(attr.range, attr.multivalued)))
     return pa.schema(cols)
+
+
+# ---------------------------------------------------------------------------
+# Parquet schema description for NL→DuckDB agent
+# ---------------------------------------------------------------------------
+
+# Human-readable type strings for LLM consumption
+_DUCKDB_TYPE: dict[str, str] = {
+    "string": "VARCHAR",
+    "uri": "VARCHAR",
+    "integer": "INTEGER",
+    "float": "DOUBLE",
+    "boolean": "BOOLEAN",
+    "EdmType": "VARCHAR",
+    "ReuseLevel": "VARCHAR",
+}
+
+_DUCKDB_LIST_TYPE: dict[str, str] = {
+    "LangValue": "LIST<STRUCT<value VARCHAR, lang VARCHAR>>",
+    "LabeledEntity": "LIST<STRUCT<label VARCHAR, uri VARCHAR>>",
+    "NamedEntity": "LIST<STRUCT<name VARCHAR, uri VARCHAR>>",
+    "string": "LIST<VARCHAR>",
+    "integer": "LIST<INTEGER>",
+}
+
+def _duckdb_type_str(range_name: str | None, multivalued: bool) -> str:
+    """Convert a LinkML range + multivalued flag to a DuckDB type string."""
+    rng = range_name or "string"
+    if multivalued:
+        return _DUCKDB_LIST_TYPE.get(rng, "LIST<VARCHAR>")
+    return _DUCKDB_TYPE.get(rng, "VARCHAR")
+
+
+def parquet_schema_description() -> str:
+    """Auto-generate an LLM-friendly description of exported Parquet tables.
+
+    Used by the ``ask`` command to build the system prompt for the
+    NL→DuckDB agent.  Describes ``items_resolved`` in detail and lists
+    available entity tables.
+    """
+    lines: list[str] = []
+
+    # --- items_resolved ---
+    lines.append("## Table: items_resolved")
+    lines.append("One row per cultural heritage item (~66M rows).")
+    lines.append("This is the main table for most analytical questions.")
+    lines.append("")
+    lines.append("Columns:")
+    for col_name, attr in item_fields().items():
+        type_str = _duckdb_type_str(attr.range, attr.multivalued)
+        desc_part = f" — {attr.description}" if attr.description else ""
+        lines.append(f"  {col_name} ({type_str}){desc_part}")
+    lines.append("")
+
+    # --- entity tables ---
+    for etype in ("agents", "concepts", "places", "timespans"):
+        core_name = f"{etype}_core"
+        links_name = f"{etype}_links"
+        info = export_classes().get(core_name)
+        if info is None:
+            continue
+        id_col = info.annotations.get("id_column", "id")
+
+        lines.append(f"## Table: {core_name}")
+        lines.append(
+            f"One row per skos:prefLabel variant per {etype[:-1]}. "
+            f"Use for entity-level analysis."
+        )
+        lines.append(f"  {id_col} (VARCHAR) — entity URI")
+        lines.append("  pref_label (VARCHAR) — skos:prefLabel value")
+        lines.append("  pref_label_lang (VARCHAR) — language tag of prefLabel")
+        # Add core-specific fields beyond the standard three
+        for fname, fattr in info.attributes.items():
+            if fname in (id_col, "pref_label", "pref_label_lang") or fattr.identifier:
+                continue
+            type_str = _duckdb_type_str(fattr.range, fattr.multivalued)
+            lines.append(f"  {fname} ({type_str})")
+        lines.append("")
+
+        lines.append(f"## Table: {links_name}")
+        lines.append(
+            f"Multi-valued and linked properties for {etype} in long format."
+        )
+        lines.append(f"  {id_col} (VARCHAR) — entity URI")
+        lines.append("  property (VARCHAR) — property name: same_as, alt_label, exact_match, broader, narrower, etc.")
+        lines.append("  value (VARCHAR) — property value (URI or literal)")
+        lines.append("  lang (VARCHAR) — language tag (if applicable)")
+        lines.append("")
+
+    # --- institutions ---
+    lines.append("## Table: institutions")
+    lines.append("Organisation names. Join with items_resolved on institution or aggregator URI.")
+    lines.append("  org (VARCHAR) — organisation URI")
+    lines.append("  name (VARCHAR) — display name")
+    lines.append("  lang (VARCHAR) — language of the name")
+    lines.append("")
+
+    return "\n".join(lines)
