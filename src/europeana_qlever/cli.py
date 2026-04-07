@@ -32,10 +32,12 @@ from .constants import (
     EXPORTS_SUBDIR,
     INDEX_SUBDIR,
     MERGED_SUBDIR,
+    QLEVER_ACCESS_TOKEN,
     QLEVER_INDEX_SETTINGS,
     QLEVER_PORT,
     QLEVER_QUERY_TIMEOUT,
     STATE_FILENAME,
+    VIEW_OPEN_ITEMS,
 )
 from .export import EXPORT_SETS
 from .query import QueryFilters
@@ -368,7 +370,7 @@ CACHE_MAX_SIZE = {cache_size}
 CACHE_MAX_SIZE_SINGLE_ENTRY = {budget.qlever_cache_single_entry()}
 TIMEOUT = {budget.qlever_timeout()}s
 NUM_THREADS = {budget.qlever_threads()}
-ACCESS_TOKEN =
+ACCESS_TOKEN = {QLEVER_ACCESS_TOKEN}
 
 {system_block}
 [ui]
@@ -692,6 +694,102 @@ def stop(ctx: click.Context):
     display.console.print(f"[bold]Stopping QLever server from {display.short_path(index_dir)}[/bold]")
     subprocess.run(["qlever", "stop"], cwd=index_dir, check=True)
     display.console.print("[green]Server stopped.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# create-views
+# ---------------------------------------------------------------------------
+
+
+def _open_items_sparql() -> str:
+    """Build the SPARQL query for the open_items materialized view."""
+    from .rights import sparql_reuse_level_filter
+
+    return textwrap.dedent(f"""\
+        PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+        PREFIX ore: <http://www.openarchives.org/ore/terms/>
+        SELECT ?item ?type ?rights (1 AS ?dummy) WHERE {{
+          ?agg edm:aggregatedCHO ?item .
+          ?agg edm:rights ?rights .
+          ?eProxy ore:proxyFor ?item .
+          ?eProxy edm:europeanaProxy "true" .
+          ?eProxy edm:type ?type .
+          {sparql_reuse_level_filter("open")}
+        }}""")
+
+
+def _qlever_port_from_qleverfile(index_dir: Path) -> int:
+    """Read the QLever port from an existing Qleverfile."""
+    qleverfile = index_dir / "Qleverfile"
+    if not qleverfile.exists():
+        return QLEVER_PORT
+    sections = _parse_qleverfile(qleverfile)
+    return int(sections.get("server", {}).get("PORT", QLEVER_PORT))
+
+
+@cli.command("create-views")
+@click.pass_context
+def create_views(ctx: click.Context):
+    """Create QLever materialized views for faster SPARQL queries.
+
+    Creates the ``open_items`` view — a precomputed index of all items
+    with open reuse rights, joined with their edm:type.  This replaces
+    expensive STRSTARTS(STR(?rights), ...) filters with instant indexed
+    lookups via SERVICE syntax.
+
+    Requires a running QLever server.
+    """
+    import httpx
+
+    index_dir: Path = ctx.obj["index_dir"]
+    port = _qlever_port_from_qleverfile(index_dir)
+    base_url = f"http://localhost:{port}"
+
+    # Build and create the view
+    sparql = _open_items_sparql()
+    display.console.print(f"[bold]Creating materialized view [cyan]{VIEW_OPEN_ITEMS}[/cyan][/bold]")
+    display.console.print(f"  Server: {base_url}")
+    display.console.print()
+
+    with display.console.status("Writing view (this may take several minutes)…"):
+        resp = httpx.post(
+            base_url,
+            params={
+                "cmd": "write-materialized-view",
+                "view-name": VIEW_OPEN_ITEMS,
+                "timeout": "2h",
+                "access-token": QLEVER_ACCESS_TOKEN,
+            },
+            headers={
+                "Accept": "application/json",
+                "Content-type": "application/sparql-query",
+            },
+            content=sparql,
+            timeout=7200,
+        )
+
+    if resp.status_code != 200:
+        display.console.print(f"[red]Failed to create view: {resp.text}[/red]")
+        raise SystemExit(1)
+
+    result = resp.json()
+    display.console.print(f"[green]View created:[/green] {result}")
+
+    # Preload the view so first query is fast
+    with display.console.status("Preloading view…"):
+        load_resp = httpx.get(
+            base_url,
+            params={
+                "cmd": "load-materialized-view",
+                "view-name": VIEW_OPEN_ITEMS,
+                "access-token": QLEVER_ACCESS_TOKEN,
+            },
+            timeout=600,
+        )
+    if load_resp.status_code == 200:
+        display.console.print(f"[green]View preloaded:[/green] {load_resp.json()}")
+    else:
+        display.console.print(f"[yellow]Preload returned {load_resp.status_code}: {load_resp.text}[/yellow]")
 
 
 # ---------------------------------------------------------------------------
@@ -1388,6 +1486,18 @@ def pipeline(
                 ctx.invoke(start)
                 server_started = True
                 dash.complete_stage()
+
+                # --- Stage 4b: Create materialized views ---
+                if not state.is_complete("create_views"):
+                    dash.set_stage("Views")
+                    dash.log("Creating materialized views…")
+                    ctx.invoke(create_views)
+                    state.mark_complete("create_views")
+                    state.save(state_path)
+                    dash.complete_stage()
+                else:
+                    dash.log("Views already created (from checkpoint)")
+                    dash.complete_stage()
 
                 # --- Stage 5: Export ---
                 registry = ExportRegistry()

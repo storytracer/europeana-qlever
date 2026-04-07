@@ -31,6 +31,11 @@ mkdir -p "$GRASP_INDEX_DIR/europeana/entities" "$GRASP_INDEX_DIR/europeana/prope
 cp "$SCRIPT_DIR/entities-info.sparql" "$GRASP_INDEX_DIR/europeana/entities/info.sparql"
 cp "$SCRIPT_DIR/properties-info.sparql" "$GRASP_INDEX_DIR/europeana/properties/info.sparql"
 
+# 5. Create QLever materialized views (for fast open-reuse queries)
+echo "--- Step 5: Creating materialized views ---"
+WORK_DIR="${EUROPEANA_QLEVER_WORK_DIR:-$HOME/data/europeana}"
+uv run europeana-qlever -d "$WORK_DIR" create-views
+
 echo "=== Setup complete ==="
 echo ""
 echo "Test with:"

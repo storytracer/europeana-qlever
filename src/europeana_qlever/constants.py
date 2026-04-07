@@ -24,6 +24,12 @@ QLEVER_UI_PORT = 7000
 QLEVER_QUERY_TIMEOUT = 3600  # Per-query timeout in seconds (1 hour)
 EUROPEANA_PROXY_URI_PREFIX = "http://data.europeana.eu/proxy/europeana/"
 
+# Access token for QLever privileged operations (materialized views, updates)
+QLEVER_ACCESS_TOKEN = "europeana-qlever"
+
+# Materialized view names (QLever ≥ 0.5.37)
+VIEW_OPEN_ITEMS = "open-items"
+
 # Language resolution strategy:
 # - Entity labels (agents, concepts): English preferred, fallback to any available.
 # - Item titles/descriptions: exported as LIST<STRUCT<value, lang>> with all languages.

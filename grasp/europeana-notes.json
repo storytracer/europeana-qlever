@@ -21,9 +21,17 @@
 
   "YEAR RANGE FILTER — edm:year is a string on the Europeana proxy. Cast to integer:\n  ?eProxy ore:proxyFor ?item .\n  ?eProxy edm:europeanaProxy \"true\" .\n  ?eProxy edm:year ?year .\n  FILTER(xsd:integer(?year) >= 1800 && xsd:integer(?year) <= 1900)",
 
-  "RIGHTS CLASSIFICATION — Open reuse: STRSTARTS(STR(?rights), \"http://creativecommons.org/publicdomain/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by/\") || STRSTARTS(STR(?rights), \"http://creativecommons.org/licenses/by-sa/\"). This covers CC0, PDM, CC BY, CC BY-SA across all ~580 version/port variants.",
+  "RIGHTS CLASSIFICATION — Open reuse covers CC0, PDM, CC BY, CC BY-SA (~580 URI variants). Restricted: other CC (-nc/-nd) + NoC-NC/1.0/, NoC-OKLR/1.0/, InC-EDU/1.0/. Prohibited: everything else (InC/1.0/, CNE/1.0/, etc.). IMPORTANT: for querying open-reuse items, ALWAYS use the open-items materialized view (see notes below) — never use STRSTARTS FILTER directly, it is far too slow on 66M items.",
 
-  "Restricted reuse: other CC licenses (CONTAINS(STR(?rights), \"-nc\") || CONTAINS(STR(?rights), \"-nd\")), plus http://rightsstatements.org/vocab/NoC-NC/1.0/, NoC-OKLR/1.0/, InC-EDU/1.0/.",
+  "MATERIALIZED VIEW — open-items: A precomputed view of all items with open reuse rights, joined with edm:type. Columns: item (CHO URI), type (IMAGE/TEXT/SOUND/VIDEO/3D), rights (rights URI), dummy. ALWAYS use this view when filtering for openly-reusable items. It replaces the expensive STRSTARTS+STR pattern with instant indexed lookups. CRITICAL: you MUST declare PREFIX view: <https://qlever.cs.uni-freiburg.de/materializedView/> in every query that uses the view — without it the query will fail with 'Prefix view was not registered'.",
+
+  "OPEN ITEMS VIEW — complete example query (count open IMAGE items with a subject):\n  PREFIX dc: <http://purl.org/dc/elements/1.1/>\n  PREFIX ore: <http://www.openarchives.org/ore/terms/>\n  PREFIX edm: <http://www.europeana.eu/schemas/edm/>\n  PREFIX view: <https://qlever.cs.uni-freiburg.de/materializedView/>\n  SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {\n    SERVICE view:open-items { [ view:column-item ?item ; view:column-type ?type ] }\n    FILTER(?type = \"IMAGE\")\n    ?proxy ore:proxyFor ?item .\n    FILTER NOT EXISTS { ?proxy edm:europeanaProxy \"true\" . }\n    ?proxy dc:subject ?subject .\n  }\nNote: PREFIX view: must ALWAYS be declared. Other patterns: omit the FILTER for all types, add view:column-rights ?rights to get the rights URI.",
+
+  "OPEN ITEMS VIEW — joining with other patterns: The view provides ?item which you join with proxy/aggregation patterns as usual:\n  SERVICE view:open-items { [ view:column-item ?item ; view:column-type ?type ] }\n  FILTER(?type = \"IMAGE\")\n  ?proxy ore:proxyFor ?item .\n  FILTER NOT EXISTS { ?proxy edm:europeanaProxy \"true\" . }\n  ?proxy dc:subject ?subject .\nThis is how to query open items + any descriptive/technical metadata.",
+
+  "OPEN ITEMS VIEW — joining with country/provider: For country or data provider of open items:\n  SERVICE view:open-items { [ view:column-item ?item ] }\n  ?eAgg edm:aggregatedCHO ?item . ?eAgg a edm:EuropeanaAggregation . ?eAgg edm:country ?country .\n  -- or for dataProvider:\n  ?agg edm:aggregatedCHO ?item . ?agg edm:dataProvider ?dp .",
+
+  "Restricted reuse: other CC licenses (CONTAINS(STR(?rights), \"-nc\") || CONTAINS(STR(?rights), \"-nd\")), plus http://rightsstatements.org/vocab/NoC-NC/1.0/, NoC-OKLR/1.0/, InC-EDU/1.0/. No materialized view exists for restricted/prohibited — use FILTER patterns for these (they are rare in queries).",
 
   "Prohibited reuse: everything else — http://rightsstatements.org/vocab/InC/1.0/ (In Copyright), CNE/1.0/ (Copyright Not Evaluated), InC-OW-EU/1.0/, NKC/1.0/, UND/1.0/. Always use STR(?rights) since edm:rights is a URI.",
 
@@ -37,11 +45,11 @@
 
   "Always COUNT(DISTINCT ?item) — items have multiple proxies and entity links, so bare COUNT over-counts. Use DISTINCT in SELECT for any property that can be multivalued.",
 
-  "PERFORMANCE: never use nested BIND/IF to classify the full 66M-item dataset (e.g. reuse level distribution). It will time out. Run separate COUNT queries per category. Always use LIMIT for exploratory queries.",
+  "PERFORMANCE: (1) For open-reuse filtering, ALWAYS use the open-items materialized view — never STRSTARTS/STR patterns. (2) Never use nested BIND/IF to classify the full 66M-item dataset. Run separate COUNT queries per category. (3) Always use LIMIT for exploratory queries.",
 
   "Never query dc:title, dc:creator, or any descriptive property directly on the item URI — they are on the proxy. Always use a proxy pattern. ?item dc:title ?t will return ZERO results.",
 
   "edm:dataProvider and edm:country are literal strings, not URIs. edm:rights is always a URI. dc:rights (different from edm:rights) is a free-text literal about rights holders.",
 
-  "COMMON PREFIXES needed in queries:\n  PREFIX dc: <http://purl.org/dc/elements/1.1/>\n  PREFIX dcterms: <http://purl.org/dc/terms/>\n  PREFIX edm: <http://www.europeana.eu/schemas/edm/>\n  PREFIX ore: <http://www.openarchives.org/ore/terms/>\n  PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\n  PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n  PREFIX rdaGr2: <http://rdvocab.info/ElementsGr2/>\n  PREFIX ebucore: <https://www.ebu.ch/metadata/ontologies/ebucore/ebucore#>\n  PREFIX wgs84_pos: <http://www.w3.org/2003/01/geo/wgs84_pos#>"
+  "COMMON PREFIXES needed in queries:\n  PREFIX dc: <http://purl.org/dc/elements/1.1/>\n  PREFIX dcterms: <http://purl.org/dc/terms/>\n  PREFIX edm: <http://www.europeana.eu/schemas/edm/>\n  PREFIX ore: <http://www.openarchives.org/ore/terms/>\n  PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\n  PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n  PREFIX rdaGr2: <http://rdvocab.info/ElementsGr2/>\n  PREFIX ebucore: <https://www.ebu.ch/metadata/ontologies/ebucore/ebucore#>\n  PREFIX wgs84_pos: <http://www.w3.org/2003/01/geo/wgs84_pos#>\n  PREFIX view: <https://qlever.cs.uni-freiburg.de/materializedView/>"
 ]
