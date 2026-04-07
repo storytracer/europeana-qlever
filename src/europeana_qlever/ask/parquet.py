@@ -1,6 +1,6 @@
 """AskParquet — NL→DuckDB agent over Parquet exports.
 
-Uses OpenAI function calling (gpt-4.1-mini) with a multi-step agent loop.
+Uses OpenAI-compatible function calling (nemotron-3-nano via local VLLM) with a multi-step agent loop.
 The LLM can list tables, inspect schemas, run SQL, and self-correct on
 errors until it produces an answer.
 """
@@ -242,9 +242,10 @@ def _call_openai(
     temperature: float = ASK_TEMPERATURE,
 ) -> dict:
     api_key = _get_api_key()
+    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
     with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
         resp = client.post(
-            "https://api.openai.com/v1/chat/completions",
+            f"{base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
