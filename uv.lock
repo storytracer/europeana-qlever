@@ -268,12 +268,9 @@ dependencies = [
     { name = "mlcroissant" },
     { name = "psutil" },
     { name = "pyarrow" },
+    { name = "pyyaml" },
     { name = "rdflib" },
     { name = "rich" },
-]
-
-[package.dev-dependencies]
-dev = [
     { name = "websockets" },
 ]
 
@@ -286,12 +283,14 @@ requires-dist = [
     { name = "mlcroissant", specifier = ">=1.0" },
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pyarrow", specifier = ">=23.0.1" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "rdflib", specifier = ">=7.6.0" },
     { name = "rich", specifier = ">=14.3.3" },
+    { name = "websockets", specifier = ">=16.0" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "websockets", specifier = ">=16.0" }]
+dev = []
 
 [[package]]
 name = "fsspec"

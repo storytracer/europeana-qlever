@@ -292,33 +292,14 @@ class ExportReport:
 
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
-        con = duckdb.connect()
-        con.execute(f"SET memory_limit = '{self._memory_limit}'")
+        from .ask.store import ParquetStore
 
-        where = self._filters.to_duckdb_where()
-        con.execute(f"""
-            CREATE VIEW items AS
-            SELECT * FROM read_parquet('{resolved_path}')
-            {where}
-        """)
-
-        institutions_path = self._exports_dir / "institutions.parquet"
-        if institutions_path.exists():
-            con.execute(f"""
-                CREATE VIEW org_names AS
-                SELECT org,
-                       COALESCE(
-                           MAX(name) FILTER (WHERE lang = 'en'),
-                           MAX(name)
-                       ) AS name
-                FROM read_parquet('{institutions_path}')
-                GROUP BY org
-            """)
-        else:
-            con.execute(
-                "CREATE VIEW org_names AS "
-                "SELECT NULL::VARCHAR AS org, NULL::VARCHAR AS name WHERE false"
-            )
+        store = ParquetStore(
+            self._exports_dir,
+            filters=self._filters,
+            memory_limit=self._memory_limit,
+        )
+        con = store.connection
 
         data: dict = {}
         sections = 0
@@ -371,7 +352,7 @@ class ExportReport:
             else:
                 display.console.print("    No URLs to probe")
 
-        con.close()
+        store.close()
 
         slice_id = self._filters.slice_name()
         data["_meta"] = {

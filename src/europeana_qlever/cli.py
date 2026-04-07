@@ -1631,12 +1631,16 @@ def report(
 
 @cli.command()
 @click.argument("question")
+@click.option("--backend", type=click.Choice(["parquet", "sparql"]), default="parquet",
+              help="Query backend: parquet (DuckDB, offline) or sparql (GRASP, requires servers).")
 @click.option("--filters", "-f", "filter_string", default=None,
               help='Pre-filter items_resolved, e.g. "country=NL type=IMAGE reuse_level=open"')
 @click.option("--model", default=None, show_default=True,
               help="Override the LLM model (default: gpt-4.1-mini).")
 @click.option("--max-steps", default=None, type=int, show_default=True,
               help="Maximum agent steps (default: 15).")
+@click.option("--grasp-url", default="ws://localhost:6789/live", show_default=True,
+              help="GRASP WebSocket URL (for --backend sparql).")
 @click.option("--verbose", "-v", is_flag=True, default=False,
               help="Show full agent trace (tool calls and results).")
 @click.option("--duckdb-memory", default="auto", show_default=True,
@@ -1645,27 +1649,31 @@ def report(
 def ask(
     ctx: click.Context,
     question: str,
+    backend: str,
     filter_string: str | None,
     model: str | None,
     max_steps: int | None,
+    grasp_url: str,
     verbose: bool,
     duckdb_memory: str,
 ):
-    """Ask a natural language question about the exported Parquet data.
+    """Ask a natural language question about Europeana data.
 
-    Uses an LLM agent (gpt-4.1-mini) to translate your question to DuckDB SQL,
-    execute it over the exported Parquet files, and return a natural language answer.
+    Default backend is parquet (DuckDB over exported Parquets, offline).
+    Use --backend sparql for QLever via GRASP (requires running servers).
 
-    Requires OPENAI_API_KEY environment variable (or set in grasp/.env).
+    Requires OPENAI_API_KEY environment variable for the parquet backend.
 
     \b
     Examples:
         ask "How many openly-reusable items are there?"
-        ask "What is the resolution distribution for open images?"
+        ask --backend sparql "How many open images?"
         ask -f "country=NL" "What are the top 10 subjects?"
         ask --verbose "How many PDM items have no year data?"
     """
-    from .ask import run_ask
+    import asyncio
+
+    from .ask import display_result
     from .constants import ASK_MAX_STEPS, ASK_MODEL
     from .report import ReportFilters
     from .telemetry import command_span
@@ -1681,20 +1689,369 @@ def ask(
 
     with command_span(telemetry, {
         "question": question,
+        "backend": backend,
         "filter": filters.description() if filters else "none",
         "model": model or ASK_MODEL,
     }) as counters:
-        result = run_ask(
-            exports_dir=exports_dir,
-            question=question,
-            filters=filters,
-            model=model or ASK_MODEL,
-            max_steps=max_steps or ASK_MAX_STEPS,
-            verbose=verbose,
-            memory_limit=duckdb_memory,
-        )
-        counters["steps"] = result.steps
+        if backend == "parquet":
+            from .ask.parquet import AskParquet
+            from .ask.store import ParquetStore
+
+            store = ParquetStore(
+                exports_dir, filters=filters, memory_limit=duckdb_memory,
+            )
+            engine = AskParquet(
+                store, model=model or ASK_MODEL,
+                max_steps=max_steps or ASK_MAX_STEPS,
+            )
+        else:
+            from .ask.sparql import AskSPARQL
+
+            engine = AskSPARQL(ws_url=grasp_url)
+
+        result = asyncio.run(engine.ask(question, verbose=verbose))
+        display_result(result)
+
+        counters["steps"] = len(result.steps)
         counters["elapsed"] = result.elapsed
         counters["has_answer"] = result.answer is not None
         if result.error:
             counters["error"] = result.error
+
+        if backend == "parquet":
+            store.close()
+
+
+# ---------------------------------------------------------------------------
+# benchmark — unified benchmark runner
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.argument("questions", default=None, required=False,
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--backend", type=click.Choice(["parquet", "sparql", "both"]),
+              default="parquet",
+              help="Which backend(s) to benchmark against.")
+@click.option("--question", type=int, default=None,
+              help="Run only question N (1-indexed).")
+@click.option("--timeout", type=float, default=180.0, show_default=True,
+              help="Timeout per question in seconds.")
+@click.option("--grasp-url", default="ws://localhost:6789/live", show_default=True,
+              help="GRASP WebSocket URL (for sparql backend).")
+@click.option("--model", default=None,
+              help="Override LLM model for parquet backend.")
+@click.option("--retry-failed", is_flag=True,
+              help="Re-run questions that previously failed.")
+@click.option("--overwrite", is_flag=True,
+              help="Clear and re-run all questions.")
+@click.option("--with-rationale", is_flag=True,
+              help="Include question rationale in prompts.")
+@click.option("-v", "--verbose", is_flag=True,
+              help="Show full agent traces.")
+@click.option("--duckdb-memory", default="auto", show_default=True,
+              help="DuckDB memory budget (for parquet backend).")
+@click.pass_context
+def benchmark(
+    ctx: click.Context,
+    questions: Path | None,
+    backend: str,
+    question: int | None,
+    timeout: float,
+    grasp_url: str,
+    model: str | None,
+    retry_failed: bool,
+    overwrite: bool,
+    with_rationale: bool,
+    verbose: bool,
+    duckdb_memory: str,
+):
+    """Run benchmark questions against parquet (DuckDB) and/or sparql (GRASP).
+
+    Loads test questions from benchmark.yml, runs them through the selected
+    backend(s), grades results, and saves JSONL output.
+
+    \b
+    Examples:
+        benchmark                             # All questions, parquet backend
+        benchmark --backend sparql            # All questions, GRASP backend
+        benchmark --backend both              # Compare both backends
+        benchmark --question 5                # Single question
+        benchmark --retry-failed              # Re-run timeouts/errors
+    """
+    import asyncio
+
+    from .ask.benchmark import Benchmark, load_questions
+    from .constants import ASK_MAX_STEPS, ASK_MODEL
+    from .report import ReportFilters
+    from .telemetry import command_span
+
+    telemetry = ctx.obj["telemetry"]
+    exports_dir: Path = ctx.obj["exports_dir"]
+    budget = ctx.obj["budget"]
+
+    if duckdb_memory == "auto":
+        duckdb_memory = budget.duckdb_memory()
+
+    q_list = load_questions(questions, with_rationale=with_rationale)
+
+    backends = []
+    if backend in ("parquet", "both"):
+        from .ask.parquet import AskParquet
+        from .ask.store import ParquetStore
+
+        store = ParquetStore(exports_dir, memory_limit=duckdb_memory)
+        backends.append(AskParquet(
+            store, model=model or ASK_MODEL, max_steps=ASK_MAX_STEPS,
+        ))
+
+    if backend in ("sparql", "both"):
+        from .ask.sparql import AskSPARQL
+
+        backends.append(AskSPARQL(ws_url=grasp_url))
+
+    output_dir = ctx.obj["work_dir"] / "benchmark"
+
+    with command_span(telemetry, {
+        "backend": backend,
+        "questions": len(q_list),
+        "timeout": timeout,
+    }) as counters:
+        bm = Benchmark(
+            q_list, backends, output_dir,
+            timeout=timeout, verbose=verbose,
+        )
+        results = asyncio.run(bm.run(
+            question_number=question,
+            retry_failed=retry_failed,
+            overwrite=overwrite,
+        ))
+        passed = sum(1 for r in results if r.grade == "PASS")
+        counters["total"] = len(results)
+        counters["passed"] = passed
+        counters["pass_rate"] = round(passed / len(results) * 100, 1) if results else 0
+
+    if backend in ("parquet", "both"):
+        store.close()
+
+
+# ---------------------------------------------------------------------------
+# write-grasp-config — generate GRASP server configuration
+# ---------------------------------------------------------------------------
+
+
+@cli.command("write-grasp-config")
+@click.option("--model", default="openai/gpt-4.1-mini", show_default=True,
+              help="LLM model for the GRASP server.")
+@click.option("--port", default=6789, type=int, show_default=True,
+              help="GRASP server port.")
+@click.option("--qlever-port", default=QLEVER_PORT, type=int, show_default=True,
+              help="QLever SPARQL endpoint port.")
+@click.pass_context
+def write_grasp_config(
+    ctx: click.Context,
+    model: str,
+    port: int,
+    qlever_port: int,
+):
+    """Generate GRASP server configuration in <work-dir>/grasp/.
+
+    Creates europeana-grasp.yaml (server config) and europeana-notes.json
+    (domain knowledge for the LLM). Also copies required SPARQL templates
+    and prefix mappings.
+    """
+    import shutil
+
+    from .ask.notes import export_grasp_notes
+    from .grasp import resource_path
+
+    grasp_dir = ctx.obj["work_dir"] / "grasp"
+    grasp_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate YAML config
+    config = {
+        "model": model,
+        "api": "completions",
+        "temperature": 0.0,
+        "seed": 42,
+        "knowledge_graphs": [{
+            "kg": "europeana",
+            "endpoint": f"http://localhost:{qlever_port}",
+            "entities_type": "fuzzy",
+            "properties_type": "embedding",
+            "notes_file": "europeana-notes.json",
+        }],
+        "notes_file": None,
+        "search_top_k": 5,
+        "sparql_query_timeout": 60.0,
+        "completion_timeout": 120.0,
+        "port": port,
+    }
+
+    import yaml
+
+    yaml_path = grasp_dir / "europeana-grasp.yaml"
+    yaml_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+    display.console.print(f"  Config: {yaml_path}")
+
+    # Generate notes from structured domain knowledge
+    notes_path = grasp_dir / "europeana-notes.json"
+    export_grasp_notes(notes_path)
+    display.console.print(f"  Notes:  {notes_path}")
+
+    # Copy resource files
+    for resource in (
+        "prefixes.json",
+        "europeana-entity.sparql",
+        "europeana-property.sparql",
+        "entities-info.sparql",
+        "properties-info.sparql",
+    ):
+        src = resource_path(resource)
+        dst = grasp_dir / resource
+        shutil.copy2(src, dst)
+    display.console.print(f"  Resources copied to {grasp_dir}")
+
+    display.console.print(f"\n[green]GRASP config written to {grasp_dir}[/green]")
+    display.console.print(
+        f"\nNext steps:\n"
+        f"  1. Start QLever: europeana-qlever -d WORK_DIR start\n"
+        f"  2. Setup GRASP:  europeana-qlever -d WORK_DIR grasp-setup\n"
+        f"  3. Start GRASP:  europeana-qlever -d WORK_DIR grasp-start"
+    )
+
+
+# ---------------------------------------------------------------------------
+# grasp-setup — build GRASP search indices
+# ---------------------------------------------------------------------------
+
+
+@cli.command("grasp-setup")
+@click.option("--index-dir", default=None, type=click.Path(path_type=Path),
+              help="GRASP index directory (default: <work-dir>/grasp-index).")
+@click.pass_context
+def grasp_setup(ctx: click.Context, index_dir: Path | None):
+    """Build GRASP search indices from QLever.
+
+    Requires a running QLever server. Downloads entity labels and property
+    URIs, builds fuzzy/embedding search indices, installs info queries,
+    and creates materialized views.
+
+    \b
+    Equivalent to the old grasp/setup.sh script.
+    """
+    import os
+    import shutil
+
+    from .grasp import resource_path
+
+    work_dir: Path = ctx.obj["work_dir"]
+    grasp_dir = work_dir / "grasp"
+    if index_dir is None:
+        index_dir = work_dir / "grasp-index"
+
+    os.environ["GRASP_INDEX_DIR"] = str(index_dir)
+
+    entity_sparql = resource_path("europeana-entity.sparql")
+    property_sparql = resource_path("europeana-property.sparql")
+
+    display.console.print(f"[bold]GRASP Setup[/bold]")
+    display.console.print(f"  Index dir: {index_dir}")
+    display.console.print(f"  QLever:    http://localhost:{QLEVER_PORT}")
+
+    # Step 1: Download data
+    display.console.print("\n[dim]Step 1: Downloading entity and property data[/dim]")
+    subprocess.run([
+        "grasp", "data", "europeana",
+        "--endpoint", f"http://localhost:{QLEVER_PORT}",
+        "--entity-sparql", str(entity_sparql),
+        "--property-sparql", str(property_sparql),
+    ], check=True)
+
+    # Step 2: Build indices
+    display.console.print("[dim]Step 2: Building search indices[/dim]")
+    subprocess.run([
+        "grasp", "index", "europeana",
+        "--entities-type", "fuzzy",
+        "--properties-type", "embedding",
+    ], check=True)
+
+    # Step 3: Install prefixes
+    display.console.print("[dim]Step 3: Installing prefixes and info queries[/dim]")
+    kg_dir = index_dir / "europeana"
+    kg_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(resource_path("prefixes.json"), kg_dir / "prefixes.json")
+
+    entities_dir = kg_dir / "entities"
+    properties_dir = kg_dir / "properties"
+    entities_dir.mkdir(exist_ok=True)
+    properties_dir.mkdir(exist_ok=True)
+    shutil.copy2(resource_path("entities-info.sparql"), entities_dir / "info.sparql")
+    shutil.copy2(resource_path("properties-info.sparql"), properties_dir / "info.sparql")
+
+    # Step 4: Create materialized views
+    display.console.print("[dim]Step 4: Creating materialized views[/dim]")
+    ctx.invoke(create_views)
+
+    display.console.print(f"\n[green]GRASP setup complete[/green]")
+    display.console.print(
+        f"\nStart the server with:\n"
+        f"  europeana-qlever -d {work_dir} grasp-start"
+    )
+
+
+# ---------------------------------------------------------------------------
+# grasp-start / grasp-stop
+# ---------------------------------------------------------------------------
+
+
+@cli.command("grasp-start")
+@click.pass_context
+def grasp_start(ctx: click.Context):
+    """Start the GRASP NL→SPARQL server.
+
+    Requires write-grasp-config to have been run first.
+    """
+    grasp_dir = ctx.obj["work_dir"] / "grasp"
+    config_path = grasp_dir / "europeana-grasp.yaml"
+
+    if not config_path.exists():
+        display.console.print(
+            f"[red]GRASP config not found at {config_path}[/red]\n"
+            "Run 'write-grasp-config' first."
+        )
+        raise SystemExit(1)
+
+    display.console.print(f"Starting GRASP server from {config_path}")
+    subprocess.Popen(
+        ["grasp", "serve", str(config_path)],
+        cwd=str(grasp_dir),
+        start_new_session=True,
+    )
+    display.console.print("[green]GRASP server started[/green]")
+
+
+@cli.command("grasp-stop")
+@click.pass_context
+def grasp_stop(ctx: click.Context):
+    """Stop the GRASP server."""
+    import signal
+
+    # Find grasp serve process
+    result = subprocess.run(
+        ["pgrep", "-f", "grasp serve"],
+        capture_output=True, text=True,
+    )
+    pids = result.stdout.strip().split()
+    if not pids:
+        display.console.print("[yellow]No running GRASP server found[/yellow]")
+        return
+
+    for pid in pids:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            display.console.print(f"Stopped GRASP process {pid}")
+        except ProcessLookupError:
+            pass
+
+    display.console.print("[green]GRASP server stopped[/green]")

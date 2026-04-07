@@ -40,20 +40,24 @@ src/europeana_qlever/
   telemetry.py                    # Structured JSONL telemetry (command spans, resource samples, stage events)
   throttle.py                     # Adaptive concurrency throttle (CPU/memory-aware, replaces semaphore)
   validate.py                     # Standalone validation + inline entry validation for merge
-  ask.py                           # NL→DuckDB agent: LLM-powered natural language queries over Parquet exports
   croissant.py                     # Croissant (JSON-LD) metadata generation for exported Parquet files
+  ask/                             # NL querying package (unified interface for Parquet + SPARQL backends)
+    __init__.py                    # AskBackend ABC, AskResult, AskStep, display helpers
+    parquet.py                     # AskParquet — NL→DuckDB agent (OpenAI function calling, offline)
+    sparql.py                      # AskSPARQL — NL→SPARQL agent (GRASP WebSocket, requires servers)
+    notes.py                       # Structured EDM domain knowledge (renders for DuckDB + SPARQL)
+    store.py                       # ParquetStore — shared DuckDB engine over Parquet files
+    benchmark.py                   # Unified benchmark runner (any AskBackend over test questions)
+    benchmark.yml                  # Test questions for NL-to-SPARQL/SQL evaluation (10 questions)
+  grasp/                           # GRASP resource files (package data, shipped with code)
+    __init__.py                    # Resource path helpers
+    prefixes.json                  # RDF namespace mappings for entity/property search
+    europeana-entity.sparql        # SPARQL for extracting entity labels during index setup
+    europeana-property.sparql      # SPARQL for extracting property URIs during index setup
+    entities-info.sparql           # Runtime entity detail lookup template
+    properties-info.sparql         # Runtime property detail lookup template
 README.md                         # General-purpose project README
 grasp/
-  europeana-grasp.yaml              # GRASP server config (model, KG endpoint, search settings)
-  europeana-notes.json              # EDM domain knowledge notes for LLM query generation (47 structured notes)
-  prefixes.json                     # RDF namespace mappings for entity/property search
-  europeana-entity.sparql           # SPARQL for extracting entity labels during index setup
-  europeana-property.sparql         # SPARQL for extracting property URIs during index setup
-  entities-info.sparql              # Runtime entity detail lookup template ({IDS} placeholder)
-  properties-info.sparql            # Runtime property detail lookup template ({IDS} placeholder)
-  setup.sh                          # Automated GRASP index setup (download data, build indices, install queries)
-  benchmark.yml                     # Test questions for NL-to-SPARQL evaluation (50+ questions, 19 categories)
-  benchmark.py                      # Async WebSocket benchmark runner with Rich live display and JSONL output
   .env                              # OpenAI API key (not committed)
 scripts/
   generate-edm-schema.py          # uv script: generate schema/edm.yaml from ontology sources (XSD, OWL, external RDF)
@@ -128,28 +132,33 @@ uv run europeana-qlever -d WORK_DIR report -f "country=NL,FR"    # Filtered repo
 uv run europeana-qlever -d WORK_DIR report --probe-urls          # Include live URL reachability probing
 uv run europeana-qlever -d WORK_DIR create-views                 # Create QLever materialized views (requires running server)
 uv run europeana-qlever -d WORK_DIR ask "How many open items?"   # NL→DuckDB: ask questions about Parquet exports
+uv run europeana-qlever -d WORK_DIR ask --backend sparql "How many open items?"  # NL→SPARQL via GRASP
 uv run europeana-qlever -d WORK_DIR ask -f "type=IMAGE" "Resolution distribution?"  # With pre-filter
 uv run europeana-qlever -d WORK_DIR ask -v "Top 10 subjects?"   # Verbose: show agent trace
+uv run europeana-qlever -d WORK_DIR benchmark                    # Run all benchmark questions (parquet)
+uv run europeana-qlever -d WORK_DIR benchmark --backend both     # Compare parquet vs SPARQL
+uv run europeana-qlever -d WORK_DIR benchmark --question 5       # Run single question
 ```
 
 All commands require `-d WORK_DIR` (or `EUROPEANA_QLEVER_WORK_DIR` env var). Output paths are derived automatically. Always use `uv run` — never bare `python` or `pip install`.
 
 ### GRASP commands
 
-GRASP is a separate tool (`grasp` CLI, installed via `uv tool install grasp`). The `grasp/` directory holds Europeana-specific configuration, not code from GRASP itself.
+GRASP is an external NL→SPARQL agent (`grasp` CLI, installed via `uv tool install grasp`). It is managed by the CLI just like QLever — configuration is generated into `{work_dir}/grasp/`, resources are bundled in `src/europeana_qlever/grasp/`.
 
 ```bash
-# Setup: build GRASP search indices from QLever (requires QLever running on :7001)
-cd grasp && bash setup.sh
+# Generate GRASP config (creates {work_dir}/grasp/europeana-grasp.yaml + notes)
+uv run europeana-qlever -d WORK_DIR write-grasp-config
 
-# Start GRASP server (reads europeana-grasp.yaml + .env)
-cd grasp && grasp serve europeana-grasp.yaml
+# Build GRASP search indices from QLever (requires QLever running on :7001)
+uv run europeana-qlever -d WORK_DIR grasp-setup
 
-# Run benchmark (requires GRASP server running on :6789)
-uv run python grasp/benchmark.py                    # Run all questions
-uv run python grasp/benchmark.py --question 5       # Run single question
-uv run python grasp/benchmark.py --retry-failed     # Re-run timeouts/server errors
-uv run python grasp/benchmark.py --overwrite        # Clear and re-run all
+# Start/stop GRASP server
+uv run europeana-qlever -d WORK_DIR grasp-start
+uv run europeana-qlever -d WORK_DIR grasp-stop
+
+# Ask via GRASP (requires GRASP + QLever running)
+uv run europeana-qlever -d WORK_DIR ask --backend sparql "How many open items?"
 ```
 
 ## Architecture notes
@@ -172,11 +181,12 @@ uv run python grasp/benchmark.py --overwrite        # Clear and re-run all
 - **Pipeline** (`pipeline` command) runs all stages end-to-end: merge → write-qleverfile → index → start → export → stop. Progress is checkpointed to `pipeline_state.json` so a failed or interrupted run resumes automatically; `--force` clears the checkpoint. Supports `--skip-merge` and `--skip-index` flags. The entire pipeline runs inside a `ResourceMonitor` + `Dashboard` context for continuous resource tracking and live terminal display.
 - **Composition SQL** (`compose.py`) generates DuckDB SQL templates as `ComposeStep` objects (23 steps for `items_resolved` via `ComposeStep.items_resolved_steps()`), all derived from the LinkML schema. Steps are generated by iterating over `item_fields()`: multi-valued fields with `query_pattern` annotations produce aggregation steps, entity-resolved fields produce map+agg step pairs, and `reuse_level_sql()` generates the CASE/WHEN for rights classification. Column aliasing (e.g. `dataProvider→institution`) derives from schema `sparql_variable` annotations via `sparql_var()`. Templates use `{exports_dir}` as a placeholder replaced at execution time. The flagship resolved export composes 14 component tables + agents + concepts + web resources, with multi-valued property aggregation using native Parquet types (`LIST<STRUCT<label VARCHAR, uri VARCHAR>>` for subjects/dc_types/formats, `LIST<STRUCT<name VARCHAR, uri VARCHAR>>` for creators/contributors/publishers, `LIST<VARCHAR>` for dates/years/languages/identifiers/dc_rights), agent/concept label resolution via entity joins, and a computed `reuse_level` column (open/restricted/prohibited) derived from `edm:rights` URIs. Web resource metadata (MIME type, dimensions, file size, IIIF service detection) is aggregated per item. The final step is marked `is_final=True` for COPY-to-Parquet wrapping.
 - **Export execution** is orchestrated by `ExportPipeline` (`export.py`). The `export --all` flag runs the pipeline export set; `--set` runs a named set; positional arguments select individual exports by name (composites like `items_resolved` transparently trigger dependencies). The `--keep-base / --no-keep-base` flag controls cleanup of intermediate component table Parquets.
-- **GRASP integration** (`grasp/`): [GRASP](https://github.com/ad-freiburg/grasp) is an LLM-powered NL-to-SPARQL agent. The `grasp/` directory holds Europeana-specific config, not GRASP code. `europeana-grasp.yaml` configures the model (gpt-4.1-mini via OpenAI completions API), search settings, and the QLever endpoint (`http://localhost:7001`). `europeana-notes.json` provides structured notes teaching the LLM about EDM — proxy types, property locations (Aggregation vs EuropeanaAggregation vs Proxy), rights classification, materialized view usage, entity linking patterns, and performance anti-patterns. `setup.sh` downloads entity labels and property URIs from QLever via custom SPARQL queries, builds fuzzy (entities) and embedding (properties, via `Qwen/Qwen3-Embedding-0.6B`) search indices, installs info query templates, and creates materialized views. The GRASP server runs on port 6789 and exposes a WebSocket endpoint (`/live`) for streaming agent traces. `benchmark.py` is an async script that sends test questions from `benchmark.yml` over WebSocket, displays live agent steps (model reasoning, tool calls, SPARQL execution) with Rich spinners, grades responses (PASS/EMPTY/TIMEOUT/ERROR/SERVER_ERROR/SPARQL_ERROR/NO_ANSWER), and streams results to `benchmark-results.jsonl`. Supports skip/retry logic for incremental runs.
+- **GRASP integration**: [GRASP](https://github.com/ad-freiburg/grasp) is an external LLM-powered NL-to-SPARQL agent, managed by the CLI like QLever. Resource files (SPARQL templates, prefix mappings) are bundled in `src/europeana_qlever/grasp/` as package data. Runtime config (`europeana-grasp.yaml`, `europeana-notes.json`) is generated into `{work_dir}/grasp/` by `write-grasp-config`. The domain notes are generated from `ask/notes.py`'s `export_grasp_notes()` — structured EDM knowledge rendered for SPARQL. `grasp-setup` replaces the old `setup.sh` — downloads entity labels and property URIs from QLever, builds fuzzy/embedding search indices, installs info query templates, and creates materialized views. `grasp-start`/`grasp-stop` manage the GRASP server process. The SPARQL backend (`ask/sparql.py`) wraps the GRASP WebSocket protocol (`ws://localhost:6789/live`) as an `AskBackend` implementation, enabling unified querying and benchmarking across both backends.
 - **Materialized views** (`create-views` command): The `open-items` QLever materialized view precomputes all items with open reuse rights (CC0, PDM, CC-BY, CC-BY-SA) joined with their `edm:type`. The SPARQL is generated from `rights.py`'s `sparql_reuse_level_filter("open")`. GRASP queries use `SERVICE view:open-items { ... }` syntax for instant indexed lookups instead of expensive `STRSTARTS(STR(?rights), ...)` filters. View is created by `create-views` CLI command (also integrated into `pipeline` after server start) and stored persistently by QLever. View name constant: `VIEW_OPEN_ITEMS` in `constants.py`.
 - **Report** (`report.py`): `ExportReport` runs DuckDB analytics over exported Parquet files (seven sections: volume, rights, language, completeness, entities, content, optional URL probing). Returns a `Report` dataclass. `ReportFilters` is a schema-driven filter class that accepts any Item field name and generates DuckDB WHERE clauses using `filterable_fields()` from `edm_schema.py`. Filter style (``IN``, ``=``, ``list_has_any``, struct search, range) is inferred from the field's range and multivalued flag. CLI exposes a single `--filters/-f` string option parsed via `ReportFilters.parse()`.
 - **Croissant metadata** (`croissant.py`): Generates a `croissant.json` (JSON-LD) file alongside exported Parquets using the `mlcroissant` library. Describes all tables, columns, types, and descriptions — all derived from the LinkML schema (`edm_parquet.yaml`). Struct list columns (titles, subjects, creators, etc.) are represented with Croissant `subField` nodes. Includes SHA-256 checksums and file sizes. Auto-generated at the end of `ExportPipeline.run()`.
-- **NL→DuckDB agent** (`ask.py`): The `ask` CLI command enables natural language querying over exported Parquet files. Uses OpenAI function calling (gpt-4.1-mini) with a multi-step agent loop: the LLM can list tables, inspect schemas, execute SQL, and self-correct on errors. The system prompt includes an auto-generated schema description (from `schema_loader.parquet_schema_description()`) and domain notes teaching DuckDB patterns for EDM struct lists, reuse levels, specimen exclusion, and entity joins. `AskEngine` creates a DuckDB connection with all `*.parquet` files registered as views, applies `ReportFilters` to `items_resolved`, and loops through tool calls until the LLM calls the `answer()` terminal tool. API key from `OPENAI_API_KEY` env var or `grasp/.env`. Supports `--verbose` for full agent trace display and `--model` to override the LLM.
+- **NL querying** (`ask/`): Unified package for natural-language querying with pluggable backends. `AskBackend` (ABC in `__init__.py`) defines the interface; `AskResult` and `AskStep` are the shared result types. Two implementations: `AskParquet` (`parquet.py`) translates NL→DuckDB SQL via OpenAI function calling over exported Parquet files (offline, no servers); `AskSPARQL` (`sparql.py`) translates NL→SPARQL via GRASP WebSocket (requires running QLever + GRASP). `ParquetStore` (`store.py`) is the shared DuckDB engine — registers all Parquets as views, applies `ReportFilters`, creates convenience views (`items`, `org_names`). Used by both `ask` and `report`. `EdmNote` (`notes.py`) provides structured domain knowledge renderable for both DuckDB (`render_duckdb_notes()`) and SPARQL (`render_sparql_notes()`, `export_grasp_notes()`). `Benchmark` (`benchmark.py`) runs test questions from `benchmark.yml` through any backend with grading, skip/retry, and JSONL output. The `ask` CLI command selects backend with `--backend parquet|sparql`; the `benchmark` command supports `--backend parquet|sparql|both`.
+- **GRASP resources** (`grasp/` package in src): Bundles static resource files for the GRASP server (SPARQL templates, prefix mappings) as package data. Runtime configuration (`europeana-grasp.yaml`, `europeana-notes.json`, search indices) is generated into `{work_dir}/grasp/` by `write-grasp-config` and `grasp-setup` CLI commands. The GRASP server lifecycle is managed by `grasp-start`/`grasp-stop`, mirroring the QLever `start`/`stop` pattern.
 
 ## Documentation
 

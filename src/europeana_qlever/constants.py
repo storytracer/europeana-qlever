@@ -83,6 +83,14 @@ ASK_MAX_STEPS = 15
 ASK_MAX_RESULT_ROWS = 50
 ASK_TEMPERATURE = 0.0
 
+# ---------------------------------------------------------------------------
+# GRASP NL→SPARQL server defaults
+# ---------------------------------------------------------------------------
+GRASP_SUBDIR = "grasp"
+GRASP_PORT = 6789
+GRASP_WS_URL = "ws://localhost:6789/live"
+GRASP_MODEL = "openai/gpt-4.1-mini"
+
 QLEVER_INDEX_SETTINGS = {
     "languages-internal": [],
     "prefixes-external": [
