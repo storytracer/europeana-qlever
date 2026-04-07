@@ -1,6 +1,6 @@
 # europeana-qlever
 
-CLI for ingesting the full Europeana EDM metadata dump (~66 million records, 2-5 billion triples in Turtle format) into a [QLever](https://github.com/ad-freiburg/qlever) SPARQL engine and exporting query results as Parquet files.
+CLI for ingesting the full Europeana EDM metadata dump (~66 million records, 2-5 billion triples in Turtle format) into a [QLever](https://github.com/ad-freiburg/qlever) SPARQL engine and exporting query results as Parquet files. Includes a [GRASP](https://github.com/ad-freiburg/grasp) integration for natural-language querying of the Europeana knowledge graph via an LLM-powered NL-to-SPARQL agent.
 
 ## Overview
 
@@ -13,6 +13,11 @@ Europeana FTP (15,000+ ZIPs)
   → SPARQL endpoint (localhost:7001)
   → Parquet export (Phase 1: SPARQL → TSV → Parquet, Phase 2: DuckDB composition)
   → report (quality/coverage analytics over exported Parquets)
+
+GRASP (natural-language querying)
+  → setup (build entity/property search indices from QLever)
+  → serve (LLM agent on localhost:6789)
+  → benchmark (evaluate NL-to-SPARQL accuracy over 50+ test questions)
 ```
 
 ## Dataset sizing
@@ -363,6 +368,69 @@ uv run europeana-qlever -d /data/europeana analyze static --set summary
 
 Both modes produce Markdown reports in `<work-dir>/analysis/`. The `qlever` mode identifies runtime bottlenecks from the execution tree; the `static` mode identifies structural complexity (OPTIONAL nesting depth, triple pattern count, aggregate cost).
 
+## Natural-language querying with GRASP
+
+[GRASP](https://github.com/ad-freiburg/grasp) (Graph Retrieval Augmented Structured Prompting) is an LLM-powered agent that translates natural-language questions into SPARQL queries. The `grasp/` directory contains Europeana-specific configuration for running GRASP against the QLever endpoint.
+
+### Prerequisites
+
+- **QLever** running on `localhost:7001` with the Europeana dataset indexed
+- **GRASP CLI** installed: `uv tool install grasp`
+- **OpenAI API key** in `grasp/.env` (used by gpt-4.1-mini)
+
+### Setup
+
+Build the search indices GRASP uses for entity and property lookup:
+
+```bash
+cd grasp
+bash setup.sh
+```
+
+This downloads entity labels and property URIs from QLever, builds fuzzy (entity) and embedding-based (property) search indices, and installs info query templates. Default index directory: `$HOME/data/europeana/grasp-index/`.
+
+### Running the server
+
+```bash
+cd grasp
+grasp serve europeana-grasp.yaml
+```
+
+The server runs on port 6789. A SvelteKit web UI is available separately (see GRASP docs).
+
+### Benchmarking
+
+A benchmark suite of 50+ questions across 19 categories (volume, rights, multilingual, geographic, temporal, AI training viability, etc.) evaluates GRASP's NL-to-SPARQL accuracy:
+
+```bash
+# Run all questions (results streamed to benchmark-results.jsonl)
+uv run python grasp/benchmark.py
+
+# Run a single question
+uv run python grasp/benchmark.py --question 5
+
+# Re-run only timeouts and server errors
+uv run python grasp/benchmark.py --retry-failed
+
+# Start fresh
+uv run python grasp/benchmark.py --overwrite
+```
+
+The benchmark runner connects to GRASP via WebSocket, streams agent traces live (model reasoning, tool calls, SPARQL execution), grades each response (PASS/EMPTY/TIMEOUT/ERROR), and produces a summary table with pass rate, token usage, and latency percentiles.
+
+### Configuration
+
+Key files in `grasp/`:
+
+| File | Purpose |
+|------|---------|
+| `europeana-grasp.yaml` | Model (gpt-4.1-mini), endpoint, search settings, timeouts |
+| `europeana-notes.json` | 47 EDM domain knowledge notes for the LLM (proxy types, property locations, rights patterns, performance tips) |
+| `prefixes.json` | RDF namespace mappings for search index |
+| `setup.sh` | Automated index building script |
+| `benchmark.yml` | Test questions for evaluation |
+| `benchmark.py` | Async benchmark runner with Rich live display |
+
 ## Directory layout
 
 **Repository:**
@@ -374,6 +442,7 @@ Both modes produce Markdown reports in `<work-dir>/analysis/`. The `qlever` mode
 | `src/europeana_qlever/schema/edm_parquet.yaml` | Export schema -- declares all 44 export tables as LinkML classes with SPARQL patterns and pipeline annotations |
 | `ontologies/metis-schema/` | Europeana metis-schema XSD + OWL source files (copied from GitHub) |
 | `ontologies/external/` | Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, ODRL, etc.) |
+| `grasp/` | GRASP NL-to-SPARQL integration: config, domain notes, search index setup, benchmark suite |
 | `scripts/` | Standalone uv scripts for schema generation and documentation sync |
 | `scripts/generate-edm-schema.py` | Generate `schema/edm.yaml` from metis-schema XSD+OWL and external ontologies |
 | `scripts/update-qlever-docs.py` | Sync QLever docs from upstream GitHub repo |
