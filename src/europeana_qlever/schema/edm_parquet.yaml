@@ -1245,6 +1245,59 @@ classes:
         range: integer
         annotations: { aggregation: "COUNT(DISTINCT ?item)" }
 
+  Datasets:
+    description: >-
+      One row per dataset with provider, data provider, country,
+      and item count.
+    annotations:
+      export_name: datasets
+      export_type: summary
+      export_sets: "pipeline,summary"
+      required_prefixes: "edm,dcterms"
+      sparql_pattern: |
+        ?eAgg edm:aggregatedCHO ?item .
+        ?eAgg a edm:EuropeanaAggregation .
+        ?eAgg edm:datasetName ?datasetName .
+        ?agg edm:aggregatedCHO ?item .
+        FILTER(?agg != ?eAgg)
+        ?agg edm:dataProvider ?dp .
+        ?agg edm:provider ?prov .
+        ?eAgg edm:country ?cty .
+        OPTIONAL { ?eAgg dcterms:created ?created .
+                   FILTER(?created != "1970-01-01T00:00:00.000Z") }
+        OPTIONAL { ?eAgg dcterms:modified ?modified .
+                   FILTER(?modified != "1970-01-01T00:00:00.000Z") }
+      order_by: "DESC(?items)"
+    attributes:
+      datasetName:
+        description: Dataset/collection name (edm:datasetName).
+        annotations: { group_by: "true" }
+      dataProvider:
+        description: Data provider URI.
+        annotations: { aggregation: "SAMPLE(?dp)" }
+      provider:
+        description: Provider URI.
+        annotations: { aggregation: "SAMPLE(?prov)" }
+      country:
+        description: Country of the dataset.
+        annotations: { aggregation: "SAMPLE(?cty)" }
+      items:
+        range: integer
+        description: Number of items in this dataset.
+        annotations: { aggregation: "COUNT(DISTINCT ?item)" }
+      earliest_created:
+        range: timestamp
+        description: Earliest Europeana ingestion timestamp (dcterms:created on EuropeanaAggregation).
+        annotations: { aggregation: "MIN(?created)" }
+      latest_created:
+        range: timestamp
+        description: Latest Europeana ingestion timestamp (dcterms:created on EuropeanaAggregation).
+        annotations: { aggregation: "MAX(?created)" }
+      latest_modified:
+        range: timestamp
+        description: Most recent update timestamp (dcterms:modified on EuropeanaAggregation).
+        annotations: { aggregation: "MAX(?modified)" }
+
   TextsByType:
     description: dc:type value distribution for TEXT items.
     annotations:

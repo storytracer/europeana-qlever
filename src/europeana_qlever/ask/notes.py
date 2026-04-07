@@ -8,13 +8,19 @@ language-agnostic EDM knowledge plus optional DuckDB and SPARQL patterns.
 - :func:`render_sparql_notes` produces the note list for GRASP's
   ``europeana-notes.json``.
 - :func:`export_grasp_notes` writes the JSON file directly.
+
+Notes marked ``# -- Schema-derived --`` are generated from
+``edm_parquet.yaml`` via :func:`_schema_derived_notes`.
 """
 
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+
+from europeana_qlever import schema_loader
 
 
 @dataclass(frozen=True)
@@ -25,6 +31,126 @@ class EdmNote:
     edm_knowledge: str
     duckdb_pattern: str = ""
     sparql_pattern: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Schema-derived notes
+# ---------------------------------------------------------------------------
+
+
+def _column_types_note() -> EdmNote:
+    """Derive the column_types note from Item fields in the schema."""
+    groups: dict[str, list[str]] = defaultdict(list)
+    for name, attr in schema_loader.item_fields().items():
+        if not attr.multivalued:
+            continue
+        type_str = schema_loader._DUCKDB_LIST_TYPE.get(attr.range or "string", "LIST<VARCHAR>")
+        desc = f" ({attr.description})" if attr.description else ""
+        groups[type_str].append(f"{name}{desc}")
+
+    lines = ["MULTI-VALUED COLUMN TYPES:"]
+    for type_str, cols in groups.items():
+        lines.append(f"- {type_str}: {', '.join(cols)}")
+
+    return EdmNote(
+        topic="column_types",
+        edm_knowledge="Multi-valued properties use typed list columns.",
+        duckdb_pattern="\n".join(lines),
+    )
+
+
+def _contextual_entities_note() -> EdmNote:
+    """Derive the contextual_entities note from entity exports in the schema."""
+    exports = schema_loader.export_classes()
+    entity_types = schema_loader.entity_classes()
+
+    duckdb_parts: list[str] = []
+    sparql_parts: list[str] = []
+
+    for cls_name in entity_types:
+        annots = schema_loader._annots(schema_loader.schema_view().get_class(cls_name))
+        core_name = annots.get("export_name_core", "")
+        links_name = annots.get("export_name_links", "")
+        id_col = annots.get("id_column", cls_name.lower())
+
+        if not core_name:
+            continue
+
+        # Core fields
+        core_info = exports.get(core_name)
+        core_fields = [
+            n for n in (core_info.attributes if core_info else {})
+            if n not in (id_col, "pref_label", "pref_label_lang")
+            and not (core_info and core_info.attributes[n].identifier)
+        ]
+
+        # Link properties
+        link_props = schema_loader.entity_link_property_details(cls_name)
+        link_names = [lp.name for lp in link_props]
+
+        plural = cls_name.lower() + "s" if not cls_name.lower().endswith("s") else cls_name.lower()
+        duckdb_parts.append(
+            f"{core_name}: one row per prefLabel per {cls_name.lower()}. "
+            f"Columns: {id_col}, pref_label, pref_label_lang"
+            + (f", {', '.join(core_fields)}" if core_fields else "")
+            + "."
+        )
+        duckdb_parts.append(
+            f"{links_name}: multi-valued properties in long format "
+            f"({id_col}, property, value, lang). "
+            f"Properties: {', '.join(link_names)}."
+        )
+
+    # SPARQL entity patterns
+    for cls_name in entity_types:
+        cls = schema_loader.schema_view().get_class(cls_name)
+        if cls and cls.class_uri:
+            core_fields = schema_loader.entity_core_fields(cls_name)
+            field_uris = [a.slot_uri for a in core_fields.values() if a.slot_uri]
+            sparql_parts.append(
+                f"{cls.class_uri}: skos:prefLabel (language-tagged)"
+                + (f", {', '.join(field_uris)}" if field_uris else "")
+                + "."
+            )
+
+    return EdmNote(
+        topic="contextual_entities",
+        edm_knowledge=(
+            f"Entity tables: {', '.join(a.get('export_name_core', '') for c in entity_types for a in [schema_loader._annots(schema_loader.schema_view().get_class(c))])}.\n"
+            "One row per prefLabel variant. Use for entity-level analysis."
+        ),
+        duckdb_pattern=(
+            "\n".join(duckdb_parts)
+            + "\nJoin subjects.uri with concept column in concepts_core for entity-level analysis."
+            "\nJoin creators.uri/contributors.uri with agent column in agents_core."
+        ),
+        sparql_pattern=(
+            "All entities have skos:prefLabel (language-tagged) and owl:sameAs (URI).\n"
+            + "\n".join(sparql_parts)
+        ),
+    )
+
+
+def _sparql_prefixes_note() -> EdmNote:
+    """Derive the sparql_prefixes note from schema prefix declarations."""
+    pfx = schema_loader.prefixes()
+    lines = [f"PREFIX {k}: <{v}>" for k, v in sorted(pfx.items())]
+    # Add the view prefix which isn't in the schema but is needed for queries
+    lines.append("PREFIX view: <https://qlever.cs.uni-freiburg.de/materializedView/>")
+    return EdmNote(
+        topic="sparql_prefixes",
+        edm_knowledge="Standard RDF prefix declarations for Europeana queries.",
+        sparql_pattern="\n".join(lines),
+    )
+
+
+def _schema_derived_notes() -> list[EdmNote]:
+    """Return all notes that are generated from the schema."""
+    return [
+        _column_types_note(),
+        _contextual_entities_note(),
+        _sparql_prefixes_note(),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -68,18 +194,8 @@ SERVICE view:open-items { [ view:column-item ?item ; view:column-type ?type ] }
 PREFIX view: must ALWAYS be declared. Omit FILTER for all types.""",
     ),
 
-    # -- Column types (DuckDB only) --
-    EdmNote(
-        topic="column_types",
-        edm_knowledge="Multi-valued properties use typed list columns.",
-        duckdb_pattern="""\
-MULTI-VALUED COLUMN TYPES:
-- LIST<STRUCT<value VARCHAR, lang VARCHAR>>: titles, descriptions (text with language tags)
-- LIST<STRUCT<label VARCHAR, uri VARCHAR>>: subjects, dc_types, formats (entity labels with URIs)
-- LIST<STRUCT<name VARCHAR, uri VARCHAR>>: creators, contributors, publishers (agent names with URIs)
-- LIST<VARCHAR>: dates, languages, identifiers, dc_rights
-- LIST<VARCHAR>: years (string representations of integer years)""",
-    ),
+    # -- Schema-derived: column types --
+    _column_types_note(),
 
     # -- Type vs dc:type --
     EdmNote(
@@ -257,22 +373,8 @@ CRITICAL: edm:rights is ONLY reliable on ore:Aggregation.
 edm:EuropeanaAggregation has a copy but it is incomplete.""",
     ),
 
-    # -- Contextual entities --
-    EdmNote(
-        topic="contextual_entities",
-        edm_knowledge="""\
-Entity tables: agents_core, concepts_core, places_core, timespans_core.
-One row per prefLabel variant. Use for entity-level analysis
-(e.g. "how many concepts have labels in 10+ languages").
-Entity links tables have same_as, alt_label, exact_match, broader, narrower, etc.""",
-        duckdb_pattern="""\
-Join subjects.uri with concept column in concepts_core for entity-level analysis.
-Join creators.uri/contributors.uri with agent column in agents_core.""",
-        sparql_pattern="""\
-All entities have skos:prefLabel (language-tagged) and owl:sameAs (URI).
-edm:Agent: rdaGr2:dateOfBirth, rdaGr2:dateOfDeath, rdaGr2:gender.
-edm:Place: wgs84_pos:lat, wgs84_pos:long. skos:Concept: skos:broader, skos:narrower.""",
-    ),
+    # -- Schema-derived: contextual entities --
+    _contextual_entities_note(),
 
     # -- Materialized views (SPARQL only) --
     EdmNote(
@@ -300,22 +402,8 @@ edm:dataProvider and edm:country are literal strings, not URIs.
 edm:rights is always a URI. dc:rights is a free-text literal.""",
     ),
 
-    # -- Common prefixes (SPARQL only) --
-    EdmNote(
-        topic="sparql_prefixes",
-        edm_knowledge="Standard RDF prefix declarations for Europeana queries.",
-        sparql_pattern="""\
-PREFIX dc: <http://purl.org/dc/elements/1.1/>
-PREFIX dcterms: <http://purl.org/dc/terms/>
-PREFIX edm: <http://www.europeana.eu/schemas/edm/>
-PREFIX ore: <http://www.openarchives.org/ore/terms/>
-PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-PREFIX rdaGr2: <http://rdvocab.info/ElementsGr2/>
-PREFIX ebucore: <https://www.ebu.ch/metadata/ontologies/ebucore/ebucore#>
-PREFIX wgs84_pos: <http://www.w3.org/2003/01/geo/wgs84_pos#>
-PREFIX view: <https://qlever.cs.uni-freiburg.de/materializedView/>""",
-    ),
+    # -- Schema-derived: SPARQL prefixes --
+    _sparql_prefixes_note(),
 ]
 
 

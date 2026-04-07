@@ -11,6 +11,7 @@ import itertools
 import logging
 import os
 import time
+from datetime import datetime
 from collections import deque
 from concurrent.futures import Future, ProcessPoolExecutor
 from functools import partial
@@ -468,7 +469,20 @@ def _make_array(values: tuple, field: pa.Field) -> pa.Array:
         return pa.array([float(v) if v else None for v in values], type=pa.float64())
     if field.type == pa.bool_():
         return pa.array([v == "true" if v else None for v in values], type=pa.bool_())
+    if pa.types.is_timestamp(field.type):
+        return pa.array(
+            [_parse_timestamp(v) if v else None for v in values],
+            type=field.type,
+        )
     return pa.array(values, type=pa.string())
+
+
+def _parse_timestamp(v: str) -> datetime | None:
+    """Parse an ISO 8601 timestamp string to a datetime object."""
+    try:
+        return datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
 
 
 def _write_batch(

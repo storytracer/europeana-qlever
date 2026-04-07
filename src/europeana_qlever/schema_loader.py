@@ -667,6 +667,7 @@ _PA_SCALAR: dict[str, str] = {
     "integer": "int64",
     "float": "float64",
     "boolean": "bool_",
+    "timestamp": "timestamp_ms_utc",
     "EdmType": "string",
     "ReuseLevel": "string",
 }
@@ -694,6 +695,8 @@ def _pa_type(range_name: str | None, multivalued: bool):
             return pa.list_(pa.struct([("name", pa.string()), ("uri", pa.string())]))
         return pa.list_(pa.string())
     type_name = _PA_SCALAR.get(rng, "string")
+    if type_name == "timestamp_ms_utc":
+        return pa.timestamp("ms", tz="UTC")
     return getattr(pa, type_name)()
 
 
@@ -792,6 +795,7 @@ _DUCKDB_TYPE: dict[str, str] = {
     "integer": "INTEGER",
     "float": "DOUBLE",
     "boolean": "BOOLEAN",
+    "timestamp": "TIMESTAMP",
     "EdmType": "VARCHAR",
     "ReuseLevel": "VARCHAR",
 }
@@ -875,5 +879,32 @@ def parquet_schema_description() -> str:
     lines.append("  name (VARCHAR) — display name")
     lines.append("  lang (VARCHAR) — language of the name")
     lines.append("")
+
+    # --- summary tables ---
+    lines.append("## Summary tables")
+    lines.append(
+        "Pre-aggregated tables for common analytical queries. "
+        "Prefer these over scanning items_resolved when they fit the question."
+    )
+    lines.append("")
+    for eci in sorted(export_classes().values(), key=lambda e: e.export_name):
+        if eci.export_type != "summary":
+            continue
+        desc = eci.annotations.get("description", "") or ""
+        # Get description from the schema class itself
+        cls = schema_view().get_class(eci.cls_name)
+        if cls and cls.description:
+            desc = cls.description.strip()
+        lines.append(f"### {eci.export_name}")
+        if desc:
+            lines.append(desc)
+        lines.append("Columns:")
+        for col_name, attr in eci.attributes.items():
+            if attr.identifier:
+                continue
+            type_str = _duckdb_type_str(attr.range, attr.multivalued)
+            desc_part = f" — {attr.description}" if attr.description else ""
+            lines.append(f"  {col_name} ({type_str}){desc_part}")
+        lines.append("")
 
     return "\n".join(lines)
