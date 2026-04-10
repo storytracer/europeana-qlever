@@ -78,7 +78,7 @@ DEFAULT_EXPORT_RETRY_DELAYS = (5, 15)  # seconds between retry attempts
 # ---------------------------------------------------------------------------
 # NL→DuckDB agent defaults (``ask`` command)
 # ---------------------------------------------------------------------------
-ASK_MODEL = "nvidia/nemotron-3-nano"
+ASK_MODEL = "gpt-4.1-mini"
 ASK_MAX_STEPS = 25
 ASK_MAX_RESULT_ROWS = 50
 ASK_TEMPERATURE = 0.0
@@ -89,7 +89,7 @@ ASK_TEMPERATURE = 0.0
 GRASP_SUBDIR = "grasp"
 GRASP_PORT = 6789
 GRASP_WS_URL = "ws://localhost:6789/live"
-GRASP_MODEL = "openai/nvidia/nemotron-3-nano"
+GRASP_MODEL = "openai/gpt-4.1-mini"
 
 QLEVER_INDEX_SETTINGS = {
     "languages-internal": [],

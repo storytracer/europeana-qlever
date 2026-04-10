@@ -30,7 +30,6 @@ from . import display
 from .constants import (
     ANALYSIS_SUBDIR,
     EXPORTS_SUBDIR,
-    GRASP_MODEL,
     INDEX_SUBDIR,
     MERGED_SUBDIR,
     QLEVER_ACCESS_TOKEN,
@@ -1614,7 +1613,7 @@ def write_report_config(ctx: click.Context, force: bool):
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget.")
 @click.option("--model", default=None,
-              help="Override LLM model for agent questions (default: nemotron-3-nano).")
+              help="Override LLM model for agent questions (default: gpt-4.1-mini).")
 @click.option("--max-steps", default=None, type=int,
               help="Maximum agent steps per question (default: 15).")
 @click.option("--grasp-url", default="ws://localhost:6789/live", show_default=True,
@@ -1708,7 +1707,7 @@ def report(
 @click.option("--filters", "-f", "filter_string", default=None,
               help='Pre-filter items_resolved, e.g. "country=NL type=IMAGE reuse_level=open"')
 @click.option("--model", default=None, show_default=True,
-              help="Override the LLM model (default: nemotron-3-nano).")
+              help="Override the LLM model (default: gpt-4.1-mini).")
 @click.option("--max-steps", default=None, type=int, show_default=True,
               help="Maximum agent steps (default: 15).")
 @click.option("--grasp-url", default="ws://localhost:6789/live", show_default=True,
@@ -1913,7 +1912,7 @@ def benchmark(
 
 
 @cli.command("write-grasp-config")
-@click.option("--model", default=GRASP_MODEL, show_default=True,
+@click.option("--model", default="openai/gpt-4.1-mini", show_default=True,
               help="LLM model for the GRASP server.")
 @click.option("--port", default=6789, type=int, show_default=True,
               help="GRASP server port.")
