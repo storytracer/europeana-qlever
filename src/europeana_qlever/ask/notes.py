@@ -164,12 +164,32 @@ EDM_NOTES: list[EdmNote] = [
         edm_knowledge="Multi-valued properties are stored as nested lists with struct fields.",
         duckdb_pattern="""\
 STRUCT LIST ACCESS PATTERNS:
-- Unnest struct lists: SELECT t.value, t.lang FROM items_resolved, UNNEST(titles) AS t(value, lang)
-- Filter within a list: list_filter(titles, x -> x.lang = 'en')
-- Check list containment: list_has_any(list_transform(dc_types, x -> LOWER(x.label)), ['preserved specimen'])
+- Unnest uses the subquery form — DuckDB does NOT support `UNNEST(col) AS t(field1, field2)`
+  to name struct fields. Put UNNEST in a subquery and access fields via the alias.
+- titles, descriptions — STRUCT<value VARCHAR, lang VARCHAR>:
+    SELECT t.value, t.lang
+    FROM (SELECT UNNEST(titles) AS t FROM items)
+    WHERE t.value IS NOT NULL
+- subjects, dc_types, formats — STRUCT<label VARCHAR, uri VARCHAR>:
+    SELECT d.label, d.uri
+    FROM (SELECT UNNEST(dc_types) AS d FROM items)
+    WHERE d.label IS NOT NULL
+- creators, contributors, publishers — STRUCT<name VARCHAR, uri VARCHAR>:
+    SELECT c.name, c.uri
+    FROM (SELECT UNNEST(creators) AS c FROM items)
+    WHERE c.name IS NOT NULL
+- Keep item column alongside unnest when you need to count items:
+    SELECT COUNT(DISTINCT item)
+    FROM (SELECT item, UNNEST(subjects) AS s FROM items)
+    WHERE s.label = 'Painting'
+- Filter within a list (lambda struct field access works here):
+    list_filter(titles, x -> x.lang = 'en')          -- value/lang struct
+    list_filter(subjects, x -> x.label IS NOT NULL)  -- label/uri struct
+    list_filter(creators, x -> x.name IS NOT NULL)   -- name/uri struct
+- Check list containment:
+    list_has_any(list_transform(dc_types, x -> LOWER(x.label)), ['preserved specimen'])
 - Count list elements: LEN(subjects)
-- Check non-empty: LEN(titles) > 0 (NOT: titles IS NOT NULL, which only checks for NULL not empty)
-- Count distinct after unnest: SELECT COUNT(DISTINCT item) FROM items_resolved, UNNEST(...)""",
+- Check non-empty: LEN(titles) > 0 (NOT: titles IS NOT NULL, which only checks for NULL not empty)""",
     ),
 
     # -- Reuse levels --
