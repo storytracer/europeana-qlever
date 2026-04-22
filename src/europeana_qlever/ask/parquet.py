@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -210,6 +212,40 @@ def _format_cell(value) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Live-spinner helpers
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _ticking_spinner(live, label: str):
+    """Update a Rich Live spinner's text with `label  N.Ns` until exit.
+
+    Runs a daemon thread that re-calls ``live.update`` every 0.25s so the
+    user can see elapsed time while synchronous blocking work (OpenAI API
+    call, DuckDB query) is in progress.
+    """
+    from rich.spinner import Spinner
+
+    t0 = time.perf_counter()
+    stop = threading.Event()
+
+    def _tick() -> None:
+        while not stop.is_set():
+            elapsed = time.perf_counter() - t0
+            live.update(Spinner("dots", text=f"{label}  [dim]{elapsed:5.1f}s[/]"))
+            stop.wait(0.25)
+
+    live.update(Spinner("dots", text=f"{label}  [dim]  0.0s[/]"))
+    thread = threading.Thread(target=_tick, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1.0)
+
+
+# ---------------------------------------------------------------------------
 # OpenAI API
 # ---------------------------------------------------------------------------
 
@@ -291,7 +327,6 @@ class AskParquet(AskBackend):
         """Run the agent loop for a question."""
         from .. import display
         from rich.live import Live
-        from rich.spinner import Spinner
         from rich.text import Text
 
         t0 = time.perf_counter()
@@ -318,9 +353,8 @@ class AskParquet(AskBackend):
                 step = 0
                 while step < self._max_steps:
                     step += 1
-                    live.update(Spinner("dots", text=f"Step {step}: thinking…"))
-
-                    response = _call_openai(messages, model=self._model)
+                    with _ticking_spinner(live, f"Step {step}: thinking…"):
+                        response = _call_openai(messages, model=self._model)
                     choice = response["choices"][0]
                     message = choice["message"]
                     messages.append(message)
@@ -361,8 +395,6 @@ class AskParquet(AskBackend):
                             result.elapsed = time.perf_counter() - t0
                             return result
 
-                        live.update(Spinner("dots", text=f"Step {step}: {fn_name}()"))
-
                         if verbose:
                             live.update(Text(""))
                             display_tool_call(AskStep(
@@ -371,9 +403,9 @@ class AskParquet(AskBackend):
                                 tool=fn_name,
                                 tool_args=fn_args,
                             ))
-                            live.update(Spinner("dots", text=f"Step {step}: {fn_name}() executing…"))
 
-                        tool_result = self._execute_tool(fn_name, fn_args)
+                        with _ticking_spinner(live, f"Step {step}: {fn_name}() executing…"):
+                            tool_result = self._execute_tool(fn_name, fn_args)
 
                         ask_step = AskStep(
                             type="tool",
