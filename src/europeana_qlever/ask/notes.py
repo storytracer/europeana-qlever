@@ -205,7 +205,29 @@ STRUCT LIST ACCESS PATTERNS:
 - Check list containment:
     list_has_any(list_transform(dc_types, x -> LOWER(x.label)), ['preserved specimen'])
 - Count list elements: LEN(subjects)
-- Check non-empty: LEN(titles) > 0 (NOT: titles IS NOT NULL, which only checks for NULL not empty)""",
+- Check non-empty: LEN(titles) > 0 (NOT: titles IS NOT NULL, which only checks for NULL not empty)
+
+FILTERING vs UNNESTING:
+- To CHECK whether a list contains a value, use list_has_any — no UNNEST needed:
+    WHERE list_has_any(list_transform(dc_types, x -> x.uri),
+      ['http://vocab.getty.edu/aat/300046300', 'http://schema.org/PublicationIssue'])
+    WHERE list_has_any(list_transform(subjects, x -> LOWER(x.label)), ['painting'])
+- To GET the individual values out for SELECT/GROUP BY, use UNNEST in a subquery.
+- NEVER use EXISTS with UNNEST — DuckDB cannot resolve the UNNEST alias inside EXISTS:
+    -- BROKEN (will fail with "Referenced table not found"):
+    WHERE EXISTS (SELECT 1 FROM UNNEST(dc_types) AS d WHERE d.uri = '...')
+- When you need to filter by one list AND unnest another list (or access scalars),
+  filter with list_has_any inside the inner SELECT, then unnest separately:
+    SELECT language, COUNT(*) AS count
+    FROM (
+      SELECT UNNEST(languages) AS language
+      FROM items_resolved
+      WHERE reuse_level = 'open'
+        AND list_has_any(list_transform(dc_types, x -> x.uri),
+            ['http://schema.org/PublicationIssue'])
+    )
+    GROUP BY language
+    ORDER BY count DESC""",
     ),
 
     # -- Reuse levels --
