@@ -110,6 +110,48 @@ GRADE_STYLE = {
 }
 
 
+def display_tool_call(step: AskStep) -> None:
+    """Print the header + args for a tool step, without the result.
+
+    Intended for pre-execution display so the user can see (and cancel on)
+    the SQL/SPARQL before the tool runs.
+    """
+    console = display.console
+    ts = f"{step.timestamp:6.1f}s"
+    style = TOOL_STYLE.get(step.tool or "", "")
+    console.print(f"  [dim]{ts}[/]  [{style}]{step.tool or '?'}[/]")
+
+    # Show SQL/SPARQL for execute tools
+    if step.tool in ("execute_sql", "execute") and step.tool_args:
+        query = step.tool_args.get("sql") or step.tool_args.get("sparql")
+        if query:
+            console.print(f"\n[cyan]{query}[/cyan]\n")
+
+    # Show search tool summaries
+    if step.tool and "search" in step.tool and step.tool_args:
+        parts = [
+            f"{k}: {v}"
+            for k in ("query", "entity", "property")
+            if (v := step.tool_args.get(k))
+        ]
+        if parts:
+            console.print(f"          {', '.join(parts)}")
+
+
+def display_tool_result(step: AskStep) -> None:
+    """Print only the truncated tool_result block for a tool step."""
+    if not step.tool_result:
+        return
+    console = display.console
+    text = step.tool_result
+    if len(text) > 500:
+        text = text[:500] + "…"
+    console.print()
+    for line in text.split("\n"):
+        console.print(f"          {line}")
+    console.print()
+
+
 def display_step(step: AskStep) -> None:
     """Print a single agent step to the console."""
     console = display.console
@@ -132,34 +174,8 @@ def display_step(step: AskStep) -> None:
             console.print()
 
     elif step.type == "tool":
-        style = TOOL_STYLE.get(step.tool or "", "")
-        console.print(f"  [dim]{ts}[/]  [{style}]{step.tool or '?'}[/]")
-
-        # Show SQL/SPARQL for execute tools
-        if step.tool in ("execute_sql", "execute") and step.tool_args:
-            query = step.tool_args.get("sql") or step.tool_args.get("sparql")
-            if query:
-                console.print(f"\n[cyan]{query}[/cyan]\n")
-
-        # Show search tool summaries
-        if step.tool and "search" in step.tool and step.tool_args:
-            parts = [
-                f"{k}: {v}"
-                for k in ("query", "entity", "property")
-                if (v := step.tool_args.get(k))
-            ]
-            if parts:
-                console.print(f"          {', '.join(parts)}")
-
-        # Show truncated result
-        if step.tool_result:
-            text = step.tool_result
-            if len(text) > 500:
-                text = text[:500] + "…"
-            console.print()
-            for line in text.split("\n"):
-                console.print(f"          {line}")
-            console.print()
+        display_tool_call(step)
+        display_tool_result(step)
 
     elif step.type in ("input", "system"):
         console.print(f"  [dim]{ts}[/]  [dim]{step.type}[/]")

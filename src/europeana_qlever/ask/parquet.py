@@ -21,7 +21,7 @@ from ..constants import (
     ASK_TEMPERATURE,
 )
 from ..schema_loader import parquet_schema_description
-from . import AskBackend, AskResult, AskStep, display_step
+from . import AskBackend, AskResult, AskStep, display_tool_call, display_tool_result
 from .notes import render_duckdb_notes
 from .store import ParquetStore
 
@@ -362,6 +362,17 @@ class AskParquet(AskBackend):
                             return result
 
                         live.update(Spinner("dots", text=f"Step {step}: {fn_name}()"))
+
+                        if verbose:
+                            live.update(Text(""))
+                            display_tool_call(AskStep(
+                                type="tool",
+                                timestamp=time.perf_counter() - t0,
+                                tool=fn_name,
+                                tool_args=fn_args,
+                            ))
+                            live.update(Spinner("dots", text=f"Step {step}: {fn_name}() executing…"))
+
                         tool_result = self._execute_tool(fn_name, fn_args)
 
                         ask_step = AskStep(
@@ -375,7 +386,7 @@ class AskParquet(AskBackend):
 
                         if verbose:
                             live.update(Text(""))
-                            display_step(ask_step)
+                            display_tool_result(ask_step)
 
                         messages.append({
                             "role": "tool",
