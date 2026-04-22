@@ -182,6 +182,22 @@ STRUCT LIST ACCESS PATTERNS:
     SELECT COUNT(DISTINCT item)
     FROM (SELECT item, UNNEST(subjects) AS s FROM items)
     WHERE s.label = 'Painting'
+- UNNEST WITH OTHER COLUMNS — put the UNNEST **and every scalar column you need**
+  in the SAME inner SELECT. Do NOT reference items_resolved again on the outside:
+    SELECT d.label, file_bytes, width, height
+    FROM (
+      SELECT UNNEST(dc_types) AS d, file_bytes, width, height
+      FROM items_resolved
+      WHERE file_bytes IS NOT NULL
+    )
+    WHERE d.label IS NOT NULL
+  Filter scalars early (inside the inner SELECT) — it runs before UNNEST explodes
+  the rows, which is dramatically faster on 66M items.
+- DO NOT write any of these — they are cartesian joins / invalid syntax that
+  will either run forever or fail:
+    FROM items_resolved, (SELECT UNNEST(dc_types) AS d FROM items_resolved) t  -- cross join
+    FROM items_resolved, LATERAL (SELECT * FROM UNNEST(dc_types)) AS d(label, uri)  -- wrong syntax
+    FROM items_resolved, UNNEST(dc_types) AS d                                  -- struct fields unreachable
 - Filter within a list (lambda struct field access works here):
     list_filter(titles, x -> x.lang = 'en')          -- value/lang struct
     list_filter(subjects, x -> x.label IS NOT NULL)  -- label/uri struct
