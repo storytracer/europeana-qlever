@@ -6,21 +6,35 @@ questions:
     question: "Distribution by reuse level"
     backend: parquet
     query: |
-      SELECT reuse_level,
+      SELECT x_reuse_level,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM items
-      GROUP BY reuse_level
+      FROM group_items
+      GROUP BY x_reuse_level
+      ORDER BY count DESC
+
+  - id: by_rights_family
+    question: "Distribution by rights family"
+    backend: parquet
+    query: |
+      SELECT x_rights_family,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items
+      GROUP BY x_rights_family
       ORDER BY count DESC
 
   - id: top_rights_uris
     question: "Top 10 specific rights URIs by item count"
     backend: parquet
     query: |
-      SELECT rights,
+      SELECT g.v_edm_rights AS rights,
+             m.x_label AS label,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM items
-      GROUP BY rights
+      FROM group_items g
+      LEFT JOIN map_rights m ON g.v_edm_rights = m.k_iri
+      WHERE g.v_edm_rights IS NOT NULL
+      GROUP BY g.v_edm_rights, m.x_label
       ORDER BY count DESC
       LIMIT 10

@@ -2,7 +2,16 @@
 
 Phase 1 streams SPARQL TSV results to disk via httpx, then parses RDF
 terms with rdflib and writes Parquet with PyArrow.  Phase 2 uses DuckDB
-to compose final exports from multiple Parquet base tables.
+to compose final exports from raw Parquet tables (values_*, links_*).
+
+Composable exports:
+
+- ``links_union`` tables are built by UNION-ing per-property intermediate
+  Parquets (one SPARQL scan per link property).  Intermediates live in
+  ``{exports_dir}/.intermediates/`` and are cleaned up after the final
+  union Parquet is written (unless ``--keep-base`` is set).
+- ``merged``, ``group``, and ``map`` exports are built by DuckDB
+  composition from raw Parquets.
 """
 
 from __future__ import annotations
@@ -44,21 +53,29 @@ from .constants import (
     QLEVER_PORT,
     QLEVER_QUERY_TIMEOUT,
 )
-from .compose import ComposeStep
-from .schema_loader import export_sets as _schema_export_sets, item_fields
+from .compose import ComposeStep, compose_steps_for
+from .schema_loader import (
+    depends_on as _deps_for,
+    export_classes,
+    export_sets as _schema_export_sets,
+    links_scan_entries,
+)
 from .query import Query, QueryFilters, QueryRegistry
 from .state import ExportResult
 
 logger = logging.getLogger(__name__)
 
-# Suppress rdflib.term warnings about technically-invalid IRIs (e.g. spaces
-# in URLs) that are common in real-world Europeana provider data.
+# Suppress rdflib.term warnings about technically-invalid IRIs.
 logging.getLogger("rdflib.term").setLevel(logging.ERROR)
+
+
+INTERMEDIATES_DIR_NAME = ".intermediates"
 
 
 # ---------------------------------------------------------------------------
 # Export type hierarchy
 # ---------------------------------------------------------------------------
+
 
 from dataclasses import dataclass, field
 
@@ -70,6 +87,7 @@ class Export:
     name: str
     description: str = ""
     depends_on: list[str] = field(default_factory=list)
+    is_intermediate: bool = False
 
 
 @dataclass
@@ -79,18 +97,19 @@ class QueryExport(Export):
     sparql: str = ""
 
     @classmethod
-    def from_query(cls, query: Query, filters: QueryFilters | None = None) -> QueryExport:
-        """Build a QueryExport from a Query, freezing the SPARQL with filters."""
+    def from_query(
+        cls,
+        query: Query,
+        filters: QueryFilters | None = None,
+        *,
+        is_intermediate: bool = False,
+    ) -> QueryExport:
         return cls(
             name=query.name,
             description=query.description,
             sparql=query.sparql(filters),
+            is_intermediate=is_intermediate,
         )
-
-    @classmethod
-    def from_sparql_file(cls, name: str, text: str) -> QueryExport:
-        """Build a QueryExport from a raw .sparql file."""
-        return cls(name=name, sparql=text)
 
 
 @dataclass
@@ -101,8 +120,9 @@ class CompositeExport(Export):
 
 
 # ---------------------------------------------------------------------------
-# ExportSet — named, non-exclusive collection of exports
+# ExportSet
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class ExportSet:
@@ -113,25 +133,25 @@ class ExportSet:
     members: tuple[str, ...]
 
     def resolve(self, registry: dict[str, Export]) -> dict[str, Export]:
-        """Return the subset of *registry* matching this set's members."""
         return {n: registry[n] for n in self.members if n in registry}
 
 
+_SET_DESCRIPTIONS: dict[str, str] = {
+    "pipeline": "All 30 final exports: raw + merged + group + maps",
+    "raw": "Raw values_* and links_* tables — one row per EDM entity (values) or one row per value (links)",
+    "merged": "Flagship denormalized merged_items table",
+    "group": "Fast-analytics group_items table with only categorical/boolean/integer columns",
+    "maps": "Static lookup and navigation tables: map_rights, map_sameAs, map_cho_entities",
+}
+
+
 def _build_export_sets() -> dict[str, ExportSet]:
-    """Build export sets from schema annotations (export_sets on each class)."""
     schema_sets = _schema_export_sets()
     result: dict[str, ExportSet] = {}
-    _DESCRIPTIONS = {
-        "pipeline": "Full Parquet export pipeline (entity + component + composite)",
-        "summary": "Dataset statistics — GROUP BY / COUNT aggregates",
-        "items": "All item-related exports",
-        "entities": "Contextual entity exports with full linked data",
-        "rights": "Rights and licensing exports",
-    }
     for name, members in schema_sets.items():
         result[name] = ExportSet(
             name=name,
-            description=_DESCRIPTIONS.get(name, f"{name} exports"),
+            description=_SET_DESCRIPTIONS.get(name, f"{name} exports"),
             members=tuple(members),
         )
     return result
@@ -141,8 +161,9 @@ EXPORT_SETS: dict[str, ExportSet] = _build_export_sets()
 
 
 # ---------------------------------------------------------------------------
-# ExportRegistry — builds and holds all Export objects
+# ExportRegistry
 # ---------------------------------------------------------------------------
+
 
 class ExportRegistry:
     """Builds exports from the query registry and composite definitions."""
@@ -154,27 +175,22 @@ class ExportRegistry:
 
     @property
     def query_registry(self) -> QueryRegistry:
-        """The underlying query registry."""
         return self._query_registry
 
     @property
     def exports(self) -> dict[str, Export]:
-        """All registered exports (copy)."""
         return dict(self._exports)
 
     def get(self, name: str) -> Export:
-        """Look up a single export by name."""
         return self._exports[name]
 
     def for_set(self, set_name: str) -> dict[str, Export]:
-        """Return exports belonging to a named query set."""
         if set_name == "all":
             return self.exports
         es = EXPORT_SETS[set_name]
         return {n: self._exports[n] for n in es.members if n in self._exports}
 
     def for_names(self, names: list[str]) -> dict[str, Export]:
-        """Return exports matching the given names."""
         result: dict[str, Export] = {}
         for n in names:
             if n not in self._exports:
@@ -184,54 +200,59 @@ class ExportRegistry:
 
     def _build(self) -> dict[str, Export]:
         exports: dict[str, Export] = {}
+        scan_entries = links_scan_entries()
 
-        # Wrap all queries as QueryExports
-        for name, query in self._query_registry.queries.items():
-            exports[name] = QueryExport.from_query(query, self._filters)
+        # 1. values_* tables — one QueryExport each.
+        for info in export_classes().values():
+            if info.export_type == "values":
+                q = self._query_registry.get(info.table_name)
+                exports[info.table_name] = QueryExport.from_query(q, self._filters)
 
-        # Composite exports — dependencies derived from schema
-        exports["items_resolved"] = CompositeExport(
-            name="items_resolved",
-            description=(
-                "Fully resolved one-row-per-item export: entity URIs resolved to labels, "
-                "multi-valued properties aggregated to native LIST/STRUCT types, "
-                "web resource metadata joined, reuse level computed"
-            ),
-            compose_steps=ComposeStep.items_resolved_steps(),
-            depends_on=_items_resolved_deps(),
-        )
+        # 2. Synthetic per-property links_scan intermediates.
+        for scan_name in scan_entries:
+            q = self._query_registry.get(scan_name)
+            exports[scan_name] = QueryExport.from_query(
+                q, self._filters, is_intermediate=True
+            )
+
+        # 3. links_union final exports — CompositeExport depending on all
+        #    per-property scans for that table.
+        parent_scans: dict[str, list[str]] = {}
+        for scan_name, entry in scan_entries.items():
+            parent_scans.setdefault(entry.parent_table, []).append(scan_name)
+        for info in export_classes().values():
+            if info.export_type != "links_union":
+                continue
+            deps = sorted(parent_scans.get(info.table_name, []))
+            exports[info.table_name] = CompositeExport(
+                name=info.table_name,
+                description=f"{info.cls_name}: unioned multi-valued properties",
+                compose_steps=compose_steps_for(info.table_name),
+                depends_on=deps,
+            )
+
+        # 4. merged_items / group_items / map_* — declared depends_on.
+        for info in export_classes().values():
+            if info.export_type in ("merged", "group", "map"):
+                exports[info.table_name] = CompositeExport(
+                    name=info.table_name,
+                    description=info.annotations.get("description", info.cls_name),
+                    compose_steps=compose_steps_for(info.table_name),
+                    depends_on=_deps_for(info.table_name),
+                )
 
         return exports
 
-def _items_resolved_deps() -> list[str]:
-    """Derive ``items_resolved`` dependencies from the schema.
 
-    Includes ``items_core``, all multi-valued base tables, entity core
-    tables needed for label resolution, and ``web_resources``.
-    """
-    deps = ["items_core"]
-    entity_cores: set[str] = set()
-    for attr in item_fields().values():
-        if not attr.multivalued:
-            continue
-        bt = attr.annotations.get("base_table")
-        if bt:
-            deps.append(bt)
-        # Entity-resolved fields need entity core exports for label lookup
-        entity_resolved = attr.annotations.get("entity_resolved")
-        if entity_resolved:
-            entity_cores.add(f"{entity_resolved}_core")
-    deps.extend(sorted(entity_cores))
-    deps.append("web_resources")
-    return deps
+# ---------------------------------------------------------------------------
+# Streaming SPARQL to TSV
+# ---------------------------------------------------------------------------
 
 
 _TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
 
 
 class _RowSpeedColumn(ProgressColumn):
-    """Displays processing speed as rows/s."""
-
     def render(self, task: Task) -> Text:
         speed = task.speed
         if speed is None:
@@ -239,13 +260,7 @@ class _RowSpeedColumn(ProgressColumn):
         return Text(f"{speed:,.0f} rows/s", style="progress.data.speed")
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _cleanup_partial(*paths: Path) -> None:
-    """Remove partially written files, ignoring errors."""
     for p in paths:
         try:
             if p.exists():
@@ -264,11 +279,10 @@ def _stream_query(
     http_chunk_size: int = 1_048_576,
     http_connect_timeout: int = 30,
 ) -> int:
-    """Stream a single SPARQL query to a TSV file. Returns approx row count."""
     total_bytes = 0
     newlines = 0
 
-    columns = [
+    columns: list[ProgressColumn] = [
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         DownloadColumn(),
@@ -309,17 +323,11 @@ def _stream_query(
 
 
 def _is_transient(exc: Exception) -> bool:
-    """Return True if the exception looks transient and worth retrying."""
     if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in _TRANSIENT_STATUS_CODES
     return False
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 def run_query_to_tsv(
@@ -333,13 +341,8 @@ def run_query_to_tsv(
     http_chunk_size: int = 1_048_576,
     http_connect_timeout: int = 30,
 ) -> int:
-    """Stream a SPARQL query result from QLever directly to a TSV file.
-
-    Retries up to *max_retries* times on transient errors.
-    Returns approximate row count (newline count minus header).
-    """
+    """Stream a SPARQL query result from QLever directly to a TSV file."""
     last_exc: Exception | None = None
-
     for attempt in range(max_retries + 1):
         try:
             return _stream_query(
@@ -363,36 +366,23 @@ def run_query_to_tsv(
                 time.sleep(delay)
             else:
                 raise
-
-    # Unreachable, but keeps type checker happy
     raise last_exc  # type: ignore[misc]
 
 
+# ---------------------------------------------------------------------------
+# TSV → Parquet
+# ---------------------------------------------------------------------------
+
+
 PARQUET_BATCH_SIZE = 100_000
-"""Default number of rows per PyArrow write batch."""
 
 
 def parse_rdf_term(raw: str) -> str:
-    """Parse a SPARQL TSV cell from N-Triples syntax to a clean string value.
-
-    Uses :func:`rdflib.util.from_n3` for proper handling of escape
-    sequences, language tags, and datatype suffixes.
-
-    - ``<http://…>``               →  ``http://…``
-    - ``"text"@en``                →  ``text``
-    - ``"text"``                   →  ``text``
-    - ``"42"^^<xsd:integer>``      →  ``42``
-    - ``"text with \\"q\\""@en``   →  ``text with "q"``
-    - ``IMAGE``                    →  ``IMAGE``  (bare value, unchanged)
-    - ``""`` (empty)               →  ``""``
-    """
+    """Parse a SPARQL TSV cell from N-Triples syntax to a clean string."""
     if not raw:
         return ""
     first = raw[0]
     if first == '"' or first == "<" or raw.startswith("_:"):
-        # Delegate to rdflib for proper RDF term parsing.
-        # Fall back to manual stripping on malformed values (e.g. trailing
-        # backslash that breaks rdflib's escape decoder).
         try:
             term = from_n3(raw)
         except Exception:
@@ -400,12 +390,10 @@ def parse_rdf_term(raw: str) -> str:
         if term is None:
             return ""
         return str(term)
-    # Bare value (plain literal like IMAGE, Portugal, or integer 42)
     return raw
 
 
 def _parse_batch(raw_lines: list[str], num_cols: int) -> list[list[str]]:
-    """Parse a batch of raw TSV lines with rdflib.  Runs in a worker process."""
     rows = []
     for line in raw_lines:
         cells = line.rstrip("\n").split("\t")
@@ -417,10 +405,7 @@ def _parse_batch(raw_lines: list[str], num_cols: int) -> list[list[str]]:
     return rows
 
 
-def _read_raw_batches(
-    fh, batch_size: int
-) -> list[str]:
-    """Yield batches of raw TSV lines from an open file handle."""
+def _read_raw_batches(fh, batch_size: int) -> list[str]:
     batch: list[str] = []
     for line in fh:
         batch.append(line)
@@ -432,12 +417,6 @@ def _read_raw_batches(
 
 
 def _infer_schema(col_names: list[str], sample_rows: list[list[str]]) -> pa.Schema:
-    """Infer a PyArrow schema from parsed sample rows.
-
-    Columns where every non-empty value is integer-like get ``pa.int64()``,
-    float-like get ``pa.float64()``, boolean get ``pa.bool_()``.
-    Everything else gets ``pa.string()``.
-    """
     fields = []
     for i, name in enumerate(col_names):
         vals = [row[i] for row in sample_rows if i < len(row) and row[i]]
@@ -453,7 +432,6 @@ def _infer_schema(col_names: list[str], sample_rows: list[list[str]]) -> pa.Sche
 
 
 def _is_float(v: str) -> bool:
-    """Return True if *v* looks like a float (has a decimal point)."""
     try:
         float(v)
         return "." in v
@@ -462,7 +440,6 @@ def _is_float(v: str) -> bool:
 
 
 def _make_array(values: tuple, field: pa.Field) -> pa.Array:
-    """Convert a tuple of string values to a typed PyArrow array."""
     if field.type == pa.int64():
         return pa.array([int(v) if v else None for v in values], type=pa.int64())
     if field.type == pa.float64():
@@ -478,19 +455,13 @@ def _make_array(values: tuple, field: pa.Field) -> pa.Array:
 
 
 def _parse_timestamp(v: str) -> datetime | None:
-    """Parse an ISO 8601 timestamp string to a datetime object."""
     try:
         return datetime.fromisoformat(v.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return None
 
 
-def _write_batch(
-    writer: pq.ParquetWriter,
-    schema: pa.Schema,
-    rows: list[list[str]],
-) -> None:
-    """Convert a batch of parsed rows to a RecordBatch and write to Parquet."""
+def _write_batch(writer: pq.ParquetWriter, schema: pa.Schema, rows: list[list[str]]) -> None:
     columns = list(zip(*rows)) if rows else []
     arrays = [_make_array(columns[i], field) for i, field in enumerate(schema)]
     batch = pa.RecordBatch.from_arrays(arrays, schema=schema)
@@ -507,41 +478,7 @@ def tsv_to_parquet(
     total_hint: int | None = None,
     static_schema: pa.Schema | None = None,
 ) -> int:
-    """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow.
-
-    Reads raw TSV lines into batches, parses each batch in parallel
-    using :class:`~concurrent.futures.ProcessPoolExecutor`, and streams
-    parsed results directly to Parquet via :class:`pyarrow.parquet.ParquetWriter`.
-
-    When *static_schema* is provided it is used directly, bypassing the
-    heuristic-based ``_infer_schema`` that guesses types from the first
-    batch.  This eliminates a class of bugs where inference produces wrong
-    types (e.g. an integer column inferred as string when the first batch
-    contains only empty values).
-
-    Parameters
-    ----------
-    tsv_path : Path
-        Input TSV with SPARQL N-Triples serialization.
-    parquet_path : Path
-        Output Parquet file path.
-    batch_size : int
-        Rows per parse/write batch.
-    row_group_size : int
-        Parquet row group size.
-    workers : int or None
-        Number of parallel parse workers.  Defaults to half the CPU count.
-    total_hint : int or None
-        Approximate row count for progress display (from the TSV streaming
-        step).  When ``None`` a spinner is shown instead of a progress bar.
-    static_schema : pyarrow.Schema or None
-        When provided, use this schema instead of inferring from data.
-
-    Returns
-    -------
-    int
-        Number of rows written.
-    """
+    """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow."""
     if workers is None:
         workers = max(1, (os.cpu_count() or 4) // 2)
 
@@ -561,7 +498,10 @@ def tsv_to_parquet(
         if display.is_narrow() and len(desc) > 15:
             desc = desc[:14] + "…"
 
-        prog_cols = [SpinnerColumn(), TextColumn("[progress.description]{task.description}")]
+        prog_cols: list[ProgressColumn] = [
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+        ]
         if total_hint is not None:
             prog_cols.append(BarColumn())
             prog_cols.append(MofNCompleteColumn())
@@ -574,9 +514,6 @@ def tsv_to_parquet(
             task = progress.add_task(f"→ {desc}", total=total_hint)
 
             with ProcessPoolExecutor(max_workers=workers) as executor:
-                # Bounded submission: limit in-flight futures to avoid
-                # OOM on large files (executor.map eagerly consumes the
-                # entire generator, queuing all batches in memory).
                 max_inflight = workers * 2
                 batches = _read_raw_batches(fh, batch_size)
                 futures: deque[Future] = deque()
@@ -592,7 +529,6 @@ def tsv_to_parquet(
                         futures.append(executor.submit(parse, next_batch))
 
                     if writer is None:
-                        # Use static schema if provided, else infer from data
                         schema = static_schema or _infer_schema(col_names, parsed_rows)
                         writer = pq.ParquetWriter(
                             str(parquet_path),
@@ -613,16 +549,12 @@ def tsv_to_parquet(
 
 
 # ---------------------------------------------------------------------------
-# ExportPipeline — executes exports in dependency order
+# ExportPipeline
 # ---------------------------------------------------------------------------
 
-class ExportPipeline:
-    """Executes a set of exports: SPARQL→Parquet and DuckDB composition.
 
-    Handles both :class:`QueryExport` (Phase 1) and :class:`CompositeExport`
-    (Phase 2). Composite exports automatically trigger their dependencies.
-    Continues past individual failures and reports all errors at the end.
-    """
+class ExportPipeline:
+    """Executes a set of exports: SPARQL→Parquet and DuckDB composition."""
 
     def __init__(
         self,
@@ -662,10 +594,17 @@ class ExportPipeline:
         self._duckdb_row_group_size = duckdb_row_group_size
         self._max_retries = max_retries
         self._retry_delays = retry_delays
+        self._intermediates_dir = output_dir / INTERMEDIATES_DIR_NAME
+
+    def _path_for(self, export: Export) -> Path:
+        if export.is_intermediate:
+            return self._intermediates_dir / f"{export.name}.parquet"
+        return self._output_dir / f"{export.name}.parquet"
 
     def run(self) -> ExportResult:
         """Execute all exports in dependency order."""
         self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._intermediates_dir.mkdir(parents=True, exist_ok=True)
         result = ExportResult()
 
         dependency_only: set[str] = set()
@@ -674,12 +613,12 @@ class ExportPipeline:
 
         for name in order:
             export = all_exports[name]
-            parquet_path = self._output_dir / f"{name}.parquet"
+            parquet_path = self._path_for(export)
 
             if self._skip_existing and parquet_path.exists():
                 display.console.print(f"[dim]Skipping {name} (parquet exists)[/dim]")
                 result.succeeded.append(name)
-                if name not in dependency_only:
+                if not export.is_intermediate and name not in dependency_only:
                     result.parquet_files.append(parquet_path)
                 self._advance_dashboard()
                 continue
@@ -688,7 +627,7 @@ class ExportPipeline:
                 missing = [
                     dep for dep in export.depends_on
                     if dep not in result.succeeded
-                    and not (self._output_dir / f"{dep}.parquet").exists()
+                    and not self._path_for(all_exports[dep]).exists()
                 ]
                 if missing:
                     msg = f"Missing dependencies: {', '.join(missing)}"
@@ -700,11 +639,11 @@ class ExportPipeline:
 
             is_composite = isinstance(export, CompositeExport)
             tag = "[cyan]compose[/cyan]" if is_composite else "[blue]SPARQL[/blue]"
+            if export.is_intermediate:
+                tag += " [dim](intermediate)[/dim]"
             display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
             if isinstance(export, QueryExport) and export.sparql:
-                display.console.print(
-                    f"[dim]{export.sparql}[/dim]"
-                )
+                display.console.print(f"[dim]{export.sparql}[/dim]")
             if self._dashboard is not None:
                 try:
                     self._dashboard.set_info("export", name)
@@ -713,14 +652,14 @@ class ExportPipeline:
 
             try:
                 if isinstance(export, CompositeExport):
-                    count, pq_mb = self._run_composite(export)
+                    count, pq_mb = self._run_composite(export, parquet_path)
                 elif isinstance(export, QueryExport):
-                    count, pq_mb = self._run_query_export(export)
+                    count, pq_mb = self._run_query_export(export, parquet_path)
                 else:
                     raise TypeError(f"Unknown export type: {type(export)}")
 
                 result.succeeded.append(name)
-                if name not in dependency_only:
+                if not export.is_intermediate and name not in dependency_only:
                     result.parquet_files.append(parquet_path)
                 logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
 
@@ -729,21 +668,23 @@ class ExportPipeline:
                 display.console.print(f"  [red]FAILED: {exc}[/red]")
                 result.failed[name] = str(exc)
                 if isinstance(export, QueryExport):
-                    tsv_path = self._output_dir / f"{name}.tsv"
+                    tsv_path = parquet_path.with_suffix(".tsv")
                     _cleanup_partial(tsv_path, parquet_path)
                 else:
                     _cleanup_partial(parquet_path)
 
             self._advance_dashboard()
 
+        # Clean up intermediates / dependency-only base tables.
         if not self._keep_base:
-            for dep_name in dependency_only:
-                dep_path = self._output_dir / f"{dep_name}.parquet"
-                if dep_path.exists():
-                    dep_path.unlink()
-                    logger.info("Removed intermediate base table: %s", dep_name)
+            for exp_name, exp in all_exports.items():
+                if exp.is_intermediate or exp_name in dependency_only:
+                    path = self._path_for(exp)
+                    if path.exists():
+                        path.unlink()
+                        logger.info("Removed intermediate/base: %s", exp_name)
 
-        # Generate Croissant metadata if any exports succeeded
+        # Generate Croissant metadata.
         if result.succeeded:
             try:
                 from .croissant import generate_croissant
@@ -757,25 +698,41 @@ class ExportPipeline:
         self._print_summary(result, dependency_only)
         return result
 
-    # -- Private helpers ---------------------------------------------------
+    # -----------------------------------------------------------------
 
     def _resolve_dependencies(self, dependency_only: set[str]) -> dict[str, Export]:
-        """Add missing dependency exports needed by composites."""
+        """Add missing dependency exports (from the full registry)."""
         all_exports = dict(self._exports)
         needs_deps = any(isinstance(e, CompositeExport) for e in self._exports.values())
-        if needs_deps:
-            full_registry = ExportRegistry().exports
-            for export in list(self._exports.values()):
-                if isinstance(export, CompositeExport):
-                    for dep_name in export.depends_on:
-                        if dep_name not in all_exports and dep_name in full_registry:
-                            all_exports[dep_name] = full_registry[dep_name]
-                            dependency_only.add(dep_name)
+        if not needs_deps:
+            return all_exports
+        full_registry = ExportRegistry().exports
+        # BFS from user-requested composites.
+        frontier = [
+            name for name, exp in self._exports.items()
+            if isinstance(exp, CompositeExport)
+        ]
+        visited: set[str] = set()
+        while frontier:
+            nxt: list[str] = []
+            for n in frontier:
+                if n in visited:
+                    continue
+                visited.add(n)
+                exp = all_exports.get(n) or full_registry.get(n)
+                if exp is None:
+                    continue
+                for dep in exp.depends_on:
+                    if dep not in all_exports and dep in full_registry:
+                        all_exports[dep] = full_registry[dep]
+                        dependency_only.add(dep)
+                    if dep in full_registry:
+                        nxt.append(dep)
+            frontier = nxt
         return all_exports
 
     @staticmethod
     def _topological_order(exports: dict[str, Export]) -> list[str]:
-        """Sort export names so dependencies come before dependents."""
         ordered: list[str] = []
         visited: set[str] = set()
 
@@ -793,16 +750,15 @@ class ExportPipeline:
             visit(name)
         return ordered
 
-    def _run_composite(self, export: CompositeExport) -> tuple[int, float]:
-        """Execute DuckDB composition steps. Returns (row_count, parquet_mb)."""
+    def _run_composite(self, export: CompositeExport, parquet_path: Path) -> tuple[int, float]:
         threads_info = f", {self._duckdb_threads} threads" if self._duckdb_threads else ""
         display.console.print(
             f"  Composing from base tables "
             f"[dim]({self._memory_limit} memory{threads_info})[/dim]"
         )
-        parquet_path = self._output_dir / f"{export.name}.parquet"
         duckdb_tmp = self._temp_directory or (self._output_dir / ".duckdb_tmp")
         dir_str = str(self._output_dir)
+        intermediates_str = str(self._intermediates_dir)
 
         con = duckdb.connect()
         con.execute(f"SET memory_limit = '{self._memory_limit}'")
@@ -815,9 +771,14 @@ class ExportPipeline:
 
         total = len(export.compose_steps)
         for i, step in enumerate(export.compose_steps, 1):
-            step_sql = step.sql.replace("{exports_dir}", dir_str)
+            step_sql = (
+                step.sql
+                .replace("{exports_dir}", dir_str)
+                .replace("{intermediates_dir}", intermediates_str)
+            )
             t0 = time.perf_counter()
             if step.is_final:
+                parquet_path.parent.mkdir(parents=True, exist_ok=True)
                 con.execute(f"""
                     COPY ({step_sql})
                     TO '{parquet_path}'
@@ -847,11 +808,9 @@ class ExportPipeline:
         display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
         return count, pq_mb
 
-    def _run_query_export(self, export: QueryExport) -> tuple[int, float]:
-        """Run SPARQL → TSV → Parquet. Returns (row_count, parquet_mb)."""
-        name = export.name
-        tsv_path = self._output_dir / f"{name}.tsv"
-        parquet_path = self._output_dir / f"{name}.parquet"
+    def _run_query_export(self, export: QueryExport, parquet_path: Path) -> tuple[int, float]:
+        parquet_path.parent.mkdir(parents=True, exist_ok=True)
+        tsv_path = parquet_path.with_suffix(".tsv")
 
         if self._reuse_tsv and tsv_path.exists():
             with open(tsv_path, "rb") as f:
@@ -872,10 +831,9 @@ class ExportPipeline:
             display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
         display.console.print("  Converting to Parquet…")
-        # Use static schema when available to avoid inference heuristics
         try:
             from .schema_loader import pyarrow_schema
-            pq_schema = pyarrow_schema(name)
+            pq_schema = pyarrow_schema(export.name)
         except (KeyError, ImportError):
             pq_schema = None
         count = tsv_to_parquet(

@@ -7,26 +7,26 @@ questions:
     backend: parquet
     query: |
       SELECT count(*) AS total,
-             count(*) FILTER (WHERE is_shown_by IS NOT NULL) AS has_direct_url,
-             round(count(*) FILTER (WHERE is_shown_by IS NOT NULL) * 100.0 / count(*), 2) AS has_direct_url_pct,
-             count(*) FILTER (WHERE is_shown_at IS NOT NULL) AS has_landing_page,
-             round(count(*) FILTER (WHERE is_shown_at IS NOT NULL) * 100.0 / count(*), 2) AS has_landing_page_pct,
-             count(*) FILTER (WHERE preview IS NOT NULL) AS has_thumbnail,
-             round(count(*) FILTER (WHERE preview IS NOT NULL) * 100.0 / count(*), 2) AS has_thumbnail_pct,
-             count(*) FILTER (WHERE has_iiif) AS has_iiif_service,
-             round(count(*) FILTER (WHERE has_iiif) * 100.0 / count(*), 2) AS has_iiif_service_pct,
-             count(*) FILTER (WHERE mime_type IS NOT NULL) AS has_mime_type,
-             round(count(*) FILTER (WHERE mime_type IS NOT NULL) * 100.0 / count(*), 2) AS has_mime_type_pct
-      FROM items
+             count(*) FILTER (WHERE v_edm_isShownBy IS NOT NULL) AS has_direct_url,
+             round(count(*) FILTER (WHERE v_edm_isShownBy IS NOT NULL) * 100.0 / count(*), 2) AS has_direct_url_pct,
+             count(*) FILTER (WHERE v_edm_isShownAt IS NOT NULL) AS has_landing_page,
+             round(count(*) FILTER (WHERE v_edm_isShownAt IS NOT NULL) * 100.0 / count(*), 2) AS has_landing_page_pct,
+             count(*) FILTER (WHERE v_edm_preview IS NOT NULL) AS has_thumbnail,
+             round(count(*) FILTER (WHERE v_edm_preview IS NOT NULL) * 100.0 / count(*), 2) AS has_thumbnail_pct,
+             count(*) FILTER (WHERE x_has_iiif) AS has_iiif_service,
+             round(count(*) FILTER (WHERE x_has_iiif) * 100.0 / count(*), 2) AS has_iiif_service_pct,
+             count(*) FILTER (WHERE v_ebucore_hasMimeType IS NOT NULL) AS has_mime_type,
+             round(count(*) FILTER (WHERE v_ebucore_hasMimeType IS NOT NULL) * 100.0 / count(*), 2) AS has_mime_type_pct
+      FROM merged_items
 
   - id: mime_distribution
     question: "Top 15 MIME types by item count"
     backend: parquet
     query: |
-      SELECT mime_type,
+      SELECT v_ebucore_hasMimeType AS mime_type,
              count(*) AS count
-      FROM items
-      WHERE mime_type IS NOT NULL
-      GROUP BY mime_type
+      FROM merged_items
+      WHERE v_ebucore_hasMimeType IS NOT NULL
+      GROUP BY v_ebucore_hasMimeType
       ORDER BY count DESC
       LIMIT 15

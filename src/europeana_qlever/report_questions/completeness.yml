@@ -6,31 +6,31 @@ questions:
     question: "Distribution of completeness scores"
     backend: parquet
     query: |
-      SELECT completeness AS score,
+      SELECT v_edm_completeness AS score,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM items
-      GROUP BY completeness
-      ORDER BY completeness
+      FROM group_items
+      GROUP BY v_edm_completeness
+      ORDER BY v_edm_completeness
 
   - id: field_coverage
-    question: "Per-field coverage percentages"
+    question: "Per-field coverage percentages (provider-proxy)"
     backend: parquet
     query: |
       SELECT count(*) AS total_items,
-             round(count(*) FILTER (WHERE titles IS NOT NULL AND len(titles) > 0) * 100.0 / count(*), 2) AS has_title,
-             round(count(*) FILTER (WHERE descriptions IS NOT NULL AND len(descriptions) > 0) * 100.0 / count(*), 2) AS has_description,
-             round(count(*) FILTER (WHERE creators IS NOT NULL AND len(creators) > 0) * 100.0 / count(*), 2) AS has_creator,
-             round(count(*) FILTER (WHERE contributors IS NOT NULL AND len(contributors) > 0) * 100.0 / count(*), 2) AS has_contributor,
-             round(count(*) FILTER (WHERE publishers IS NOT NULL AND len(publishers) > 0) * 100.0 / count(*), 2) AS has_publisher,
-             round(count(*) FILTER (WHERE subjects IS NOT NULL AND len(subjects) > 0) * 100.0 / count(*), 2) AS has_subject,
-             round(count(*) FILTER (WHERE dc_types IS NOT NULL AND len(dc_types) > 0) * 100.0 / count(*), 2) AS has_dc_type,
-             round(count(*) FILTER (WHERE formats IS NOT NULL AND len(formats) > 0) * 100.0 / count(*), 2) AS has_format,
-             round(count(*) FILTER (WHERE dates IS NOT NULL AND len(dates) > 0) * 100.0 / count(*), 2) AS has_date,
-             round(count(*) FILTER (WHERE years IS NOT NULL AND len(years) > 0) * 100.0 / count(*), 2) AS has_year,
-             round(count(*) FILTER (WHERE languages IS NOT NULL AND len(languages) > 0) * 100.0 / count(*), 2) AS has_language,
-             round(count(*) FILTER (WHERE identifiers IS NOT NULL AND len(identifiers) > 0) * 100.0 / count(*), 2) AS has_identifier,
-             round(count(*) FILTER (WHERE dc_rights IS NOT NULL AND len(dc_rights) > 0) * 100.0 / count(*), 2) AS has_dc_rights,
-             round(count(*) FILTER (WHERE is_shown_by IS NOT NULL) * 100.0 / count(*), 2) AS has_content_url,
-             round(count(*) FILTER (WHERE has_iiif) * 100.0 / count(*), 2) AS has_iiif
-      FROM items
+             round(count(*) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0) * 100.0 / count(*), 2) AS has_title,
+             round(count(*) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0) * 100.0 / count(*), 2) AS has_description,
+             round(count(*) FILTER (WHERE x_dc_creator IS NOT NULL AND len(x_dc_creator) > 0) * 100.0 / count(*), 2) AS has_creator,
+             round(count(*) FILTER (WHERE x_dc_contributor IS NOT NULL AND len(x_dc_contributor) > 0) * 100.0 / count(*), 2) AS has_contributor,
+             round(count(*) FILTER (WHERE x_dc_publisher IS NOT NULL AND len(x_dc_publisher) > 0) * 100.0 / count(*), 2) AS has_publisher,
+             round(count(*) FILTER (WHERE x_dc_subject IS NOT NULL AND len(x_dc_subject) > 0) * 100.0 / count(*), 2) AS has_subject,
+             round(count(*) FILTER (WHERE x_dc_type IS NOT NULL AND len(x_dc_type) > 0) * 100.0 / count(*), 2) AS has_dc_type,
+             round(count(*) FILTER (WHERE x_dc_format IS NOT NULL AND len(x_dc_format) > 0) * 100.0 / count(*), 2) AS has_format,
+             round(count(*) FILTER (WHERE x_dc_date IS NOT NULL AND len(x_dc_date) > 0) * 100.0 / count(*), 2) AS has_date,
+             round(count(*) FILTER (WHERE x_edm_year IS NOT NULL AND len(x_edm_year) > 0) * 100.0 / count(*), 2) AS has_year,
+             round(count(*) FILTER (WHERE x_dc_language IS NOT NULL AND len(x_dc_language) > 0) * 100.0 / count(*), 2) AS has_language,
+             round(count(*) FILTER (WHERE x_dc_identifier IS NOT NULL AND len(x_dc_identifier) > 0) * 100.0 / count(*), 2) AS has_identifier,
+             round(count(*) FILTER (WHERE x_dc_rights IS NOT NULL AND len(x_dc_rights) > 0) * 100.0 / count(*), 2) AS has_dc_rights,
+             round(count(*) FILTER (WHERE v_edm_isShownBy IS NOT NULL) * 100.0 / count(*), 2) AS has_content_url,
+             round(count(*) FILTER (WHERE x_has_iiif) * 100.0 / count(*), 2) AS has_iiif
+      FROM merged_items

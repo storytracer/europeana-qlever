@@ -1,12 +1,9 @@
 """Shared DuckDB engine over exported Parquet files.
 
-Provides a :class:`ParquetStore` that registers all Parquet files in the
-exports directory as DuckDB views, applies :class:`ReportFilters` to
-``items_resolved``, and creates convenience views (``items``, ``org_names``).
-
-Used by the composable report runner (:func:`~europeana_qlever.report.run_report`),
-:class:`~europeana_qlever.ask.parquet.AskParquet`, and
-:class:`~europeana_qlever.ask.benchmark.Benchmark`.
+Provides a :class:`ParquetStore` that registers every ``*.parquet`` file
+under the exports directory as a DuckDB view, applies
+:class:`ReportFilters` to ``merged_items``, and creates convenience
+views (``items``, ``orgs``) used by reports and the NL agent.
 """
 
 from __future__ import annotations
@@ -23,13 +20,13 @@ class ParquetStore:
 
     On construction, discovers all ``*.parquet`` files in *exports_dir*,
     registers each as a DuckDB view named after its stem, and optionally
-    applies a :class:`ReportFilters` WHERE clause to ``items_resolved``.
+    applies a :class:`ReportFilters` WHERE clause to ``merged_items``.
 
-    Also creates:
+    Convenience views:
 
-    - ``items`` — alias for ``items_resolved`` (used by report sections)
-    - ``org_names`` — English-preferred organisation names from
-      ``institutions.parquet`` (used by report volume section)
+    - ``items`` — alias for ``merged_items`` (back-compat for reports)
+    - ``orgs`` — English-preferred organisation names from
+      ``values_foaf_Organization`` (one row per organisation URI)
     """
 
     def __init__(
@@ -47,81 +44,80 @@ class ParquetStore:
         self._setup()
 
     def _setup(self) -> None:
-        """Register Parquet files as views and create convenience aliases."""
         self._con.execute(f"SET memory_limit = '{self._memory_limit}'")
 
         for pq_file in sorted(self._exports_dir.glob("*.parquet")):
             name = pq_file.stem
+            # Skip dotfiles and any intermediate directory contents
+            if name.startswith("."):
+                continue
             path_str = str(pq_file)
 
             if (
-                name == "items_resolved"
+                name == "merged_items"
                 and self._filters
                 and not self._filters.is_empty()
             ):
                 where = self._filters.to_duckdb_where()
                 self._con.execute(
-                    f"CREATE VIEW {name} AS "
+                    f'CREATE VIEW "{name}" AS '
                     f"SELECT * FROM read_parquet('{path_str}') {where}"
                 )
             else:
                 self._con.execute(
-                    f"CREATE VIEW {name} AS "
+                    f'CREATE VIEW "{name}" AS '
                     f"SELECT * FROM read_parquet('{path_str}')"
                 )
             self._tables[name] = pq_file
 
-        # Alias used by report sections (they query FROM items)
-        if "items_resolved" in self._tables:
+        # Back-compat alias for reports / agent: items → merged_items.
+        if "merged_items" in self._tables:
             self._con.execute(
-                "CREATE VIEW items AS SELECT * FROM items_resolved"
+                "CREATE VIEW items AS SELECT * FROM merged_items"
             )
 
-        # Organisation names convenience view
-        if "institutions" in self._tables:
+        # Organisation names — English-preferred.
+        if "values_foaf_Organization" in self._tables:
             self._con.execute("""
-                CREATE VIEW org_names AS
-                SELECT org,
+                CREATE VIEW orgs AS
+                SELECT k_iri AS k_iri,
                        COALESCE(
-                           MAX(name) FILTER (WHERE lang = 'en'),
-                           MAX(name)
-                       ) AS name
-                FROM institutions
-                GROUP BY org
+                           MAX(v_skos_prefLabel) FILTER (WHERE x_prefLabel_lang = 'en'),
+                           MAX(v_skos_prefLabel)
+                       ) AS name,
+                       MAX(v_edm_country) AS country,
+                       MAX(v_edm_acronym) AS acronym
+                FROM values_foaf_Organization
+                GROUP BY k_iri
             """)
         else:
             self._con.execute(
-                "CREATE VIEW org_names AS "
-                "SELECT NULL::VARCHAR AS org, NULL::VARCHAR AS name "
+                "CREATE VIEW orgs AS "
+                "SELECT NULL::VARCHAR AS k_iri, NULL::VARCHAR AS name, "
+                "NULL::VARCHAR AS country, NULL::VARCHAR AS acronym "
                 "WHERE false"
             )
 
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
-        """The underlying DuckDB connection."""
         return self._con
 
     @property
     def tables(self) -> dict[str, Path]:
-        """Mapping of registered table name → Parquet file path."""
         return dict(self._tables)
 
     @property
     def filters(self) -> ReportFilters | None:
-        """Active filters applied to items_resolved, or None."""
         return self._filters
 
     @property
     def exports_dir(self) -> Path:
-        """The exports directory."""
         return self._exports_dir
 
     def execute(self, sql: str):
-        """Execute a SQL statement."""
         return self._con.execute(sql)
 
     def close(self) -> None:
-        """Close the DuckDB connection."""
         self._con.close()
 
     def __enter__(self):

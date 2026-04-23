@@ -6,114 +6,130 @@ questions:
     question: "Total entities and average prefLabel variants per entity type"
     backend: parquet
     query: |
-      SELECT 'agents' AS entity_type,
-             count(DISTINCT agent) AS total_entities,
+      SELECT 'edm_Agent' AS entity_type,
+             count(DISTINCT k_iri) AS total_entities,
              round(avg(cnt), 2) AS avg_pref_label_variants
-      FROM (SELECT agent, count(*) AS cnt FROM agents_core GROUP BY agent)
+      FROM (SELECT k_iri, count(*) AS cnt FROM values_edm_Agent GROUP BY k_iri)
       UNION ALL
-      SELECT 'places',
-             count(DISTINCT place),
+      SELECT 'edm_Place',
+             count(DISTINCT k_iri),
              round(avg(cnt), 2)
-      FROM (SELECT place, count(*) AS cnt FROM places_core GROUP BY place)
+      FROM (SELECT k_iri, count(*) AS cnt FROM values_edm_Place GROUP BY k_iri)
       UNION ALL
-      SELECT 'concepts',
-             count(DISTINCT concept),
+      SELECT 'skos_Concept',
+             count(DISTINCT k_iri),
              round(avg(cnt), 2)
-      FROM (SELECT concept, count(*) AS cnt FROM concepts_core GROUP BY concept)
+      FROM (SELECT k_iri, count(*) AS cnt FROM values_skos_Concept GROUP BY k_iri)
       UNION ALL
-      SELECT 'timespans',
-             count(DISTINCT timespan),
+      SELECT 'edm_TimeSpan',
+             count(DISTINCT k_iri),
              round(avg(cnt), 2)
-      FROM (SELECT timespan, count(*) AS cnt FROM timespans_core GROUP BY timespan)
+      FROM (SELECT k_iri, count(*) AS cnt FROM values_edm_TimeSpan GROUP BY k_iri)
 
   - id: same_as_coverage
     question: "owl:sameAs coverage per entity type"
     backend: parquet
     query: |
       WITH totals AS (
-          SELECT 'agents' AS entity_type, count(DISTINCT agent) AS total FROM agents_core
+          SELECT 'edm_Agent' AS entity_type, count(DISTINCT k_iri) AS total FROM values_edm_Agent
           UNION ALL
-          SELECT 'places', count(DISTINCT place) FROM places_core
+          SELECT 'edm_Place', count(DISTINCT k_iri) FROM values_edm_Place
           UNION ALL
-          SELECT 'concepts', count(DISTINCT concept) FROM concepts_core
+          SELECT 'skos_Concept', count(DISTINCT k_iri) FROM values_skos_Concept
           UNION ALL
-          SELECT 'timespans', count(DISTINCT timespan) FROM timespans_core
+          SELECT 'edm_TimeSpan', count(DISTINCT k_iri) FROM values_edm_TimeSpan
       ),
       linked AS (
-          SELECT 'agents' AS entity_type, count(DISTINCT agent) AS with_same_as
-          FROM agents_links WHERE property = 'same_as'
-          UNION ALL
-          SELECT 'places', count(DISTINCT place)
-          FROM places_links WHERE property = 'same_as'
-          UNION ALL
-          SELECT 'concepts', count(DISTINCT concept)
-          FROM concepts_links WHERE property = 'same_as'
-          UNION ALL
-          SELECT 'timespans', count(DISTINCT timespan)
-          FROM timespans_links WHERE property = 'same_as'
+          SELECT x_entity_class AS entity_type, count(DISTINCT k_iri) AS with_same_as
+          FROM map_sameAs
+          GROUP BY x_entity_class
       )
       SELECT t.entity_type,
              t.total,
-             l.with_same_as,
-             round(l.with_same_as * 100.0 / t.total, 2) AS coverage_pct
+             COALESCE(l.with_same_as, 0) AS with_same_as,
+             round(COALESCE(l.with_same_as, 0) * 100.0 / t.total, 2) AS coverage_pct
       FROM totals t
-      JOIN linked l ON t.entity_type = l.entity_type
+      LEFT JOIN linked l ON t.entity_type = l.entity_type
+      ORDER BY t.entity_type
+
+  - id: same_as_by_authority
+    question: "owl:sameAs link distribution by authority"
+    backend: parquet
+    query: |
+      SELECT x_entity_class,
+             x_authority,
+             count(*) AS links
+      FROM map_sameAs
+      GROUP BY x_entity_class, x_authority
+      ORDER BY x_entity_class, links DESC
 
   - id: alt_label_coverage
     question: "altLabel coverage per entity type"
     backend: parquet
     query: |
       WITH totals AS (
-          SELECT 'agents' AS entity_type, count(DISTINCT agent) AS total FROM agents_core
+          SELECT 'edm_Agent' AS entity_type, count(DISTINCT k_iri) AS total FROM values_edm_Agent
           UNION ALL
-          SELECT 'places', count(DISTINCT place) FROM places_core
+          SELECT 'edm_Place', count(DISTINCT k_iri) FROM values_edm_Place
           UNION ALL
-          SELECT 'concepts', count(DISTINCT concept) FROM concepts_core
+          SELECT 'skos_Concept', count(DISTINCT k_iri) FROM values_skos_Concept
           UNION ALL
-          SELECT 'timespans', count(DISTINCT timespan) FROM timespans_core
+          SELECT 'edm_TimeSpan', count(DISTINCT k_iri) FROM values_edm_TimeSpan
       ),
       with_alt AS (
-          SELECT 'agents' AS entity_type, count(DISTINCT agent) AS with_alt_label
-          FROM agents_links WHERE property = 'alt_label'
+          SELECT 'edm_Agent' AS entity_type, count(DISTINCT k_iri) AS with_alt_label
+          FROM links_edm_Agent WHERE x_property = 'v_skos_altLabel'
           UNION ALL
-          SELECT 'places', count(DISTINCT place)
-          FROM places_links WHERE property = 'alt_label'
+          SELECT 'edm_Place', count(DISTINCT k_iri)
+          FROM links_edm_Place WHERE x_property = 'v_skos_altLabel'
           UNION ALL
-          SELECT 'concepts', count(DISTINCT concept)
-          FROM concepts_links WHERE property = 'alt_label'
+          SELECT 'skos_Concept', count(DISTINCT k_iri)
+          FROM links_skos_Concept WHERE x_property = 'v_skos_altLabel'
           UNION ALL
-          SELECT 'timespans', count(DISTINCT timespan)
-          FROM timespans_links WHERE property = 'alt_label'
+          SELECT 'edm_TimeSpan', count(DISTINCT k_iri)
+          FROM links_edm_TimeSpan WHERE x_property = 'v_skos_altLabel'
       )
       SELECT t.entity_type,
              t.total,
-             a.with_alt_label,
-             round(a.with_alt_label * 100.0 / t.total, 2) AS coverage_pct
+             COALESCE(a.with_alt_label, 0) AS with_alt_label,
+             round(COALESCE(a.with_alt_label, 0) * 100.0 / t.total, 2) AS coverage_pct
       FROM totals t
-      JOIN with_alt a ON t.entity_type = a.entity_type
+      LEFT JOIN with_alt a ON t.entity_type = a.entity_type
+      ORDER BY t.entity_type
 
   - id: concept_hierarchy
-    question: "Concept hierarchy coverage (exact_match, broader, narrower)"
+    question: "Concept hierarchy coverage (exactMatch, broader, narrower)"
     backend: parquet
     query: |
-      SELECT property,
-             count(DISTINCT concept) AS concepts_with_property,
-             round(count(DISTINCT concept) * 100.0 / (
-                 SELECT count(DISTINCT concept) FROM concepts_core
+      SELECT x_property,
+             count(DISTINCT k_iri) AS concepts_with_property,
+             round(count(DISTINCT k_iri) * 100.0 / (
+                 SELECT count(DISTINCT k_iri) FROM values_skos_Concept
              ), 2) AS coverage_pct
-      FROM concepts_links
-      WHERE property IN ('exact_match', 'broader', 'narrower')
-      GROUP BY property
+      FROM links_skos_Concept
+      WHERE x_property IN ('v_skos_exactMatch', 'v_skos_broader', 'v_skos_narrower')
+      GROUP BY x_property
 
   - id: top_subjects
     question: "Top 20 subject labels used across items"
     backend: parquet
     query: |
-      SELECT s.label AS subject,
-             s.uri,
-             count(*) AS count
-      FROM (SELECT UNNEST(subjects) AS s FROM items)
-      WHERE s.label IS NOT NULL
-      GROUP BY s.label, s.uri
-      ORDER BY count DESC
+      SELECT c.v_skos_prefLabel AS subject,
+             m.k_iri_entity AS concept_uri,
+             n AS count
+      FROM (
+          SELECT k_iri_entity, count(DISTINCT k_iri_cho) AS n
+          FROM map_cho_entities
+          WHERE x_entity_class = 'skos_Concept'
+            AND x_property = 'v_dc_subject'
+          GROUP BY k_iri_entity
+      ) m
+      LEFT JOIN (
+          SELECT k_iri,
+                 COALESCE(MAX(v_skos_prefLabel) FILTER (WHERE x_prefLabel_lang = 'en'),
+                          MAX(v_skos_prefLabel)) AS v_skos_prefLabel
+          FROM values_skos_Concept
+          GROUP BY k_iri
+      ) c ON m.k_iri_entity = c.k_iri
+      ORDER BY n DESC
       LIMIT 20

@@ -9,7 +9,7 @@ Install & run::
 Or for a single command::
 
     uv run europeana-qlever -d ~/europeana merge /data/TTL --workers 12
-    uv run europeana-qlever -d ~/europeana export -q web_resources
+    uv run europeana-qlever -d ~/europeana export values_edm_WebResource
 """
 
 from __future__ import annotations
@@ -799,9 +799,21 @@ def create_views(ctx: click.Context):
 @cli.command("list-exports")
 @click.option("--export-set", default=None,
               help="Filter to a specific export set.")
+@click.option("--all-intermediates", is_flag=True, default=False,
+              help="Include the per-property links_scan intermediate exports.")
 @click.pass_context
-def list_exports_cmd(ctx: click.Context, export_set: str | None):
-    """List all available exports."""
+def list_exports_cmd(
+    ctx: click.Context,
+    export_set: str | None,
+    all_intermediates: bool,
+):
+    """List all available exports.
+
+    By default shows only the 30 final exports (values_*, links_*,
+    merged_items, group_items, map_*).  Pass ``--all-intermediates`` to
+    also see the synthetic per-property links_scan queries used to build
+    the links_* tables.
+    """
     from rich.table import Table
 
     from .export import CompositeExport, ExportRegistry
@@ -818,6 +830,9 @@ def list_exports_cmd(ctx: click.Context, export_set: str | None):
     else:
         exports = registry.exports
 
+    if not all_intermediates:
+        exports = {n: e for n, e in exports.items() if not e.is_intermediate}
+
     table = Table(title=f"Exports ({export_set or 'all'})")
     table.add_column("Name", style="cyan")
     table.add_column("Type", style="dim")
@@ -825,6 +840,8 @@ def list_exports_cmd(ctx: click.Context, export_set: str | None):
     table.add_column("Description")
     for name, export in exports.items():
         etype = "composite" if isinstance(export, CompositeExport) else "SPARQL"
+        if export.is_intermediate:
+            etype += " (int.)"
         member_of = [es.name for es in EXPORT_SETS.values() if name in es.members]
         table.add_row(name, etype, ", ".join(member_of) or "—", export.description)
     display.console.print(table)
@@ -1218,7 +1235,7 @@ def export(
     pipeline, or --set for a named export set.  Filter options
     (--country, --type, etc.) apply to SPARQL-based exports.
 
-    Composite exports (like items_resolved) automatically export their
+    Composite exports (like merged_items) automatically export their
     dependencies first, then compose the final Parquet via DuckDB.
     Use --no-keep-base to clean up intermediate base table files.
     """
@@ -1705,7 +1722,7 @@ def report(
 @click.option("--backend", type=click.Choice(["parquet", "sparql"]), default="parquet",
               help="Query backend: parquet (DuckDB, offline) or sparql (GRASP, requires servers).")
 @click.option("--filters", "-f", "filter_string", default=None,
-              help='Pre-filter items_resolved, e.g. "country=NL type=IMAGE reuse_level=open"')
+              help='Pre-filter merged_items, e.g. "country=NL type=IMAGE reuse_level=open"')
 @click.option("--model", default=None, show_default=True,
               help="Override the LLM model (default: gpt-4.1-mini).")
 @click.option("--max-steps", default=None, type=int, show_default=True,

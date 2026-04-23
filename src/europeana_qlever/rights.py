@@ -266,3 +266,164 @@ def _sparql_restricted_condition(rv: str) -> str:
     # RightsStatements.org restricted entries
     rs = " || ".join(f'{rv} = "{u}"' for u in _RESTRICTED_RS_URIS)
     return f"{cc} || {rs}"
+
+
+# ---------------------------------------------------------------------------
+# Rights family classification — for map_rights.x_family / group_items.x_rights_family
+# ---------------------------------------------------------------------------
+
+# Order matters: more specific patterns first. Classifier returns the family
+# for the first matching rule.  Each entry is (match_kind, pattern, family)
+# where match_kind is "prefix" or "exact".
+_FAMILY_RULES: list[tuple[str, str, str]] = [
+    ("prefix", f"{_CC_PD_PREFIX}zero/", "cc0"),
+    ("prefix", f"{_CC_PD_PREFIX}mark/", "pdm"),
+    ("prefix", f"{_CC_LICENSE_PREFIX}by-nc-nd/", "cc-by-nc-nd"),
+    ("prefix", f"{_CC_LICENSE_PREFIX}by-nd-nc/", "cc-by-nc-nd"),
+    ("prefix", f"{_CC_LICENSE_PREFIX}by-nc-sa/", "cc-by-nc-sa"),
+    ("prefix", f"{_CC_LICENSE_PREFIX}by-nc/", "cc-by-nc"),
+    ("prefix", f"{_CC_LICENSE_PREFIX}by-nd/", "cc-by-nd"),
+    ("prefix", f"{_CC_LICENSE_PREFIX}by-sa/", "cc-by-sa"),
+    ("prefix", f"{_CC_LICENSE_PREFIX}by/", "cc-by"),
+    ("exact", f"{_RS_BASE}InC/1.0/", "rs-inc"),
+    ("exact", f"{_RS_BASE}InC-EDU/1.0/", "rs-inc"),
+    ("exact", f"{_RS_BASE}InC-OW-EU/1.0/", "rs-inc"),
+    ("exact", f"{_RS_BASE}NoC-NC/1.0/", "rs-noc"),
+    ("exact", f"{_RS_BASE}NoC-OKLR/1.0/", "rs-noc"),
+    ("exact", f"{_RS_BASE}CNE/1.0/", "cnb"),
+    ("exact", f"{_RS_BASE}NKC/1.0/", "rs-other"),
+    ("exact", f"{_RS_BASE}UND/1.0/", "rs-other"),
+    ("prefix", _RS_BASE, "rs-other"),
+]  # type: ignore[list-item]
+
+_LABEL_BASE: dict[str, str] = {
+    "cc0": "Public Domain Dedication (CC0)",
+    "pdm": "Public Domain Mark",
+    "cc-by": "Attribution (CC BY)",
+    "cc-by-sa": "Attribution-ShareAlike (CC BY-SA)",
+    "cc-by-nd": "Attribution-NoDerivs (CC BY-ND)",
+    "cc-by-nc": "Attribution-NonCommercial (CC BY-NC)",
+    "cc-by-nc-sa": "Attribution-NonCommercial-ShareAlike (CC BY-NC-SA)",
+    "cc-by-nc-nd": "Attribution-NonCommercial-NoDerivs (CC BY-NC-ND)",
+    "rs-inc": "In Copyright (RightsStatements.org)",
+    "rs-noc": "No Copyright — Non-Commercial Use Only (RightsStatements.org)",
+    "rs-other": "RightsStatements.org (other)",
+    "cnb": "Copyright Not Evaluated / Non-Commercial Basis",
+    "orphan": "Orphan Work",
+    "unknown": "Unknown",
+}
+
+
+def family_for_uri(uri: str) -> str:
+    """Classify a rights URI into a family code (cc0, cc-by, rs-inc, etc.)."""
+    if not uri:
+        return "unknown"
+    for kind, pattern, fam in _FAMILY_RULES:
+        if kind == "prefix" and uri.startswith(pattern):
+            return fam
+        if kind == "exact" and uri == pattern:
+            return fam
+    return "unknown"
+
+
+def label_for_uri(uri: str) -> str:
+    """Return a human-readable label for a rights URI."""
+    fam = family_for_uri(uri)
+    base = _LABEL_BASE.get(fam, _LABEL_BASE["unknown"])
+    # Try to append the version (e.g. "4.0", "3.0 IT") for CC licenses.
+    if uri.startswith(_CC_LICENSE_PREFIX):
+        tail = uri[len(_CC_LICENSE_PREFIX):].rstrip("/")
+        parts = tail.split("/")
+        if len(parts) >= 2:
+            version = parts[1]
+            port = parts[2].upper() if len(parts) >= 3 else ""
+            suffix = f" {version}"
+            if port:
+                suffix += f" ({port})"
+            return base + suffix
+    if uri.startswith(_CC_PD_PREFIX):
+        tail = uri[len(_CC_PD_PREFIX):].rstrip("/")
+        parts = tail.split("/")
+        if len(parts) >= 2:
+            return base + f" {parts[1]}"
+    return base
+
+
+# ---------------------------------------------------------------------------
+# DuckDB CASE expression generators for family / label / is_open
+# ---------------------------------------------------------------------------
+
+
+def _sql_quote(s: str) -> str:
+    return "'" + s.replace("'", "''") + "'"
+
+
+def duckdb_family_case(rights_column: str = "v_edm_rights") -> str:
+    """Generate a DuckDB CASE expression that classifies a rights URI → family."""
+    lines: list[str] = []
+    for kind, pattern, fam in _FAMILY_RULES:
+        if kind == "prefix":
+            lines.append(
+                f"    WHEN STARTS_WITH({rights_column}, {_sql_quote(pattern)}) THEN {_sql_quote(fam)}"
+            )
+        else:
+            lines.append(
+                f"    WHEN {rights_column} = {_sql_quote(pattern)} THEN {_sql_quote(fam)}"
+            )
+    body = "\n".join(lines)
+    return f"CASE\n{body}\n    ELSE 'unknown'\n  END"
+
+
+def duckdb_is_open_case(rights_column: str = "v_edm_rights") -> str:
+    """Generate a DuckDB boolean expression that is true for 'open' rights URIs."""
+    opens = [_CC_PD_PREFIX] + list(_OPEN_CC_PREFIXES)
+    parts = [
+        f"STARTS_WITH({rights_column}, {_sql_quote(p)})" for p in opens
+    ]
+    return "(" + " OR ".join(parts) + ")"
+
+
+def duckdb_label_case(rights_column: str = "v_edm_rights") -> str:
+    """Generate a DuckDB CASE that resolves a rights URI to a short label.
+
+    For variant-heavy families (CC licenses), the label is computed from
+    the URI itself (family base + version + port) rather than enumerating
+    every one of ~580 URIs.  For fixed RightsStatements.org URIs the
+    label is resolved exactly.
+    """
+    lines: list[str] = []
+    # Exact-match RightsStatements.org URIs — known labels.
+    for kind, pattern, fam in _FAMILY_RULES:
+        if kind != "exact":
+            continue
+        label = label_for_uri(pattern)
+        lines.append(
+            f"    WHEN {rights_column} = {_sql_quote(pattern)} THEN {_sql_quote(label)}"
+        )
+    # CC0
+    lines.append(
+        f"    WHEN STARTS_WITH({rights_column}, {_sql_quote(_CC_PD_PREFIX + 'zero/')}) "
+        f"THEN 'Public Domain Dedication (CC0)'"
+    )
+    lines.append(
+        f"    WHEN STARTS_WITH({rights_column}, {_sql_quote(_CC_PD_PREFIX + 'mark/')}) "
+        f"THEN 'Public Domain Mark'"
+    )
+    # CC licenses — build label from family base + version from URI path
+    cc_families = [
+        ("by-nc-nd", "Attribution-NonCommercial-NoDerivs (CC BY-NC-ND)"),
+        ("by-nd-nc", "Attribution-NonCommercial-NoDerivs (CC BY-NC-ND)"),
+        ("by-nc-sa", "Attribution-NonCommercial-ShareAlike (CC BY-NC-SA)"),
+        ("by-nc",    "Attribution-NonCommercial (CC BY-NC)"),
+        ("by-nd",    "Attribution-NoDerivs (CC BY-ND)"),
+        ("by-sa",    "Attribution-ShareAlike (CC BY-SA)"),
+        ("by",       "Attribution (CC BY)"),
+    ]
+    for sub, label in cc_families:
+        prefix = _CC_LICENSE_PREFIX + sub + "/"
+        lines.append(
+            f"    WHEN STARTS_WITH({rights_column}, {_sql_quote(prefix)}) "
+            f"THEN {_sql_quote(label)}"
+        )
+    body = "\n".join(lines)
+    return f"CASE\n{body}\n    ELSE 'Unknown'\n  END"

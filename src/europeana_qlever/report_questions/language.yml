@@ -9,7 +9,7 @@ questions:
       SELECT lang AS language,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM (SELECT UNNEST(languages) AS lang FROM items)
+      FROM (SELECT UNNEST(x_dc_language) AS lang FROM merged_items)
       GROUP BY lang
       ORDER BY count DESC
       LIMIT 30
@@ -19,12 +19,12 @@ questions:
     backend: parquet
     query: |
       SELECT count(*) AS total_items,
-             count(*) FILTER (WHERE titles IS NOT NULL AND len(titles) > 0) AS with_title,
-             round(count(*) FILTER (WHERE titles IS NOT NULL AND len(titles) > 0)
+             count(*) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0) AS with_title,
+             round(count(*) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0)
                    * 100.0 / count(*), 2) AS pct_with_title,
-             count(*) FILTER (WHERE descriptions IS NOT NULL AND len(descriptions) > 0) AS with_description,
-             round(count(*) FILTER (WHERE descriptions IS NOT NULL AND len(descriptions) > 0)
+             count(*) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0) AS with_description,
+             round(count(*) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0)
                    * 100.0 / count(*), 2) AS pct_with_description,
-             round(avg(len(titles)) FILTER (WHERE titles IS NOT NULL AND len(titles) > 0), 2) AS avg_title_variants,
-             round(avg(len(descriptions)) FILTER (WHERE descriptions IS NOT NULL AND len(descriptions) > 0), 2) AS avg_description_variants
-      FROM items
+             round(avg(len(x_dc_title)) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0), 2) AS avg_title_variants,
+             round(avg(len(x_dc_description)) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0), 2) AS avg_description_variants
+      FROM merged_items

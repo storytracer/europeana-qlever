@@ -1,8 +1,9 @@
 """Croissant metadata generation for exported Parquet files.
 
-Generates a `croissant.json` file alongside the Parquet exports using the
-`mlcroissant` library.  All table/column metadata is derived from the
-LinkML schema (``edm_parquet.yaml``).
+Generates a ``croissant.json`` file alongside the Parquet exports using
+the ``mlcroissant`` library.  All table and column metadata is derived
+from the LinkML schema and — for list/struct columns — from the
+exported Parquet file itself.
 """
 
 from __future__ import annotations
@@ -13,9 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import mlcroissant as mlc
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-from . import __version__,  display
-from .schema_loader import export_classes, item_fields
+from . import __version__, display
+from .schema_loader import export_classes, schema_view
 
 
 # ---------------------------------------------------------------------------
@@ -28,52 +31,38 @@ _CROISSANT_DTYPE: dict[str, mlc.DataType] = {
     "integer": mlc.DataType.INTEGER,
     "float": mlc.DataType.FLOAT,
     "boolean": mlc.DataType.BOOL,
-    "EdmType": mlc.DataType.TEXT,
     "ReuseLevel": mlc.DataType.TEXT,
+    "RightsFamily": mlc.DataType.TEXT,
+    "EntityClass": mlc.DataType.TEXT,
+    "Authority": mlc.DataType.TEXT,
 }
 
-# Struct types → sub-field definitions
+
+# Struct-type sub-field definitions (for merged_items list-of-struct columns).
 _STRUCT_SUBFIELDS: dict[str, list[tuple[str, str, mlc.DataType]]] = {
-    # range → [(field_name, description, data_type), ...]
-    "LangValue": [
-        ("value", "Text value.", mlc.DataType.TEXT),
-        ("lang", "Language tag (e.g. 'en', 'de', '' for untagged).", mlc.DataType.TEXT),
+    "LangValueX": [
+        ("x_value", "Text value.", mlc.DataType.TEXT),
+        ("x_value_lang", "Language tag (e.g. 'en', 'de', '' for untagged).", mlc.DataType.TEXT),
     ],
-    "LabeledEntity": [
-        ("label", "Resolved entity label.", mlc.DataType.TEXT),
-        ("uri", "Entity URI.", mlc.DataType.URL),
+    "LabeledEntityX": [
+        ("x_value", "Raw value (IRI or literal string).", mlc.DataType.TEXT),
+        ("x_label", "Resolved entity label (falls back to x_value).", mlc.DataType.TEXT),
+        ("x_value_is_iri", "Whether x_value is an IRI.", mlc.DataType.BOOL),
     ],
-    "NamedEntity": [
-        ("name", "Resolved display name.", mlc.DataType.TEXT),
-        ("uri", "Entity URI (NULL for literal-only values).", mlc.DataType.URL),
+    "NamedEntityX": [
+        ("x_value", "Raw value (IRI or literal string).", mlc.DataType.TEXT),
+        ("x_name", "Resolved display name (falls back to x_value).", mlc.DataType.TEXT),
+        ("x_value_is_iri", "Whether x_value is an IRI.", mlc.DataType.BOOL),
     ],
 }
 
 
 # ---------------------------------------------------------------------------
-# Table descriptions for exports not covered by Item schema
+# Helpers
 # ---------------------------------------------------------------------------
 
-_TABLE_DESCRIPTIONS: dict[str, str] = {
-    "agents_core": "Contextual agent entities (persons and organisations) with preferred labels.",
-    "agents_links": "Multi-valued and linked properties for agents (sameAs, altLabel, etc.).",
-    "concepts_core": "Contextual concept entities (subjects, types) with preferred labels.",
-    "concepts_links": "Multi-valued and linked properties for concepts.",
-    "places_core": "Contextual place entities with preferred labels and coordinates.",
-    "places_links": "Multi-valued and linked properties for places.",
-    "timespans_core": "Contextual timespan entities with preferred labels.",
-    "timespans_links": "Multi-valued and linked properties for timespans.",
-    "institutions": "Organisation names, countries, and roles.",
-    "web_resources": "Web resource metadata (MIME type, dimensions, IIIF) per item.",
-}
-
-
-# ---------------------------------------------------------------------------
-# SHA-256 helper
-# ---------------------------------------------------------------------------
 
 def _sha256(path: Path) -> str:
-    """Compute SHA-256 hex digest of a file."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1_048_576), b""):
@@ -81,29 +70,33 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# Field builders
-# ---------------------------------------------------------------------------
-
 def _croissant_dtype(range_name: str | None) -> mlc.DataType:
-    """Map a LinkML range to a Croissant DataType."""
     return _CROISSANT_DTYPE.get(range_name or "string", mlc.DataType.TEXT)
 
 
-def _build_item_fields(
-    ctx: mlc.Context,
-    file_object_id: str,
-) -> list[mlc.Field]:
-    """Build Croissant Field nodes for items_resolved from the schema."""
-    fields: list[mlc.Field] = []
-    record_id = "items_resolved"
+def _pa_to_croissant_dtype(pa_field: pa.Field) -> mlc.DataType:
+    """Infer a Croissant DataType from a PyArrow field."""
+    pa_str = str(pa_field.type)
+    if "int" in pa_str:
+        return mlc.DataType.INTEGER
+    if "float" in pa_str or "double" in pa_str:
+        return mlc.DataType.FLOAT
+    if "bool" in pa_str:
+        return mlc.DataType.BOOL
+    return mlc.DataType.TEXT
 
-    for col_name, attr in item_fields().items():
+
+def _build_fields_from_schema(
+    ctx: mlc.Context, record_id: str, file_object_id: str, attrs: dict
+) -> list[mlc.Field]:
+    """Build Croissant Fields from LinkML class attributes (alphabetical)."""
+    fields: list[mlc.Field] = []
+    for col_name in sorted(attrs.keys()):
+        attr = attrs[col_name]
         field_id = f"{record_id}/{col_name}"
         struct_defs = _STRUCT_SUBFIELDS.get(attr.range or "")
 
         if attr.multivalued and struct_defs:
-            # Nested struct list → parent field with sub_fields
             sub_fields = [
                 mlc.Field(
                     ctx=ctx,
@@ -134,7 +127,6 @@ def _build_item_fields(
                 sub_fields=sub_fields,
             ))
         elif attr.multivalued:
-            # Simple list
             fields.append(mlc.Field(
                 ctx=ctx,
                 id=field_id,
@@ -149,7 +141,6 @@ def _build_item_fields(
                 ),
             ))
         else:
-            # Scalar
             fields.append(mlc.Field(
                 ctx=ctx,
                 id=field_id,
@@ -162,55 +153,28 @@ def _build_item_fields(
                     extract=mlc.Extract(column=col_name),
                 ),
             ))
-
     return fields
 
 
-def _build_simple_fields(
-    ctx: mlc.Context,
-    record_id: str,
-    file_object_id: str,
-    parquet_path: Path,
+def _build_fields_from_parquet(
+    ctx: mlc.Context, record_id: str, file_object_id: str, parquet_path: Path
 ) -> list[mlc.Field]:
-    """Build Croissant Field nodes for a non-Item table by reading its Parquet schema."""
-    import pyarrow.parquet as pq
-
+    """Build Croissant Fields by inspecting the Parquet schema directly."""
     pq_schema = pq.read_schema(parquet_path)
     fields: list[mlc.Field] = []
-
-    # Try to get schema descriptions from export_classes
-    info = export_classes().get(record_id)
-    attr_map = info.attributes if info else {}
-
     for pq_field in pq_schema:
-        col_name = pq_field.name
-        attr = attr_map.get(col_name)
-        desc = (attr.description if attr and attr.description else col_name)
-
-        # Infer Croissant DataType from PyArrow type
-        pa_str = str(pq_field.type)
-        if "int" in pa_str:
-            dtype = mlc.DataType.INTEGER
-        elif "float" in pa_str or "double" in pa_str:
-            dtype = mlc.DataType.FLOAT
-        elif "bool" in pa_str:
-            dtype = mlc.DataType.BOOL
-        else:
-            dtype = mlc.DataType.TEXT
-
         fields.append(mlc.Field(
             ctx=ctx,
-            id=f"{record_id}/{col_name}",
-            name=col_name,
-            description=desc,
-            data_types=[dtype],
+            id=f"{record_id}/{pq_field.name}",
+            name=pq_field.name,
+            description=pq_field.name,
+            data_types=[_pa_to_croissant_dtype(pq_field)],
             source=mlc.Source(
                 ctx=ctx,
                 file_object=file_object_id,
-                extract=mlc.Extract(column=col_name),
+                extract=mlc.Extract(column=pq_field.name),
             ),
         ))
-
     return fields
 
 
@@ -218,44 +182,27 @@ def _build_simple_fields(
 # Main generation
 # ---------------------------------------------------------------------------
 
-# Tables to include in Croissant (in display order)
-_CROISSANT_TABLES = [
-    "items_resolved",
-    "agents_core", "agents_links",
-    "concepts_core", "concepts_links",
-    "places_core", "places_links",
-    "timespans_core", "timespans_links",
-    "institutions",
-    "web_resources",
-]
-
 
 def generate_croissant(exports_dir: Path) -> Path:
-    """Generate ``croissant.json`` from exported Parquet files.
-
-    Reads the LinkML schema for column metadata and the Parquet files for
-    checksums and column schemas.  Returns the path to the generated file.
-    """
+    """Generate ``croissant.json`` describing all exported Parquet files."""
     ctx = mlc.Context()
     distributions: list[mlc.FileObject] = []
     record_sets: list[mlc.RecordSet] = []
 
-    for table_name in _CROISSANT_TABLES:
+    # Enumerate every final export from the schema, in deterministic order.
+    exports = export_classes()
+    ordered_names = sorted(exports.keys())
+
+    for table_name in ordered_names:
         parquet_path = exports_dir / f"{table_name}.parquet"
         if not parquet_path.exists():
             continue
 
-        file_obj_id = f"{table_name}-parquet"
-        table_desc = _TABLE_DESCRIPTIONS.get(table_name, "")
+        info = exports[table_name]
+        cls = schema_view().get_class(info.cls_name)
+        table_desc = (cls.description or "").strip() if cls else ""
 
-        # For items_resolved, use the Item class description from schema
-        if table_name == "items_resolved":
-            info = export_classes().get("items_resolved")
-            table_desc = (
-                "Fully resolved one-row-per-item export. "
-                "The flagship denormalized Parquet with all metadata, "
-                "entity labels, and web resource info per item."
-            )
+        file_obj_id = f"{table_name}-parquet"
 
         display.console.print(f"  [dim]{table_name}[/dim]: computing checksum…")
         sha = _sha256(parquet_path)
@@ -272,13 +219,14 @@ def generate_croissant(exports_dir: Path) -> Path:
             content_size=f"{size_bytes} B",
         ))
 
-        # Build fields
-        if table_name == "items_resolved":
-            fields = _build_item_fields(ctx, file_obj_id)
+        # For tables with declared attributes (all except links_union),
+        # build from the schema so list/struct columns are properly
+        # typed.  links_union tables have a fixed 5-column schema —
+        # build from the Parquet directly.
+        if info.export_type == "links_union":
+            fields = _build_fields_from_parquet(ctx, table_name, file_obj_id, parquet_path)
         else:
-            fields = _build_simple_fields(
-                ctx, table_name, file_obj_id, parquet_path
-            )
+            fields = _build_fields_from_schema(ctx, table_name, file_obj_id, info.attributes)
 
         record_sets.append(mlc.RecordSet(
             ctx=ctx,
@@ -294,9 +242,9 @@ def generate_croissant(exports_dir: Path) -> Path:
         description=(
             "Europeana EDM cultural heritage metadata (~66M items) "
             "exported as Parquet files from the QLever SPARQL engine. "
-            "Covers the full Europeana Data Model: items with titles, "
-            "descriptions, subjects, creators, rights, and contextual "
-            "entities (agents, concepts, places, timespans)."
+            "Covers the full Europeana Data Model with class boundaries "
+            "preserved in raw values_*/links_* tables, and a denormalized "
+            "merged_items table for user-friendly analysis."
         ),
         url="https://github.com/storytracer/europeana-qlever",
         license="https://creativecommons.org/publicdomain/zero/1.0/",

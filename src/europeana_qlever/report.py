@@ -324,31 +324,58 @@ def _resolve_key(key: str, specs: dict) -> str:
     """
     import click
 
-    # Alias map: singular → plural (schema field names are mostly plural
-    # for list fields and singular for scalars).
+    # Alias map: short user-friendly keys → schema field names.
+    # Schema fields follow the k_/v_/x_ convention; the aliases accept
+    # both the short form ("country", "type") and common plural/singular
+    # variants ("countries", "subjects").
     _ALIASES: dict[str, str] = {
-        "country": "country",
-        "countries": "country",
-        "type": "type",
-        "types": "type",
-        "aggregator": "aggregator",
-        "aggregators": "aggregator",
-        "institution": "institution",
-        "institutions": "institution",
-        "language": "languages",
-        "dataset": "dataset_name",
-        "datasets": "dataset_name",
-        "subject": "subjects",
-        "dc_type": "dc_types",
-        "format": "formats",
-        "creator": "creators",
-        "contributor": "contributors",
-        "publisher": "publishers",
-        "title": "titles",
-        "description": "descriptions",
-        "date": "dates",
-        "year": "years",
-        "identifier": "identifiers",
+        "country": "v_edm_country",
+        "countries": "v_edm_country",
+        "type": "v_edm_type",
+        "types": "v_edm_type",
+        "aggregator": "v_edm_provider",
+        "aggregators": "v_edm_provider",
+        "provider": "v_edm_provider",
+        "institution": "v_edm_dataProvider",
+        "institutions": "v_edm_dataProvider",
+        "data_provider": "v_edm_dataProvider",
+        "dataset": "v_edm_datasetName",
+        "datasets": "v_edm_datasetName",
+        "dataset_name": "v_edm_datasetName",
+        "rights": "v_edm_rights",
+        "completeness": "v_edm_completeness",
+        "reuse_level": "x_reuse_level",
+        "has_iiif": "x_has_iiif",
+        "mime_type": "v_ebucore_hasMimeType",
+        "mime": "v_ebucore_hasMimeType",
+        "width": "v_ebucore_width",
+        "height": "v_ebucore_height",
+        "file_bytes": "v_ebucore_fileByteSize",
+        # Multi-valued (struct lists)
+        "language": "x_dc_language",
+        "languages": "x_dc_language",
+        "subject": "x_dc_subject",
+        "subjects": "x_dc_subject",
+        "dc_type": "x_dc_type",
+        "dc_types": "x_dc_type",
+        "format": "x_dc_format",
+        "formats": "x_dc_format",
+        "creator": "x_dc_creator",
+        "creators": "x_dc_creator",
+        "contributor": "x_dc_contributor",
+        "contributors": "x_dc_contributor",
+        "publisher": "x_dc_publisher",
+        "publishers": "x_dc_publisher",
+        "title": "x_dc_title",
+        "titles": "x_dc_title",
+        "description": "x_dc_description",
+        "descriptions": "x_dc_description",
+        "date": "x_dc_date",
+        "dates": "x_dc_date",
+        "year": "x_edm_year",
+        "years": "x_edm_year",
+        "identifier": "x_dc_identifier",
+        "identifiers": "x_dc_identifier",
     }
 
     if key in specs:
@@ -649,8 +676,8 @@ async def run_report(
         if probe_urls:
             console.rule("[bold]URL Liveness[/bold]", style="dim")
             urls = store.connection.execute(
-                "SELECT is_shown_by FROM items "
-                "WHERE is_shown_by IS NOT NULL "
+                "SELECT v_edm_isShownBy FROM items "
+                "WHERE v_edm_isShownBy IS NOT NULL "
                 "ORDER BY random() "
                 f"LIMIT {sample_size}"
             ).fetchall()

@@ -57,8 +57,8 @@ def _build_system_prompt(store: ParquetStore) -> str:
     filter_note = ""
     if store.filters and not store.filters.is_empty():
         filter_note = (
-            f"\nNOTE: The items_resolved table has been pre-filtered to: "
-            f"{store.filters.description()}. All queries on items_resolved "
+            f"\nNOTE: The merged_items table has been pre-filtered to: "
+            f"{store.filters.description()}. All queries on merged_items "
             f"already have this filter applied."
         )
     return _SYSTEM_PROMPT_TEMPLATE.format(

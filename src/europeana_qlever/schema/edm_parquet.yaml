@@ -3,17 +3,34 @@ name: edm_parquet
 title: Europeana EDM → Parquet Export Schema
 description: >-
   Fully declarative export schema for the europeana-qlever pipeline.
-  Every export table is a LinkML class with annotations that specify
-  SPARQL generation, DuckDB composition, PyArrow types, and export set
-  membership.  Adding a new export requires only editing this file —
-  no Python code changes.
 
-version: "0.2.0"
+  Each export table is a LinkML class with annotations that drive SPARQL
+  generation, DuckDB composition, and PyArrow types.  Adding a new export
+  requires only editing this file — no Python code changes.
+
+  Column and table naming conventions:
+
+  - Tables start with one of five prefixes:
+    * values_   raw scalar EDM properties (wide, one row per entity)
+    * links_    raw multi-valued EDM properties (long, one row per value)
+    * merged_   pre-joined, enriched, user-facing (with list / struct list cols)
+    * group_    pre-computed dimensions for fast analytics (wide, all scalar)
+    * map_      static lookup and navigation tables
+
+  - Columns start with one of three prefixes:
+    * k_  identifier / foreign key
+    * v_  scalar EDM property, directly from the RDF, one per row
+    * x_  extracted / computed / resolved / aggregated
+
+  Column names derive mechanically from EDM CURIEs: ``dc:subject`` →
+  ``v_dc_subject``, ``ebucore:fileByteSize`` → ``v_ebucore_fileByteSize``,
+  ``skos:prefLabel`` → ``v_skos_prefLabel``.
+
+version: "0.3.0"
 
 prefixes:
   linkml: https://w3id.org/linkml/
   cc: http://creativecommons.org/ns#
-  dcat: http://www.w3.org/ns/dcat#
   dc: http://purl.org/dc/elements/1.1/
   dcterms: http://purl.org/dc/terms/
   doap: http://usefulinc.com/ns/doap#
@@ -44,1280 +61,1420 @@ imports:
 # ===================================================================
 
 enums:
-  ProxyType:
-    permissible_values:
-      provider: { description: "Provider proxy (original metadata)" }
-      europeana: { description: "Europeana proxy (normalised enrichments)" }
-
-  RdfSource:
-    permissible_values:
-      proxy: { description: "ore:Proxy triple pattern" }
-      aggregation: { description: "ore:Aggregation triple pattern" }
-      europeana_aggregation: { description: "edm:EuropeanaAggregation triple pattern" }
-      web_resource: { description: "edm:WebResource triple pattern" }
-
   ReuseLevel:
     permissible_values:
       open: { description: "CC0, CC-BY, CC-BY-SA, CC public domain" }
       restricted: { description: "CC-NC/ND variants, select RightsStatements.org" }
       prohibited: { description: "InC, CNE, NKC, UND, and other non-reuse" }
 
-  EdmType:
+  EntityClass:
     permissible_values:
-      IMAGE: {}
-      TEXT: {}
-      SOUND: {}
-      VIDEO: {}
-      3D: {}
+      edm_Agent: {}
+      edm_Place: {}
+      skos_Concept: {}
+      edm_TimeSpan: {}
 
-# ===================================================================
-# Structured types (nested Parquet column types)
-# ===================================================================
+  RightsFamily:
+    permissible_values:
+      cc0: {}
+      pdm: {}
+      cc-by: {}
+      cc-by-sa: {}
+      cc-by-nd: {}
+      cc-by-nc: {}
+      cc-by-nc-sa: {}
+      cc-by-nc-nd: {}
+      rs-inc: {}
+      rs-noc: {}
+      rs-other: {}
+      cnb: {}
+      orphan: {}
+      unknown: {}
+
+  Authority:
+    permissible_values:
+      wikidata: {}
+      viaf: {}
+      isni: {}
+      gnd: {}
+      bnf: {}
+      loc: {}
+      geonames: {}
+      dbpedia: {}
+      other: {}
 
 classes:
 
-  LangValue:
-    description: >-
-      A string value with its language tag. Used for titles and descriptions.
-      Maps to Parquet STRUCT<value VARCHAR, lang VARCHAR>.
-    attributes:
-      value:
-        range: string
-        required: true
-      lang:
-        range: string
-
-  LabeledEntity:
-    description: >-
-      An entity reference with a resolved label and its URI.
-      Maps to Parquet STRUCT<label VARCHAR, uri VARCHAR>.
-      Used for subjects, dc_types, formats.
-    attributes:
-      label:
-        range: string
-        required: true
-      uri:
-        range: uri
-
-  NamedEntity:
-    description: >-
-      An agent/person reference with a resolved display name and its URI.
-      Maps to Parquet STRUCT<name VARCHAR, uri VARCHAR>.
-      Used for creators, contributors, publishers.
-    attributes:
-      name:
-        range: string
-        required: true
-      uri:
-        range: uri
-
   # =================================================================
-  # Item — the items_resolved Parquet schema (composite export)
+  # Structured types used in merged_items list columns
   # =================================================================
 
-  Item:
+  LangValueX:
     description: >-
-      Fully resolved one-row-per-item export. This is the schema of
-      items_resolved.parquet — the flagship denormalized export.
+      Text value with a language tag. Used for titles, descriptions.
+      Maps to STRUCT<x_value VARCHAR, x_value_lang VARCHAR>.
+    attributes:
+      x_value:
+        range: string
+      x_value_lang:
+        range: string
+
+  LabeledEntityX:
+    description: >-
+      Entity reference with resolved label and IRI flag. Used for subjects,
+      dc_types, formats, places, hasType.
+      Maps to STRUCT<x_value VARCHAR, x_label VARCHAR, x_value_is_iri BOOLEAN>.
+    attributes:
+      x_value:
+        range: string
+      x_label:
+        range: string
+      x_value_is_iri:
+        range: boolean
+
+  NamedEntityX:
+    description: >-
+      Agent reference with resolved display name and IRI flag. Used for
+      creators, contributors, publishers.
+      Maps to STRUCT<x_value VARCHAR, x_name VARCHAR, x_value_is_iri BOOLEAN>.
+    attributes:
+      x_value:
+        range: string
+      x_name:
+        range: string
+      x_value_is_iri:
+        range: boolean
+
+  # =================================================================
+  # values_edm_ProvidedCHO — minimal CHO anchor
+  # =================================================================
+
+  ProvidedChoValues:
+    description: >-
+      One row per cultural heritage object. Minimal — CHO carries no
+      descriptive metadata directly; see links_ore_Proxy for properties
+      on the provider/Europeana proxies.
     class_uri: edm:ProvidedCHO
     annotations:
-      export_name: items_resolved
-      export_type: composite
-      export_sets: "pipeline,items"
-
+      table_name: values_edm_ProvidedCHO
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a edm:ProvidedCHO ."
+      required_prefixes: "edm"
     attributes:
-      # -- Identifier --
-      item:
-        slot_uri: edm:ProvidedCHO
+      k_iri:
         range: uri
         required: true
         identifier: true
-        description: Item URI identifier (e.g. http://data.europeana.eu/item/123/abc).
+        description: CHO URI (e.g. http://data.europeana.eu/item/123/abc).
         annotations:
-          rdf_source: aggregation
+          sparql_binding: "?k_iri"
 
-      # -- Single-valued from Europeana proxy --
-      type:
-        slot_uri: edm:type
-        range: EdmType
-        required: true
-        description: "edm:type enum: IMAGE, TEXT, SOUND, VIDEO, 3D."
-        annotations:
-          rdf_source: proxy
-          proxy_source: europeana
+  # =================================================================
+  # values_ore_Proxy — one row per proxy (2 per CHO)
+  # =================================================================
 
-      # -- Single-valued from aggregation --
-      country:
-        slot_uri: edm:country
-        range: string
-        required: true
-        description: Country of the providing institution.
-        annotations:
-          rdf_source: europeana_aggregation
-
-      institution:
-        slot_uri: edm:dataProvider
-        range: string
-        required: true
-        description: Data provider organisation URI.
-        annotations:
-          sparql_variable: dataProvider
-          rdf_source: aggregation
-
-      aggregator:
-        slot_uri: edm:provider
-        range: string
-        required: true
-        description: Aggregator organisation URI.
-        annotations:
-          sparql_variable: provider
-          rdf_source: aggregation
-
-      rights:
-        slot_uri: edm:rights
+  ProxyValues:
+    description: >-
+      One row per proxy. Each CHO has a provider proxy (original
+      metadata) and a Europeana proxy (normalised enrichments).
+      Distinguish via v_edm_europeanaProxy.
+    class_uri: ore:Proxy
+    annotations:
+      table_name: values_ore_Proxy
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri ore:proxyFor ?k_iri_cho ."
+      required_prefixes: "edm,ore"
+    attributes:
+      k_iri:
         range: uri
         required: true
-        description: edm:rights URI (license/rights statement).
+        identifier: true
+        description: Proxy URI.
         annotations:
-          rdf_source: aggregation
-
-      reuse_level:
-        range: ReuseLevel
+          sparql_binding: "?k_iri"
+      k_iri_cho:
+        range: uri
+        required: true
+        description: Foreign key to the CHO (from ore:proxyFor).
+        annotations:
+          sparql_binding: "?k_iri_cho"
+      v_edm_currentLocation:
+        slot_uri: edm:currentLocation
+        range: string
+        description: edm:currentLocation value (provider proxy).
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:currentLocation ?v_edm_currentLocation }"
+      v_edm_europeanaProxy:
+        slot_uri: edm:europeanaProxy
+        range: string
         description: >-
-          Computed from edm:rights URI via pattern matching.
-          Values: open, restricted, closed, unknown.
+          "true" on the Europeana proxy, absent/empty on the provider proxy.
         annotations:
-          computed: "true"
-
-      completeness:
-        slot_uri: edm:completeness
-        range: integer
-        description: Metadata completeness score (0–15).
+          sparql_binding: "OPTIONAL { ?k_iri edm:europeanaProxy ?v_edm_europeanaProxy }"
+      v_edm_isRepresentationOf:
+        slot_uri: edm:isRepresentationOf
+        range: uri
+        description: edm:isRepresentationOf target.
         annotations:
-          rdf_source: europeana_aggregation
+          sparql_binding: "OPTIONAL { ?k_iri edm:isRepresentationOf ?v_edm_isRepresentationOf }"
+      v_edm_type:
+        slot_uri: edm:type
+        range: string
+        description: edm:type enum (IMAGE, TEXT, SOUND, VIDEO, 3D). On Europeana proxy only.
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:type ?v_edm_type }"
+      v_ore_proxyFor:
+        slot_uri: ore:proxyFor
+        range: uri
+        description: The CHO this proxy describes (same as k_iri_cho).
+        annotations:
+          sparql_binding: "?k_iri_cho AS ?v_ore_proxyFor"
+      v_ore_proxyIn:
+        slot_uri: ore:proxyIn
+        range: uri
+        description: Aggregation this proxy participates in.
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ore:proxyIn ?v_ore_proxyIn }"
 
-      is_shown_at:
+  # =================================================================
+  # links_ore_Proxy — all multi-valued ProvidedCHO + Proxy properties
+  # =================================================================
+
+  ProxyLinks:
+    description: >-
+      All multi-valued properties from ProvidedCHO and Proxy in long format.
+      One row per value. k_iri is the proxy URI — join with values_ore_Proxy
+      on k_iri to get the CHO key.
+    class_uri: ore:Proxy
+    annotations:
+      table_name: links_ore_Proxy
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri ore:proxyFor ?_cho ."
+      required_prefixes: "dc,dcterms,edm,ore,owl,skos"
+      # Comma-separated list of multi-valued EDM properties.
+      # Each produces one intermediate SPARQL scan.
+      link_properties: >-
+        dc:contributor, dc:coverage, dc:creator, dc:date, dc:description,
+        dc:format, dc:identifier, dc:language, dc:publisher, dc:relation,
+        dc:rights, dc:source, dc:subject, dc:title, dc:type,
+        dcterms:alternative, dcterms:conformsTo, dcterms:created,
+        dcterms:extent, dcterms:hasFormat, dcterms:hasPart, dcterms:hasVersion,
+        dcterms:isFormatOf, dcterms:isPartOf, dcterms:isReferencedBy,
+        dcterms:isReplacedBy, dcterms:isRequiredBy, dcterms:issued,
+        dcterms:isVersionOf, dcterms:medium, dcterms:provenance,
+        dcterms:references, dcterms:replaces, dcterms:requires,
+        dcterms:spatial, dcterms:tableOfContents, dcterms:temporal,
+        edm:hasMet, edm:hasType, edm:incorporates, edm:isDerivativeOf,
+        edm:isNextInSequence, edm:isRelatedTo, edm:isSimilarTo,
+        edm:isSuccessorOf, edm:realizes, edm:userTag, edm:year,
+        ore:lineage, owl:sameAs
+    attributes:
+      k_iri:
+        range: uri
+        description: Proxy URI.
+      x_property:
+        range: string
+        description: Property column name (e.g. v_dc_subject, v_edm_hasMet).
+      x_value:
+        range: string
+        description: Property value as a string.
+      x_value_is_iri:
+        range: boolean
+        description: Whether x_value is an IRI rather than a literal.
+      x_value_lang:
+        range: string
+        description: Language tag of x_value (empty string if absent).
+
+  # =================================================================
+  # values_ore_Aggregation — one row per provider aggregation
+  # =================================================================
+
+  AggregationValues:
+    description: >-
+      Provider aggregation — rights, data supply chain, digital object URLs.
+      One row per aggregation.
+    class_uri: ore:Aggregation
+    annotations:
+      table_name: values_ore_Aggregation
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri edm:aggregatedCHO ?k_iri_cho ."
+      # Exclude the EuropeanaAggregation by filtering on typed aggregation
+      # (provider aggregations have dataProvider, EuropeanaAggregation does not).
+      sparql_extra: "?k_iri edm:dataProvider ?v_edm_dataProvider ."
+      required_prefixes: "dcterms,edm,ore"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        description: Aggregation URI.
+        annotations:
+          sparql_binding: "?k_iri"
+      k_iri_cho:
+        range: uri
+        required: true
+        description: Foreign key to the CHO (from edm:aggregatedCHO).
+        annotations:
+          sparql_binding: "?k_iri_cho"
+      v_dcterms_created:
+        slot_uri: dcterms:created
+        range: string
+        description: Provider's creation timestamp for this aggregation.
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri dcterms:created ?v_dcterms_created }"
+      v_dcterms_modified:
+        slot_uri: dcterms:modified
+        range: string
+        description: Provider's modification timestamp.
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri dcterms:modified ?v_dcterms_modified }"
+      v_edm_dataProvider:
+        slot_uri: edm:dataProvider
+        range: string
+        description: Data provider organisation URI or literal.
+        annotations:
+          sparql_binding: "?v_edm_dataProvider"
+      v_edm_isShownAt:
         slot_uri: edm:isShownAt
         range: uri
         description: Landing page URL at provider website.
         annotations:
-          sparql_variable: isShownAt
-          rdf_source: aggregation
-
-      is_shown_by:
+          sparql_binding: "OPTIONAL { ?k_iri edm:isShownAt ?v_edm_isShownAt }"
+      v_edm_isShownBy:
         slot_uri: edm:isShownBy
         range: uri
-        description: Direct content URL (downloadable digital object).
+        description: Direct content URL (primary digital object).
         annotations:
-          sparql_variable: isShownBy
-          rdf_source: aggregation
-
-      preview:
-        slot_uri: edm:preview
+          sparql_binding: "OPTIONAL { ?k_iri edm:isShownBy ?v_edm_isShownBy }"
+      v_edm_object:
+        slot_uri: edm:object
         range: uri
-        description: Thumbnail URL.
+        description: Thumbnail/object URL provided by the aggregator.
         annotations:
-          rdf_source: europeana_aggregation
-
-      landing_page:
-        slot_uri: edm:landingPage
+          sparql_binding: "OPTIONAL { ?k_iri edm:object ?v_edm_object }"
+      v_edm_provider:
+        slot_uri: edm:provider
+        range: string
+        description: Aggregator organisation URI or literal.
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:provider ?v_edm_provider }"
+      v_edm_rights:
+        slot_uri: edm:rights
         range: uri
-        description: Europeana portal URL for this item.
+        description: edm:rights URI (license/rights statement).
         annotations:
-          sparql_variable: landingPage
-          rdf_source: europeana_aggregation
+          sparql_binding: "OPTIONAL { ?k_iri edm:rights ?v_edm_rights }"
+      v_edm_ugc:
+        slot_uri: edm:ugc
+        range: string
+        description: Whether content is user-generated ("true"/"false").
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:ugc ?v_edm_ugc }"
 
-      dataset_name:
+  # =================================================================
+  # links_ore_Aggregation — multi-valued aggregation properties
+  # =================================================================
+
+  AggregationLinks:
+    description: Multi-valued properties on the provider aggregation.
+    class_uri: ore:Aggregation
+    annotations:
+      table_name: links_ore_Aggregation
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri edm:aggregatedCHO ?_cho . ?k_iri edm:dataProvider ?_dp ."
+      required_prefixes: "dc,dqv,edm,ore"
+      link_properties: >-
+        dc:rights, dqv:hasQualityAnnotation, edm:hasView,
+        edm:intermediateProvider
+    attributes:
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
+
+  # =================================================================
+  # values_edm_EuropeanaAggregation — one row per CHO
+  # =================================================================
+
+  EuropeanaAggregationValues:
+    description: >-
+      Europeana-side aggregation — country, dataset name, completeness,
+      language. One row per CHO.
+    class_uri: edm:EuropeanaAggregation
+    annotations:
+      table_name: values_edm_EuropeanaAggregation
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a edm:EuropeanaAggregation ."
+      sparql_extra: "?k_iri edm:aggregatedCHO ?k_iri_cho ."
+      required_prefixes: "edm"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      k_iri_cho:
+        range: uri
+        required: true
+        annotations:
+          sparql_binding: "?k_iri_cho"
+      v_edm_completeness:
+        slot_uri: edm:completeness
+        range: integer
+        description: Metadata completeness score (0–15).
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:completeness ?v_edm_completeness }"
+      v_edm_country:
+        slot_uri: edm:country
+        range: string
+        description: Country of the providing institution.
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:country ?v_edm_country }"
+      v_edm_datasetName:
         slot_uri: edm:datasetName
         range: string
         description: Dataset/collection name.
         annotations:
-          sparql_variable: datasetName
-          rdf_source: europeana_aggregation
-
-      # -- Multi-valued: lang-tagged (LangValue) --
-      titles:
-        slot_uri: dc:title
-        range: LangValue
-        multivalued: true
-        description: dc:title values with language tags from provider proxy.
-        annotations:
-          base_table: items_titles
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: lang_tagged
-
-      descriptions:
-        slot_uri: dc:description
-        range: LangValue
-        multivalued: true
-        description: dc:description values with language tags from provider proxy.
-        annotations:
-          base_table: items_descriptions
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: lang_tagged
-
-      # -- Multi-valued: NamedEntity (agent-resolved) --
-      creators:
-        slot_uri: dc:creator
-        range: NamedEntity
-        multivalued: true
-        description: dc:creator — resolved agent names with entity URIs where available.
-        annotations:
-          base_table: items_creators
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: iri_or_literal
-          entity_resolved: agents
-
-      contributors:
-        slot_uri: dc:contributor
-        range: NamedEntity
-        multivalued: true
-        description: dc:contributor — resolved agent names with entity URIs.
-        annotations:
-          base_table: items_contributors
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: iri_or_literal
-          entity_resolved: agents
-
-      publishers:
-        slot_uri: dc:publisher
-        range: NamedEntity
-        multivalued: true
-        description: dc:publisher — resolved agent names with entity URIs.
-        annotations:
-          base_table: items_publishers
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: iri_or_literal
-          entity_resolved: agents
-
-      # -- Multi-valued: LabeledEntity (concept-resolved) --
-      subjects:
-        slot_uri: dc:subject
-        range: LabeledEntity
-        multivalued: true
-        description: dc:subject — resolved concept labels with entity URIs.
-        annotations:
-          base_table: items_subjects
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: iri_or_literal
-          entity_resolved: concepts
-
-      dc_types:
-        slot_uri: dc:type
-        range: LabeledEntity
-        multivalued: true
-        description: >-
-          dc:type — free-text type labels from providers with entity URIs.
-          Not to be confused with edm:type (the type column).
-        annotations:
-          base_table: items_dc_types
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: iri_or_literal
-          entity_resolved: concepts
-
-      formats:
-        slot_uri: dc:format
-        range: LabeledEntity
-        multivalued: true
-        description: dc:format — MIME types or physical format labels with entity URIs.
-        annotations:
-          base_table: items_formats
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: iri_or_literal
-          entity_resolved: concepts
-
-      # -- Multi-valued: simple string lists --
-      dates:
-        slot_uri: dc:date
-        range: string
-        multivalued: true
-        description: dc:date, dcterms:created, dcterms:issued values as strings.
-        annotations:
-          base_table: items_dates
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: simple_literal
-
-      years:
-        slot_uri: edm:year
-        range: string
-        multivalued: true
-        description: edm:year from Europeana proxy (normalised integer years stored as strings).
-        annotations:
-          base_table: items_years
-          rdf_source: proxy
-          proxy_source: europeana
-          query_pattern: simple_literal
-
-      languages:
-        slot_uri: dc:language
-        range: string
-        multivalued: true
-        description: dc:language codes from provider proxy.
-        annotations:
-          base_table: items_languages
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: simple_literal
-
-      identifiers:
-        slot_uri: dc:identifier
-        range: string
-        multivalued: true
-        description: dc:identifier values.
-        annotations:
-          base_table: items_identifiers
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: simple_literal
-
-      dc_rights:
-        slot_uri: dc:rights
-        range: string
-        multivalued: true
-        description: dc:rights literal values (not to be confused with edm:rights URI in the rights column).
-        annotations:
-          base_table: items_dc_rights
-          rdf_source: proxy
-          proxy_source: provider
-          query_pattern: simple_literal
-
-      # -- Web resource scalars --
-      mime_type:
-        slot_uri: ebucore:hasMimeType
-        range: string
-        description: MIME type of the primary web resource.
-        annotations:
-          sparql_variable: mime
-          rdf_source: web_resource
-
-      width:
-        slot_uri: ebucore:width
-        range: integer
-        description: Pixel width of the primary web resource (NULL if unknown).
-        annotations:
-          rdf_source: web_resource
-
-      height:
-        slot_uri: ebucore:height
-        range: integer
-        description: Pixel height of the primary web resource (NULL if unknown).
-        annotations:
-          rdf_source: web_resource
-
-      file_bytes:
-        slot_uri: ebucore:fileByteSize
-        range: integer
-        description: File size in bytes of the primary web resource (NULL if unknown).
-        annotations:
-          sparql_variable: bytes
-          rdf_source: web_resource
-
-      has_iiif:
-        slot_uri: svcs:has_service
-        range: boolean
-        description: Whether any web resource exposes a IIIF image service.
-        annotations:
-          sparql_variable: has_service
-          rdf_source: web_resource
-          computed: "true"
-
-  # =================================================================
-  # Entity classes
-  # =================================================================
-
-  Agent:
-    description: Contextual entity representing a person or organisation.
-    class_uri: edm:Agent
-    annotations:
-      export_type: entity
-      export_name_core: agents_core
-      export_name_links: agents_links
-      export_sets: "pipeline,entities"
-      id_column: agent
-      link_properties: >-
-        alt_label=skos:altLabel+lang,
-        same_as=owl:sameAs,
-        profession=rdaGr2:professionOrOccupation+lang,
-        note=skos:note+lang,
-        identifier=dc:identifier,
-        name=foaf:name+lang,
-        biographical_info=rdaGr2:biographicalInformation+lang
-    attributes:
-      agent:
-        range: uri
-        required: true
-        identifier: true
-        description: Agent entity URI.
-      pref_label:
-        slot_uri: skos:prefLabel
-        required: true
-        description: Preferred label (skos:prefLabel).
-      pref_label_lang:
-        description: Language tag of pref_label.
-      date_of_birth:
-        slot_uri: rdaGr2:dateOfBirth
-        description: Date of birth.
-      date_of_death:
-        slot_uri: rdaGr2:dateOfDeath
-        description: Date of death.
-      date_of_establishment:
-        slot_uri: rdaGr2:dateOfEstablishment
-        description: Date the organisation was established.
-      date_of_termination:
-        slot_uri: rdaGr2:dateOfTermination
-        description: Date the organisation was terminated.
-      gender:
-        slot_uri: rdaGr2:gender
-        description: Gender of the person.
-      place_of_birth:
-        slot_uri: rdaGr2:placeOfBirth
-        description: Place of birth URI or literal.
-      place_of_death:
-        slot_uri: rdaGr2:placeOfDeath
-        description: Place of death URI or literal.
-      begin:
-        slot_uri: edm:begin
-        description: Start of activity period.
-      end:
-        slot_uri: edm:end
-        description: End of activity period.
-
-  Concept:
-    description: Contextual entity representing a SKOS concept.
-    class_uri: skos:Concept
-    annotations:
-      export_type: entity
-      export_name_core: concepts_core
-      export_name_links: concepts_links
-      export_sets: "pipeline,entities"
-      id_column: concept
-      link_properties: >-
-        alt_label=skos:altLabel+lang,
-        broader=skos:broader,
-        narrower=skos:narrower,
-        related=skos:related,
-        exact_match=skos:exactMatch,
-        close_match=skos:closeMatch,
-        broad_match=skos:broadMatch,
-        narrow_match=skos:narrowMatch,
-        related_match=skos:relatedMatch,
-        note=skos:note+lang,
-        notation=skos:notation
-    attributes:
-      concept:
-        range: uri
-        required: true
-        identifier: true
-        description: Concept entity URI.
-      pref_label:
-        slot_uri: skos:prefLabel
-        required: true
-        description: Preferred label (skos:prefLabel).
-      pref_label_lang:
-        description: Language tag of pref_label.
-      scheme:
-        slot_uri: skos:inScheme
-        range: uri
-        description: SKOS concept scheme URI (skos:inScheme).
-
-  Place:
-    description: Contextual entity representing a geographic location.
-    class_uri: edm:Place
-    annotations:
-      export_type: entity
-      export_name_core: places_core
-      export_name_links: places_links
-      export_sets: "pipeline,entities"
-      id_column: place
-      link_properties: >-
-        alt_label=skos:altLabel+lang,
-        same_as=owl:sameAs,
-        note=skos:note+lang,
-        is_part_of=dcterms:isPartOf,
-        has_part=dcterms:hasPart
-    attributes:
-      place:
-        range: uri
-        required: true
-        identifier: true
-        description: Place entity URI.
-      pref_label:
-        slot_uri: skos:prefLabel
-        required: true
-        description: Preferred label (skos:prefLabel).
-      pref_label_lang:
-        description: Language tag of pref_label.
-      lat:
-        slot_uri: wgs84_pos:lat
-        range: float
-        description: WGS84 latitude.
-      lon:
-        slot_uri: wgs84_pos:long
-        range: float
-        description: WGS84 longitude.
-      alt:
-        slot_uri: wgs84_pos:alt
-        range: float
-        description: WGS84 altitude.
-
-  TimeSpan:
-    description: Contextual entity representing a time period.
-    class_uri: edm:TimeSpan
-    annotations:
-      export_type: entity
-      export_name_core: timespans_core
-      export_name_links: timespans_links
-      export_sets: "pipeline,entities"
-      id_column: timespan
-      link_properties: >-
-        alt_label=skos:altLabel,
-        same_as=owl:sameAs,
-        is_part_of=dcterms:isPartOf,
-        has_part=dcterms:hasPart
-    attributes:
-      timespan:
-        range: uri
-        required: true
-        identifier: true
-        description: TimeSpan entity URI.
-      pref_label:
-        slot_uri: skos:prefLabel
-        required: true
-        description: Preferred label (skos:prefLabel).
-      pref_label_lang:
-        description: Language tag of pref_label.
-      begin:
-        slot_uri: edm:begin
-        description: Start of the time period.
-      end:
-        slot_uri: edm:end
-        description: End of the time period.
-      notation:
-        slot_uri: skos:notation
-        description: Notation or code for this time period.
-
-  Organization:
-    description: Data provider or aggregator organisation.
-    class_uri: foaf:Organization
-    annotations:
-      id_column: org
-    attributes:
-      org:
-        range: uri
-        required: true
-        identifier: true
-        description: Organisation entity URI.
-      name:
-        slot_uri: skos:prefLabel
-        required: true
-        description: Organisation name (skos:prefLabel).
-      lang:
-        description: Language tag of the name.
-      acronym:
-        slot_uri: edm:acronym
-        description: Organisation acronym.
-      country:
-        slot_uri: edm:country
-        description: Country of the organisation.
-      role:
-        slot_uri: edm:europeanaRole
-        description: Europeana role (data provider, aggregator, etc.).
-      wikidata:
-        slot_uri: owl:sameAs
-        range: uri
-        description: Wikidata entity URI (owl:sameAs, filtered to wikidata.org).
-
-  # =================================================================
-  # Scan exports — flat SPARQL with custom patterns
-  # =================================================================
-
-  ItemsCoreRow:
-    description: >-
-      One row per item with single-valued scalar properties.
-      Base table for items_resolved composition.
-    annotations:
-      export_name: items_core
-      export_type: scan
-      export_sets: "pipeline,items"
-      required_prefixes: "edm,ore,xsd"
-      sparql_pattern: |
-        {
-          SELECT ?item ?agg ?eAgg ?type ?rights ?dataProvider ?provider ?country
-          WHERE {
-            ?eProxy ore:proxyFor ?item .
-            ?eProxy edm:europeanaProxy "true" .
-            ?eProxy edm:type ?type .
-            ?agg edm:aggregatedCHO ?item .
-            ?agg edm:rights ?rights ;
-                 edm:dataProvider ?dataProvider ;
-                 edm:provider ?provider .
-            ?eAgg edm:aggregatedCHO ?item .
-            ?eAgg a edm:EuropeanaAggregation .
-            ?eAgg edm:country ?country .
-            {filters}
-          }
-        }
-      supports_filters: "true"
-    attributes:
-      item:
-        range: uri
-        required: true
-        description: Item URI identifier.
-        annotations:
-          sparql_binding: "?item"
-      type:
-        range: EdmType
-        description: "edm:type enum: IMAGE, TEXT, SOUND, VIDEO, 3D."
-        annotations:
-          sparql_binding: "?type"
-      rights:
-        range: uri
-        description: edm:rights URI (license/rights statement).
-        annotations:
-          sparql_binding: "?rights"
-      country:
-        description: Country of the providing institution.
-        annotations:
-          sparql_binding: "?country"
-      dataProvider:
-        description: Data provider organisation URI or literal.
-        annotations:
-          sparql_binding: "?dataProvider"
-      provider:
-        description: Aggregator organisation URI or literal.
-        annotations:
-          sparql_binding: "?provider"
-      isShownAt:
-        range: uri
-        description: Landing page URL at provider website.
-        annotations:
-          sparql_binding: "OPTIONAL { ?agg edm:isShownAt ?isShownAt }"
-      isShownBy:
-        range: uri
-        description: Direct content URL (downloadable digital object).
-        annotations:
-          sparql_binding: "OPTIONAL { ?agg edm:isShownBy ?isShownBy }"
-      completeness:
-        range: integer
-        description: Metadata completeness score (0–15).
-        annotations:
-          sparql_binding: "OPTIONAL { ?eAgg edm:completeness ?completeness }"
-      preview:
-        range: uri
-        description: Thumbnail URL.
-        annotations:
-          sparql_binding: "OPTIONAL { ?eAgg edm:preview ?preview }"
-      landingPage:
+          sparql_binding: "OPTIONAL { ?k_iri edm:datasetName ?v_edm_datasetName }"
+      v_edm_landingPage:
+        slot_uri: edm:landingPage
         range: uri
         description: Europeana portal URL for this item.
         annotations:
-          sparql_binding: "OPTIONAL { ?eAgg edm:landingPage ?landingPage }"
-      datasetName:
-        description: Dataset/collection name.
+          sparql_binding: "OPTIONAL { ?k_iri edm:landingPage ?v_edm_landingPage }"
+      v_edm_language:
+        slot_uri: edm:language
+        range: string
+        description: Normalised language code.
         annotations:
-          sparql_binding: "OPTIONAL { ?eAgg edm:datasetName ?datasetName }"
-
-  WebResourceRow:
-    description: >-
-      Digital representations with technical metadata.
-      One row per web resource per item.
-    annotations:
-      export_name: web_resources
-      export_type: scan
-      export_sets: "pipeline,items"
-      required_prefixes: "edm,ebucore,svcs"
-      sparql_pattern: |
-        ?agg edm:aggregatedCHO ?item ;
-             edm:isShownBy ?url .
-    attributes:
-      item:
+          sparql_binding: "OPTIONAL { ?k_iri edm:language ?v_edm_language }"
+      v_edm_preview:
+        slot_uri: edm:preview
         range: uri
-        required: true
-        description: Item URI this web resource belongs to.
+        description: Thumbnail URL.
         annotations:
-          sparql_binding: "?item"
-      url:
-        range: uri
-        description: Web resource URL (edm:isShownBy).
-        annotations:
-          sparql_binding: "?url"
-      mime:
-        description: MIME type (ebucore:hasMimeType).
-        annotations:
-          sparql_binding: "OPTIONAL { ?url ebucore:hasMimeType ?mime }"
-      width:
-        description: Pixel width (ebucore:width).
-        annotations:
-          sparql_binding: "OPTIONAL { ?url ebucore:width ?width }"
-      height:
-        description: Pixel height (ebucore:height).
-        annotations:
-          sparql_binding: "OPTIONAL { ?url ebucore:height ?height }"
-      bytes:
-        description: File size in bytes (ebucore:fileByteSize).
-        annotations:
-          sparql_binding: "OPTIONAL { ?url ebucore:fileByteSize ?bytes }"
-      wr_rights:
-        range: uri
-        description: Rights statement for this specific web resource.
-        annotations:
-          sparql_binding: "OPTIONAL { ?url edm:rights ?wr_rights }"
-      has_service:
-        range: boolean
-        description: Whether a IIIF or other service is attached.
-        annotations:
-          sparql_binding: |
-            OPTIONAL { ?url svcs:has_service ?_svc }
-            BIND(BOUND(?_svc) AS ?has_service)
-
-  InstitutionsRow:
-    description: >-
-      Organisations with multilingual labels, acronym, country, role,
-      and Wikidata links.
-    annotations:
-      export_name: institutions
-      export_type: scan
-      export_sets: "pipeline,entities"
-      required_prefixes: "edm,foaf,skos,owl"
-      sparql_pattern: |
-        ?org a foaf:Organization ;
-             skos:prefLabel ?name .
-        BIND(LANG(?name) AS ?lang)
-    attributes:
-      org:
-        range: uri
-        required: true
-        description: Organisation URI.
-        annotations:
-          sparql_binding: "?org"
-      name:
-        description: Organisation name (skos:prefLabel value).
-        annotations:
-          sparql_binding: "?name"
-      lang:
-        description: Language tag of the name.
-        annotations:
-          sparql_binding: "?lang"
-      acronym:
-        description: Organisation acronym.
-        annotations:
-          sparql_binding: "OPTIONAL { ?org edm:acronym ?acronym }"
-      country:
-        description: Country of the organisation.
-        annotations:
-          sparql_binding: "OPTIONAL { ?org edm:country ?country }"
-      role:
-        description: Europeana role (data provider, aggregator, etc.).
-        annotations:
-          sparql_binding: "OPTIONAL { ?org edm:europeanaRole ?role }"
-      wikidata:
-        range: uri
-        description: Wikidata entity URI (owl:sameAs, filtered to wikidata.org).
-        annotations:
-          sparql_binding: >-
-            OPTIONAL { ?org owl:sameAs ?wikidata .
-              FILTER(STRSTARTS(STR(?wikidata), "http://www.wikidata.org/entity/")) }
+          sparql_binding: "OPTIONAL { ?k_iri edm:preview ?v_edm_preview }"
 
   # =================================================================
-  # Summary exports — SPARQL GROUP BY aggregates
+  # values_edm_WebResource — one row per web resource
   # =================================================================
 
-  ItemsByType:
-    description: Item counts grouped by edm:type.
-    annotations:
-      export_name: items_by_type
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,ore"
-      sparql_pattern: |
-        ?eProxy ore:proxyFor ?item .
-        ?eProxy edm:europeanaProxy "true" .
-        ?eProxy edm:type ?type .
-      order_by: "DESC(?count)"
-    attributes:
-      type:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByCountry:
-    description: Item counts grouped by country.
-    annotations:
-      export_name: items_by_country
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm"
-      sparql_pattern: |
-        ?eAgg edm:aggregatedCHO ?item .
-        ?eAgg a edm:EuropeanaAggregation .
-        ?eAgg edm:country ?country .
-      order_by: "DESC(?count)"
-    attributes:
-      country:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByTypeAndCountry:
-    description: Item counts grouped by edm:type and country.
-    annotations:
-      export_name: items_by_type_and_country
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,ore"
-      sparql_pattern: |
-        ?eProxy ore:proxyFor ?item .
-        ?eProxy edm:europeanaProxy "true" .
-        ?eProxy edm:type ?type .
-        ?eAgg edm:aggregatedCHO ?item .
-        ?eAgg a edm:EuropeanaAggregation .
-        ?eAgg edm:country ?country .
-      order_by: "?type DESC(?count)"
-    attributes:
-      type:
-        annotations: { group_by: "true" }
-      country:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByLanguage:
-    description: Item counts grouped by edm:language.
-    annotations:
-      export_name: items_by_language
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm"
-      sparql_pattern: |
-        ?eAgg edm:aggregatedCHO ?item .
-        ?eAgg a edm:EuropeanaAggregation .
-        ?eAgg edm:language ?language .
-      order_by: "DESC(?count)"
-    attributes:
-      language:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByTypeAndLanguage:
-    description: Item counts grouped by edm:type and edm:language.
-    annotations:
-      export_name: items_by_type_and_language
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,ore"
-      sparql_pattern: |
-        ?eProxy ore:proxyFor ?item .
-        ?eProxy edm:europeanaProxy "true" .
-        ?eProxy edm:type ?type .
-        ?eAgg edm:aggregatedCHO ?item .
-        ?eAgg a edm:EuropeanaAggregation .
-        ?eAgg edm:language ?language .
-      order_by: "?type DESC(?count)"
-    attributes:
-      type:
-        annotations: { group_by: "true" }
-      language:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByInstitution:
-    description: Item counts grouped by institution (edm:dataProvider) with resolved name.
-    annotations:
-      export_name: items_by_institution
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,skos"
-      sparql_pattern: |
-        ?agg edm:aggregatedCHO ?item .
-        ?agg edm:dataProvider ?dataProvider .
-        OPTIONAL { ?dataProvider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }
-        OPTIONAL { ?dataProvider skos:prefLabel ?anyName }
-      order_by: "DESC(?count)"
-    attributes:
-      dataProvider:
-        annotations: { group_by: "true" }
-      institutionName:
-        annotations: { aggregation: "SAMPLE(COALESCE(?enName, ?anyName))" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(DISTINCT ?item)" }
-
-  ItemsByAggregator:
-    description: Item counts grouped by aggregator (edm:provider) with resolved name.
-    annotations:
-      export_name: items_by_aggregator
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,skos"
-      sparql_pattern: |
-        ?agg edm:aggregatedCHO ?item .
-        ?agg edm:provider ?provider .
-        OPTIONAL { ?provider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }
-        OPTIONAL { ?provider skos:prefLabel ?anyName }
-      order_by: "DESC(?count)"
-    attributes:
-      provider:
-        annotations: { group_by: "true" }
-      aggregatorName:
-        annotations: { aggregation: "SAMPLE(COALESCE(?enName, ?anyName))" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(DISTINCT ?item)" }
-
-  ItemsByYear:
-    description: Item counts grouped by edm:year.
-    annotations:
-      export_name: items_by_year
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,ore"
-      sparql_pattern: |
-        ?eProxy ore:proxyFor ?item .
-        ?eProxy edm:europeanaProxy "true" .
-        ?eProxy edm:year ?year .
-      order_by: "DESC(?count)"
-    attributes:
-      year:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByRightsUri:
-    description: Item counts grouped by rights URI.
-    annotations:
-      export_name: items_by_rights_uri
-      export_type: summary
-      export_sets: "pipeline,summary,rights"
-      required_prefixes: "edm"
-      sparql_pattern: |
-        ?agg edm:aggregatedCHO ?item ;
-             edm:rights ?rights .
-      order_by: "DESC(?count)"
-    attributes:
-      rights:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByReuseLevel:
-    description: Item counts grouped by reuse level (open, restricted, prohibited).
-    annotations:
-      export_name: items_by_reuse_level
-      export_type: summary
-      export_sets: "pipeline,summary,rights"
-      required_prefixes: "edm"
-      sparql_pattern: |
-        ?agg edm:aggregatedCHO ?item ;
-             edm:rights ?rights .
-        {reuse_bind}
-      order_by: "DESC(?count)"
-    attributes:
-      reuse_level:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByTypeAndReuseLevel:
-    description: Item counts grouped by edm:type and reuse level.
-    annotations:
-      export_name: items_by_type_and_reuse_level
-      export_type: summary
-      export_sets: "pipeline,summary,rights"
-      required_prefixes: "edm,ore"
-      sparql_pattern: |
-        ?eProxy ore:proxyFor ?item .
-        ?eProxy edm:europeanaProxy "true" .
-        ?eProxy edm:type ?type .
-        ?agg edm:aggregatedCHO ?item ;
-             edm:rights ?rights .
-        {reuse_bind}
-      order_by: "?type DESC(?count)"
-    attributes:
-      type:
-        annotations: { group_by: "true" }
-      reuse_level:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByCountryAndReuseLevel:
-    description: Item counts grouped by country and reuse level.
-    annotations:
-      export_name: items_by_country_and_reuse_level
-      export_type: summary
-      export_sets: "pipeline,summary,rights"
-      required_prefixes: "edm"
-      sparql_pattern: |
-        ?agg edm:aggregatedCHO ?item ;
-             edm:rights ?rights .
-        ?eAgg edm:aggregatedCHO ?item .
-        ?eAgg a edm:EuropeanaAggregation .
-        ?eAgg edm:country ?country .
-        {reuse_bind}
-      order_by: "?country DESC(?count)"
-    attributes:
-      country:
-        annotations: { group_by: "true" }
-      reuse_level:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByLanguageAndReuseLevel:
-    description: Item counts grouped by dc:language and reuse level.
-    annotations:
-      export_name: items_by_language_and_reuse_level
-      export_type: summary
-      export_sets: "pipeline,summary,rights"
-      required_prefixes: "dc,edm,ore"
-      sparql_pattern: |
-        ?proxy ore:proxyFor ?item .
-        FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" . }
-        ?proxy dc:language ?language .
-        ?agg edm:aggregatedCHO ?item ;
-             edm:rights ?rights .
-        {reuse_bind}
-      order_by: "?language DESC(?count)"
-    attributes:
-      language:
-        annotations: { group_by: "true" }
-      reuse_level:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ItemsByCompleteness:
-    description: Item counts grouped by completeness score and edm:type.
-    annotations:
-      export_name: items_by_completeness
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,ore"
-      sparql_pattern: |
-        ?eProxy ore:proxyFor ?item .
-        ?eProxy edm:europeanaProxy "true" .
-        ?eProxy edm:type ?type .
-        ?eAgg edm:aggregatedCHO ?item .
-        ?eAgg a edm:EuropeanaAggregation .
-        ?eAgg edm:completeness ?completeness .
-      order_by: "?completeness ?type"
-    attributes:
-      completeness:
-        range: integer
-        annotations: { group_by: "true" }
-      type:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
-
-  ContentAvailability:
+  WebResourceValues:
     description: >-
-      Item counts by edm:type, reuse level, and content access method
-      (direct URL, IIIF).
+      Digital representations (images, audio, video, text). One row per
+      web resource. k_iri_cho links back to the CHO via the aggregation.
+    class_uri: edm:WebResource
     annotations:
-      export_name: content_availability
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,ore,svcs"
-      sparql_pattern: |
-        ?eProxy ore:proxyFor ?item .
-        ?eProxy edm:europeanaProxy "true" .
-        ?eProxy edm:type ?type .
-        ?agg edm:aggregatedCHO ?item ;
-             edm:rights ?rights .
-        {reuse_bind}
-        OPTIONAL { ?agg edm:isShownBy ?_isb }
-        BIND(BOUND(?_isb) AS ?has_direct_url)
-        OPTIONAL {
-          ?agg edm:isShownBy ?_wr .
-          ?_wr svcs:has_service ?_svc .
-        }
-        BIND(BOUND(?_svc) AS ?has_iiif)
-      order_by: "?type ?reuse_level DESC(?count)"
+      table_name: values_edm_WebResource
+      export_type: values
+      export_sets: "pipeline,raw"
+      # Match web resources via either edm:isShownBy or edm:hasView.
+      # Using UNION in the outer query is brittle in QLever — use a
+      # property path disjunction instead.
+      sparql_base_pattern: "?_agg edm:aggregatedCHO ?k_iri_cho . { ?_agg edm:isShownBy ?k_iri } UNION { ?_agg edm:hasView ?k_iri }"
+      required_prefixes: "ebucore,edm,rdf,schema"
     attributes:
-      type:
-        annotations: { group_by: "true" }
-      reuse_level:
-        annotations: { group_by: "true" }
-      has_direct_url:
-        range: boolean
-        annotations: { group_by: "true" }
-      has_iiif:
-        range: boolean
-        annotations: { group_by: "true" }
-      count:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      k_iri_cho:
+        range: uri
+        required: true
+        annotations:
+          sparql_binding: "?k_iri_cho"
+      v_ebucore_audioChannelNumber:
+        slot_uri: ebucore:audioChannelNumber
         range: integer
-        annotations: { aggregation: "COUNT(?item)" }
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:audioChannelNumber ?v_ebucore_audioChannelNumber }"
+      v_ebucore_bitRate:
+        slot_uri: ebucore:bitRate
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:bitRate ?v_ebucore_bitRate }"
+      v_ebucore_duration:
+        slot_uri: ebucore:duration
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:duration ?v_ebucore_duration }"
+      v_ebucore_fileByteSize:
+        slot_uri: ebucore:fileByteSize
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:fileByteSize ?v_ebucore_fileByteSize }"
+      v_ebucore_frameRate:
+        slot_uri: ebucore:frameRate
+        range: float
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:frameRate ?v_ebucore_frameRate }"
+      v_ebucore_hasMimeType:
+        slot_uri: ebucore:hasMimeType
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:hasMimeType ?v_ebucore_hasMimeType }"
+      v_ebucore_height:
+        slot_uri: ebucore:height
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:height ?v_ebucore_height }"
+      v_ebucore_orientation:
+        slot_uri: ebucore:orientation
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:orientation ?v_ebucore_orientation }"
+      v_ebucore_sampleRate:
+        slot_uri: ebucore:sampleRate
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:sampleRate ?v_ebucore_sampleRate }"
+      v_ebucore_sampleSize:
+        slot_uri: ebucore:sampleSize
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:sampleSize ?v_ebucore_sampleSize }"
+      v_ebucore_width:
+        slot_uri: ebucore:width
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri ebucore:width ?v_ebucore_width }"
+      v_edm_codecName:
+        slot_uri: edm:codecName
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:codecName ?v_edm_codecName }"
+      v_edm_hasColorSpace:
+        slot_uri: edm:hasColorSpace
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:hasColorSpace ?v_edm_hasColorSpace }"
+      v_edm_isNextInSequence:
+        slot_uri: edm:isNextInSequence
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:isNextInSequence ?v_edm_isNextInSequence }"
+      v_edm_pointCount:
+        slot_uri: edm:pointCount
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:pointCount ?v_edm_pointCount }"
+      v_edm_polygonCount:
+        slot_uri: edm:polygonCount
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:polygonCount ?v_edm_polygonCount }"
+      v_edm_preview:
+        slot_uri: edm:preview
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:preview ?v_edm_preview }"
+      v_edm_rights:
+        slot_uri: edm:rights
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:rights ?v_edm_rights }"
+      v_edm_spatialResolution:
+        slot_uri: edm:spatialResolution
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:spatialResolution ?v_edm_spatialResolution }"
+      v_edm_type:
+        slot_uri: edm:type
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:type ?v_edm_type }"
+      v_edm_vertexCount:
+        slot_uri: edm:vertexCount
+        range: integer
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:vertexCount ?v_edm_vertexCount }"
+      v_rdf_type:
+        slot_uri: rdf:type
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri rdf:type ?v_rdf_type }"
+      v_schema_digitalSourceType:
+        slot_uri: schema:digitalSourceType
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri schema:digitalSourceType ?v_schema_digitalSourceType }"
 
-  MimeTypeDistribution:
-    description: Item counts grouped by MIME type.
+  # =================================================================
+  # links_edm_WebResource
+  # =================================================================
+
+  WebResourceLinks:
+    description: Multi-valued properties on web resources.
+    class_uri: edm:WebResource
     annotations:
-      export_name: mime_type_distribution
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,ebucore"
-      sparql_pattern: |
-        ?agg edm:aggregatedCHO ?item .
-        ?agg edm:isShownBy ?url .
-        ?url ebucore:hasMimeType ?mime .
-      order_by: "DESC(?count)"
+      table_name: links_edm_WebResource
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?_agg edm:aggregatedCHO ?_cho . { ?_agg edm:isShownBy ?k_iri } UNION { ?_agg edm:hasView ?k_iri }"
+      required_prefixes: "dc,dcterms,edm,owl,rdfs,svcs"
+      link_properties: >-
+        dc:creator, dc:description, dc:format, dc:language, dc:rights,
+        dc:source, dc:title, dc:type, dcterms:conformsTo, dcterms:created,
+        dcterms:extent, dcterms:hasPart, dcterms:isFormatOf, dcterms:isPartOf,
+        dcterms:isReferencedBy, dcterms:issued, dcterms:temporal,
+        edm:componentColor, edm:intendedUsage, edm:isRepresentationOf,
+        owl:sameAs, rdfs:seeAlso, svcs:has_service
     attributes:
-      mime:
-        annotations: { group_by: "true" }
-      count:
-        range: integer
-        annotations: { aggregation: "COUNT(?item)" }
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
 
-  GeolocatedPlaces:
-    description: Places with coordinates and English labels.
+  # =================================================================
+  # values_edm_Agent — one row per prefLabel variant
+  # =================================================================
+
+  AgentValues:
+    description: >-
+      Contextual agent entities (persons and organisations). One row per
+      skos:prefLabel variant.
+    class_uri: edm:Agent
     annotations:
-      export_name: geolocated_places
-      export_type: scan
-      export_sets: "pipeline,summary"
+      table_name: values_edm_Agent
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a edm:Agent . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
+      sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
+      required_prefixes: "edm,rdaGr2,skos"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      v_edm_begin:
+        slot_uri: edm:begin
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:begin ?v_edm_begin }"
+      v_edm_end:
+        slot_uri: edm:end
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:end ?v_edm_end }"
+      v_rdaGr2_dateOfBirth:
+        slot_uri: rdaGr2:dateOfBirth
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri rdaGr2:dateOfBirth ?v_rdaGr2_dateOfBirth }"
+      v_rdaGr2_dateOfDeath:
+        slot_uri: rdaGr2:dateOfDeath
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri rdaGr2:dateOfDeath ?v_rdaGr2_dateOfDeath }"
+      v_rdaGr2_dateOfEstablishment:
+        slot_uri: rdaGr2:dateOfEstablishment
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri rdaGr2:dateOfEstablishment ?v_rdaGr2_dateOfEstablishment }"
+      v_rdaGr2_dateOfTermination:
+        slot_uri: rdaGr2:dateOfTermination
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri rdaGr2:dateOfTermination ?v_rdaGr2_dateOfTermination }"
+      v_rdaGr2_gender:
+        slot_uri: rdaGr2:gender
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri rdaGr2:gender ?v_rdaGr2_gender }"
+      v_skos_prefLabel:
+        slot_uri: skos:prefLabel
+        range: string
+        required: true
+        annotations:
+          sparql_binding: "?v_skos_prefLabel"
+      x_prefLabel_lang:
+        range: string
+        description: Language tag of v_skos_prefLabel.
+        annotations:
+          sparql_binding: "?x_prefLabel_lang"
+
+  AgentLinks:
+    description: Multi-valued properties for agents.
+    class_uri: edm:Agent
+    annotations:
+      table_name: links_edm_Agent
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri a edm:Agent ."
+      required_prefixes: "dc,dcterms,edm,foaf,owl,rdaGr2,skos"
+      link_properties: >-
+        dc:date, dc:identifier, dcterms:hasPart, dcterms:isPartOf,
+        edm:hasMet, edm:isRelatedTo, foaf:name, owl:sameAs,
+        rdaGr2:biographicalInformation, rdaGr2:placeOfBirth,
+        rdaGr2:placeOfDeath, rdaGr2:professionOrOccupation,
+        skos:altLabel, skos:hiddenLabel, skos:note
+    attributes:
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
+
+  # =================================================================
+  # values_edm_Place
+  # =================================================================
+
+  PlaceValues:
+    description: Contextual place entities. One row per skos:prefLabel variant.
+    class_uri: edm:Place
+    annotations:
+      table_name: values_edm_Place
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a edm:Place . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
+      sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
       required_prefixes: "edm,skos,wgs84_pos"
-      sparql_pattern: |
-        ?place a edm:Place ;
-               wgs84_pos:lat ?lat ;
-               wgs84_pos:long ?lon ;
-               skos:prefLabel ?name .
-        FILTER(LANG(?name) = "en")
     attributes:
-      place:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      v_edm_isNextInSequence:
+        slot_uri: edm:isNextInSequence
         range: uri
         annotations:
-          sparql_binding: "?place"
-      name:
+          sparql_binding: "OPTIONAL { ?k_iri edm:isNextInSequence ?v_edm_isNextInSequence }"
+      v_skos_prefLabel:
+        slot_uri: skos:prefLabel
+        range: string
+        required: true
         annotations:
-          sparql_binding: "?name"
-      lat:
-        range: float
+          sparql_binding: "?v_skos_prefLabel"
+      v_wgs84_pos_alt:
+        slot_uri: wgs84_pos:alt
+        range: string
         annotations:
-          sparql_binding: "?lat"
-      lon:
-        range: float
+          sparql_binding: "OPTIONAL { ?k_iri wgs84_pos:alt ?v_wgs84_pos_alt }"
+      v_wgs84_pos_lat:
+        slot_uri: wgs84_pos:lat
+        range: string
         annotations:
-          sparql_binding: "?lon"
+          sparql_binding: "OPTIONAL { ?k_iri wgs84_pos:lat ?v_wgs84_pos_lat }"
+      v_wgs84_pos_long:
+        slot_uri: wgs84_pos:long
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri wgs84_pos:long ?v_wgs84_pos_long }"
+      x_prefLabel_lang:
+        range: string
+        annotations:
+          sparql_binding: "?x_prefLabel_lang"
 
-  IiifAvailability:
-    description: IIIF-enabled items grouped by institution.
+  PlaceLinks:
+    description: Multi-valued properties for places.
+    class_uri: edm:Place
     annotations:
-      export_name: iiif_availability
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,skos,svcs"
-      sparql_pattern: |
-        ?agg edm:aggregatedCHO ?item ;
-             edm:dataProvider ?dataProvider ;
-             edm:isShownBy ?url .
-        ?url svcs:has_service ?service .
-        OPTIONAL { ?dataProvider skos:prefLabel ?enName . FILTER(LANG(?enName) = "en") }
-        OPTIONAL { ?dataProvider skos:prefLabel ?anyName }
-      order_by: "DESC(?iiif_items)"
+      table_name: links_edm_Place
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri a edm:Place ."
+      required_prefixes: "dcterms,edm,owl,skos"
+      link_properties: >-
+        dcterms:hasPart, dcterms:isPartOf, owl:sameAs,
+        skos:altLabel, skos:hiddenLabel, skos:note
     attributes:
-      dataProvider:
-        annotations: { group_by: "true" }
-      institutionName:
-        annotations: { aggregation: "SAMPLE(COALESCE(?enName, ?anyName))" }
-      iiif_items:
-        range: integer
-        annotations: { aggregation: "COUNT(DISTINCT ?item)" }
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
 
-  Datasets:
+  # =================================================================
+  # values_skos_Concept
+  # =================================================================
+
+  ConceptValues:
+    description: Contextual concept entities. One row per skos:prefLabel variant.
+    class_uri: skos:Concept
+    annotations:
+      table_name: values_skos_Concept
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a skos:Concept . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
+      sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
+      required_prefixes: "skos"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      v_skos_prefLabel:
+        slot_uri: skos:prefLabel
+        range: string
+        required: true
+        annotations:
+          sparql_binding: "?v_skos_prefLabel"
+      x_prefLabel_lang:
+        range: string
+        annotations:
+          sparql_binding: "?x_prefLabel_lang"
+
+  ConceptLinks:
+    description: Multi-valued properties for concepts.
+    class_uri: skos:Concept
+    annotations:
+      table_name: links_skos_Concept
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri a skos:Concept ."
+      required_prefixes: "owl,skos"
+      link_properties: >-
+        owl:sameAs, skos:altLabel, skos:broadMatch, skos:broader,
+        skos:closeMatch, skos:exactMatch, skos:hiddenLabel,
+        skos:inScheme, skos:narrowMatch, skos:narrower, skos:notation,
+        skos:note, skos:related, skos:relatedMatch
+    attributes:
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
+
+  # =================================================================
+  # values_edm_TimeSpan
+  # =================================================================
+
+  TimeSpanValues:
+    description: Contextual timespan entities. One row per skos:prefLabel variant.
+    class_uri: edm:TimeSpan
+    annotations:
+      table_name: values_edm_TimeSpan
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a edm:TimeSpan . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
+      sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
+      required_prefixes: "edm,skos"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      v_edm_begin:
+        slot_uri: edm:begin
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:begin ?v_edm_begin }"
+      v_edm_end:
+        slot_uri: edm:end
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:end ?v_edm_end }"
+      v_edm_isNextInSequence:
+        slot_uri: edm:isNextInSequence
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:isNextInSequence ?v_edm_isNextInSequence }"
+      v_skos_notation:
+        slot_uri: skos:notation
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri skos:notation ?v_skos_notation }"
+      v_skos_prefLabel:
+        slot_uri: skos:prefLabel
+        range: string
+        required: true
+        annotations:
+          sparql_binding: "?v_skos_prefLabel"
+      x_prefLabel_lang:
+        range: string
+        annotations:
+          sparql_binding: "?x_prefLabel_lang"
+
+  TimeSpanLinks:
+    description: Multi-valued properties for timespans.
+    class_uri: edm:TimeSpan
+    annotations:
+      table_name: links_edm_TimeSpan
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri a edm:TimeSpan ."
+      required_prefixes: "dcterms,edm,owl,skos"
+      link_properties: >-
+        dcterms:hasPart, dcterms:isPartOf, owl:sameAs,
+        skos:altLabel, skos:hiddenLabel, skos:note
+    attributes:
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
+
+  # =================================================================
+  # values_foaf_Organization
+  # =================================================================
+
+  OrganizationValues:
+    description: Data provider / aggregator organisations. One row per prefLabel variant.
+    class_uri: foaf:Organization
+    annotations:
+      table_name: values_foaf_Organization
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a foaf:Organization . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
+      sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
+      required_prefixes: "edm,foaf,skos"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      v_edm_acronym:
+        slot_uri: edm:acronym
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:acronym ?v_edm_acronym }"
+      v_edm_country:
+        slot_uri: edm:country
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:country ?v_edm_country }"
+      v_edm_europeanaRole:
+        slot_uri: edm:europeanaRole
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri edm:europeanaRole ?v_edm_europeanaRole }"
+      v_skos_prefLabel:
+        slot_uri: skos:prefLabel
+        range: string
+        required: true
+        annotations:
+          sparql_binding: "?v_skos_prefLabel"
+      x_prefLabel_lang:
+        range: string
+        annotations:
+          sparql_binding: "?x_prefLabel_lang"
+
+  OrganizationLinks:
+    description: Multi-valued properties for organisations.
+    class_uri: foaf:Organization
+    annotations:
+      table_name: links_foaf_Organization
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri a foaf:Organization ."
+      required_prefixes: "edm,foaf,owl"
+      link_properties: >-
+        edm:heritageDomain, edm:language, foaf:logo, owl:sameAs
+    attributes:
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
+
+  # =================================================================
+  # values_svcs_Service
+  # =================================================================
+
+  ServiceValues:
+    description: IIIF and other services attached to web resources.
+    class_uri: svcs:Service
+    annotations:
+      table_name: values_svcs_Service
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri_webresource svcs:has_service ?k_iri ."
+      required_prefixes: "svcs"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      k_iri_webresource:
+        range: uri
+        required: true
+        description: WebResource that references this service (inverse of svcs:has_service).
+        annotations:
+          sparql_binding: "?k_iri_webresource"
+
+  ServiceLinks:
+    description: Multi-valued properties for services.
+    class_uri: svcs:Service
+    annotations:
+      table_name: links_svcs_Service
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?_wr svcs:has_service ?k_iri ."
+      required_prefixes: "dcterms,doap,svcs"
+      link_properties: >-
+        dcterms:conformsTo, doap:implements
+    attributes:
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
+
+  # =================================================================
+  # values_cc_License
+  # =================================================================
+
+  LicenseValues:
+    description: Creative Commons license entities with metadata.
+    class_uri: cc:License
+    annotations:
+      table_name: values_cc_License
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a cc:License ."
+      required_prefixes: "cc,odrl"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      v_cc_deprecatedOn:
+        slot_uri: cc:deprecatedOn
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri cc:deprecatedOn ?v_cc_deprecatedOn }"
+      v_odrl_inheritFrom:
+        slot_uri: odrl:inheritFrom
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri odrl:inheritFrom ?v_odrl_inheritFrom }"
+
+  # =================================================================
+  # values_edm_PersistentIdentifier + scheme
+  # =================================================================
+
+  PersistentIdentifierValues:
+    description: Persistent identifier entities.
+    class_uri: edm:PersistentIdentifier
+    annotations:
+      table_name: values_edm_PersistentIdentifier
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a edm:PersistentIdentifier ."
+      required_prefixes: "dcterms,edm,odrl,rdf,skos"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+      v_dcterms_created:
+        slot_uri: dcterms:created
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri dcterms:created ?v_dcterms_created }"
+      v_dcterms_creator:
+        slot_uri: dcterms:creator
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri dcterms:creator ?v_dcterms_creator }"
+      v_odrl_hasPolicy:
+        slot_uri: odrl:hasPolicy
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri odrl:hasPolicy ?v_odrl_hasPolicy }"
+      v_rdf_value:
+        slot_uri: rdf:value
+        range: string
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri rdf:value ?v_rdf_value }"
+      v_skos_inScheme:
+        slot_uri: skos:inScheme
+        range: uri
+        annotations:
+          sparql_binding: "OPTIONAL { ?k_iri skos:inScheme ?v_skos_inScheme }"
+
+  PersistentIdentifierLinks:
+    description: Multi-valued PID properties.
+    class_uri: edm:PersistentIdentifier
+    annotations:
+      table_name: links_edm_PersistentIdentifier
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri a edm:PersistentIdentifier ."
+      required_prefixes: "edm,skos"
+      link_properties: >-
+        edm:equivalentPID, edm:hasURL, edm:replacesPID, skos:notation
+    attributes:
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
+
+  PersistentIdentifierSchemeValues:
+    description: PID scheme entities.
+    class_uri: edm:PersistentIdentifierScheme
+    annotations:
+      table_name: values_edm_PersistentIdentifierScheme
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?k_iri a edm:PersistentIdentifierScheme ."
+      required_prefixes: "edm"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        annotations:
+          sparql_binding: "?k_iri"
+
+  PersistentIdentifierSchemeLinks:
+    description: Multi-valued PID-scheme properties.
+    class_uri: edm:PersistentIdentifierScheme
+    annotations:
+      table_name: links_edm_PersistentIdentifierScheme
+      export_type: links_union
+      export_sets: "pipeline,raw"
+      subject_base_pattern: "?k_iri a edm:PersistentIdentifierScheme ."
+      required_prefixes: "dcterms,edm"
+      link_properties: >-
+        dcterms:title
+    attributes:
+      k_iri: { range: uri }
+      x_property: { range: string }
+      x_value: { range: string }
+      x_value_is_iri: { range: boolean }
+      x_value_lang: { range: string }
+
+  # =================================================================
+  # merged_items — user-facing denormalized CHO export
+  # =================================================================
+
+  MergedItems:
     description: >-
-      One row per dataset with provider, data provider, country,
-      and item count.
+      Fully denormalized one-row-per-CHO export. Joins provider/Europeana
+      proxies, aggregation, Europeana aggregation, and the primary web
+      resource. Resolves entity labels. Aggregates multi-valued properties
+      into list and struct list columns. Computes derived columns
+      (x_title, x_description, x_reuse_level, x_has_iiif, x_megapixels).
+    class_uri: edm:ProvidedCHO
     annotations:
-      export_name: datasets
-      export_type: summary
-      export_sets: "pipeline,summary"
-      required_prefixes: "edm,dcterms"
-      sparql_pattern: |
-        ?eAgg edm:aggregatedCHO ?item .
-        ?eAgg a edm:EuropeanaAggregation .
-        ?eAgg edm:datasetName ?datasetName .
-        ?agg edm:aggregatedCHO ?item .
-        FILTER(?agg != ?eAgg)
-        ?agg edm:dataProvider ?dp .
-        ?agg edm:provider ?prov .
-        ?eAgg edm:country ?cty .
-        OPTIONAL { ?eAgg dcterms:created ?created .
-                   FILTER(?created != "1970-01-01T00:00:00.000Z") }
-        OPTIONAL { ?eAgg dcterms:modified ?modified .
-                   FILTER(?modified != "1970-01-01T00:00:00.000Z") }
-      order_by: "DESC(?items)"
+      table_name: merged_items
+      export_type: merged
+      export_sets: "pipeline,merged"
+      depends_on: >-
+        values_edm_ProvidedCHO, values_ore_Proxy, values_ore_Aggregation,
+        values_edm_EuropeanaAggregation, values_edm_WebResource,
+        values_svcs_Service, links_ore_Proxy,
+        values_edm_Agent, values_edm_Place, values_skos_Concept,
+        values_foaf_Organization
     attributes:
-      datasetName:
-        description: Dataset/collection name (edm:datasetName).
-        annotations: { group_by: "true" }
-      dataProvider:
-        description: Data provider URI.
-        annotations: { aggregation: "SAMPLE(?dp)" }
-      provider:
-        description: Provider URI.
-        annotations: { aggregation: "SAMPLE(?prov)" }
-      country:
-        description: Country of the dataset.
-        annotations: { aggregation: "SAMPLE(?cty)" }
-      items:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        description: CHO URI.
+      v_ebucore_audioChannelNumber:
         range: integer
-        description: Number of items in this dataset.
-        annotations: { aggregation: "COUNT(DISTINCT ?item)" }
-      earliest_created:
-        range: timestamp
-        description: Earliest Europeana ingestion timestamp (dcterms:created on EuropeanaAggregation).
-        annotations: { aggregation: "MIN(?created)" }
-      latest_created:
-        range: timestamp
-        description: Latest Europeana ingestion timestamp (dcterms:created on EuropeanaAggregation).
-        annotations: { aggregation: "MAX(?created)" }
-      latest_modified:
-        range: timestamp
-        description: Most recent update timestamp (dcterms:modified on EuropeanaAggregation).
-        annotations: { aggregation: "MAX(?modified)" }
+        description: Audio channels — primary web resource.
+      v_ebucore_bitRate:
+        range: integer
+      v_ebucore_duration:
+        range: string
+      v_ebucore_fileByteSize:
+        range: integer
+      v_ebucore_frameRate:
+        range: float
+      v_ebucore_hasMimeType:
+        range: string
+      v_ebucore_height:
+        range: integer
+      v_ebucore_orientation:
+        range: string
+      v_ebucore_sampleRate:
+        range: integer
+      v_ebucore_sampleSize:
+        range: integer
+      v_ebucore_width:
+        range: integer
+      v_edm_codecName:
+        range: string
+      v_edm_completeness:
+        range: integer
+        description: Metadata completeness score (EuropeanaAggregation).
+      v_edm_country:
+        range: string
+        description: Country (EuropeanaAggregation).
+      v_edm_currentLocation:
+        range: string
+        description: edm:currentLocation from the provider proxy.
+      v_edm_dataProvider:
+        range: string
+        description: Data provider URI (from Aggregation).
+      v_edm_datasetName:
+        range: string
+      v_edm_hasColorSpace:
+        range: string
+      v_edm_isShownAt:
+        range: uri
+      v_edm_isShownBy:
+        range: uri
+        description: Primary content URL.
+      v_edm_landingPage:
+        range: uri
+      v_edm_object:
+        range: uri
+      v_edm_pointCount:
+        range: integer
+      v_edm_polygonCount:
+        range: integer
+      v_edm_preview:
+        range: uri
+        description: Thumbnail (EuropeanaAggregation).
+      v_edm_provider:
+        range: string
+        description: Aggregator URI (from Aggregation).
+      v_edm_rights:
+        range: uri
+        description: edm:rights URI (from Aggregation).
+      v_edm_spatialResolution:
+        range: integer
+      v_edm_type:
+        range: string
+        description: edm:type enum from the Europeana proxy.
+      v_edm_vertexCount:
+        range: integer
+      v_schema_digitalSourceType:
+        range: string
+      x_dataProvider_name:
+        range: string
+        description: Resolved English-preferred dataProvider name.
+      x_dc_contributor:
+        range: NamedEntityX
+        multivalued: true
+        description: dc:contributor (provider proxy) — agent-resolved.
+      x_dc_creator:
+        range: NamedEntityX
+        multivalued: true
+        description: dc:creator (provider proxy) — agent-resolved.
+      x_dc_date:
+        range: string
+        multivalued: true
+        description: dc:date values (provider proxy).
+      x_dc_description:
+        range: LangValueX
+        multivalued: true
+      x_dc_format:
+        range: LabeledEntityX
+        multivalued: true
+        description: dc:format — concept-resolved.
+      x_dc_identifier:
+        range: string
+        multivalued: true
+      x_dc_language:
+        range: string
+        multivalued: true
+      x_dc_publisher:
+        range: NamedEntityX
+        multivalued: true
+        description: dc:publisher — agent-resolved.
+      x_dc_rights:
+        range: string
+        multivalued: true
+      x_dc_subject:
+        range: LabeledEntityX
+        multivalued: true
+        description: dc:subject — concept-resolved.
+      x_dc_title:
+        range: LangValueX
+        multivalued: true
+      x_dc_type:
+        range: LabeledEntityX
+        multivalued: true
+        description: dc:type — concept-resolved (not edm:type).
+      x_dcterms_spatial:
+        range: LabeledEntityX
+        multivalued: true
+        description: dcterms:spatial — place-resolved.
+      x_description:
+        range: string
+        description: First dc:description (English preferred).
+      x_description_lang:
+        range: string
+      x_edm_hasType:
+        range: LabeledEntityX
+        multivalued: true
+        description: edm:hasType — concept-resolved.
+      x_edm_year:
+        range: string
+        multivalued: true
+        description: edm:year values (Europeana proxy).
+      x_has_iiif:
+        range: boolean
+      x_megapixels:
+        range: float
+        description: width * height / 1e6.
+      x_provider_name:
+        range: string
+        description: Resolved English-preferred aggregator name.
+      x_reuse_level:
+        range: ReuseLevel
+        description: open / restricted / prohibited.
+      x_title:
+        range: string
+        description: First dc:title (English preferred).
+      x_title_lang:
+        range: string
 
-  TextsByType:
-    description: dc:type value distribution for TEXT items.
+  # =================================================================
+  # group_items — categorical dimensions for fast analytics
+  # =================================================================
+
+  GroupItems:
+    description: >-
+      One row per CHO. Only categorical / boolean / integer columns — no
+      list or struct types. Designed for instant GROUP BY analytics that
+      would otherwise scan merged_items.
+    class_uri: edm:ProvidedCHO
     annotations:
-      export_name: texts_by_type
-      export_type: summary
-      export_sets: "summary"
-      required_prefixes: "dc,edm,ore"
-      sparql_pattern: |
-        ?proxy ore:proxyFor ?item .
-        FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" . }
-        ?proxy edm:type "TEXT" .
-        ?proxy dc:type ?dcType .
-      order_by: "DESC(?count)"
+      table_name: group_items
+      export_type: group
+      export_sets: "pipeline,group"
+      depends_on: >-
+        values_edm_ProvidedCHO, values_ore_Proxy, values_ore_Aggregation,
+        values_edm_EuropeanaAggregation, values_edm_WebResource,
+        values_svcs_Service, links_ore_Proxy
     attributes:
-      dcType:
-        annotations: { group_by: "true" }
-      count:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+      v_edm_completeness:
         range: integer
-        annotations: { aggregation: "COUNT(?item)" }
+      v_edm_country:
+        range: string
+      v_edm_dataProvider:
+        range: string
+      v_edm_provider:
+        range: string
+      v_edm_type:
+        range: string
+      x_has_content_url:
+        range: boolean
+      x_has_creator:
+        range: boolean
+      x_has_description:
+        range: boolean
+      x_has_iiif:
+        range: boolean
+      x_has_subject:
+        range: boolean
+      x_primary_language:
+        range: string
+      x_reuse_level:
+        range: ReuseLevel
+      x_rights_family:
+        range: RightsFamily
 
+  # =================================================================
+  # map_rights — distinct rights URIs with classification
+  # =================================================================
+
+  MapRights:
+    description: >-
+      Distinct edm:rights URIs from values_ore_Aggregation, classified
+      into reuse level, family, human-readable label, and open flag.
+    annotations:
+      table_name: map_rights
+      export_type: map
+      export_sets: "pipeline,maps"
+      depends_on: "values_ore_Aggregation"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        description: edm:rights URI.
+      x_category:
+        range: ReuseLevel
+        description: open / restricted / prohibited.
+      x_family:
+        range: RightsFamily
+      x_is_open:
+        range: boolean
+      x_label:
+        range: string
+
+  # =================================================================
+  # map_sameAs — owl:sameAs links from all entity classes
+  # =================================================================
+
+  MapSameAs:
+    description: >-
+      Identity links from Agent / Place / Concept / TimeSpan entities,
+      classified by target-URI authority.
+    annotations:
+      table_name: map_sameAs
+      export_type: map
+      export_sets: "pipeline,maps"
+      depends_on: >-
+        links_edm_Agent, links_edm_Place, links_skos_Concept, links_edm_TimeSpan
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+      v_owl_sameAs:
+        range: uri
+      x_authority:
+        range: Authority
+      x_entity_class:
+        range: EntityClass
+
+  # =================================================================
+  # map_cho_entities — CHO ↔ contextual entity references
+  # =================================================================
+
+  MapChoEntities:
+    description: >-
+      Maps CHOs to the contextual entities they reference via provider-
+      proxy properties whose value is an IRI matching a known entity.
+    annotations:
+      table_name: map_cho_entities
+      export_type: map
+      export_sets: "pipeline,maps"
+      depends_on: >-
+        links_ore_Proxy, values_ore_Proxy,
+        values_edm_Agent, values_edm_Place,
+        values_skos_Concept, values_edm_TimeSpan
+    attributes:
+      k_iri_cho:
+        range: uri
+        required: true
+      k_iri_entity:
+        range: uri
+        required: true
+      x_entity_class:
+        range: EntityClass
+      x_property:
+        range: string
+        description: The proxy property column name (v_dc_subject, etc.).
 
 # ===================================================================
 # Pipeline metadata (top-level annotations)
@@ -1336,13 +1493,13 @@ annotations:
     http://rightsstatements.org/vocab/NoC-OKLR/1.0/,
     http://rightsstatements.org/vocab/InC-EDU/1.0/
 
-  # Authority patterns for classifying owl:sameAs links in entity reports.
+  # Authority patterns for classifying owl:sameAs target IRIs.
   authority_patterns: >-
     wikidata=http://www.wikidata.org/,
     viaf=http://viaf.org/,
     gnd=http://d-nb.info/gnd/,
-    ulan=http://vocab.getty.edu/ulan/,
     isni=http://isni.org/,
     loc=http://id.loc.gov/,
     bnf=http://data.bnf.fr/,
-    geonames=http://sws.geonames.org/
+    geonames=http://sws.geonames.org/,
+    dbpedia=http://dbpedia.org/

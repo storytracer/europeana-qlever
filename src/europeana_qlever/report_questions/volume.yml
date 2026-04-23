@@ -6,28 +6,28 @@ questions:
     question: "How many items are there in total?"
     backend: parquet
     query: |
-      SELECT count(*) AS total_items FROM items
+      SELECT count(*) AS total_items FROM group_items
 
   - id: by_type
     question: "Distribution of items by edm:type"
     backend: parquet
     query: |
-      SELECT type,
+      SELECT v_edm_type AS type,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM items
-      GROUP BY type
+      FROM group_items
+      GROUP BY v_edm_type
       ORDER BY count DESC
 
   - id: top_countries
     question: "Top 20 providing countries by item count"
     backend: parquet
     query: |
-      SELECT country,
+      SELECT v_edm_country AS country,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM items
-      GROUP BY country
+      FROM group_items
+      GROUP BY v_edm_country
       ORDER BY count DESC
       LIMIT 20
 
@@ -35,11 +35,11 @@ questions:
     question: "Top 20 data provider institutions by item count"
     backend: parquet
     query: |
-      SELECT COALESCE(n.name, i.institution) AS institution,
+      SELECT COALESCE(o.name, g.v_edm_dataProvider) AS institution,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM items i
-      LEFT JOIN org_names n ON i.institution = n.org
+      FROM group_items g
+      LEFT JOIN orgs o ON g.v_edm_dataProvider = o.k_iri
       GROUP BY 1
       ORDER BY count DESC
       LIMIT 20
@@ -48,11 +48,11 @@ questions:
     question: "Top 20 aggregators by item count"
     backend: parquet
     query: |
-      SELECT COALESCE(n.name, i.aggregator) AS aggregator,
+      SELECT COALESCE(o.name, g.v_edm_provider) AS aggregator,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM items i
-      LEFT JOIN org_names n ON i.aggregator = n.org
+      FROM group_items g
+      LEFT JOIN orgs o ON g.v_edm_provider = o.k_iri
       GROUP BY 1
       ORDER BY count DESC
       LIMIT 20
@@ -61,20 +61,20 @@ questions:
     question: "How many distinct dataset names are there?"
     backend: parquet
     query: |
-      SELECT count(DISTINCT dataset_name) AS distinct_datasets
-      FROM items
-      WHERE dataset_name IS NOT NULL
+      SELECT count(DISTINCT v_edm_datasetName) AS distinct_datasets
+      FROM merged_items
+      WHERE v_edm_datasetName IS NOT NULL
 
   - id: top_dc_types
     question: "Top 20 dc:type labels by item count"
     backend: parquet
     query: |
-      SELECT d.label AS dc_type,
+      SELECT d.x_label AS dc_type,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM (SELECT UNNEST(dc_types) AS d FROM items)
-      WHERE d.label IS NOT NULL
-      GROUP BY d.label
+      FROM (SELECT UNNEST(x_dc_type) AS d FROM merged_items)
+      WHERE d.x_label IS NOT NULL
+      GROUP BY d.x_label
       ORDER BY count DESC
       LIMIT 20
 
@@ -82,11 +82,11 @@ questions:
     question: "Top 20 dc:format labels by item count"
     backend: parquet
     query: |
-      SELECT f.label AS format,
+      SELECT f.x_label AS format,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM (SELECT UNNEST(formats) AS f FROM items)
-      WHERE f.label IS NOT NULL
-      GROUP BY f.label
+      FROM (SELECT UNNEST(x_dc_format) AS f FROM merged_items)
+      WHERE f.x_label IS NOT NULL
+      GROUP BY f.x_label
       ORDER BY count DESC
       LIMIT 20
