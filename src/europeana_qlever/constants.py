@@ -92,6 +92,11 @@ GRASP_PORT = 6789
 GRASP_WS_URL = "ws://localhost:6789/live"
 GRASP_MODEL = "openai/gpt-4.1-mini"
 
+# ---------------------------------------------------------------------------
+# Browser-based DuckDB explorer
+# ---------------------------------------------------------------------------
+EXPLORER_PORT = 1378
+
 QLEVER_INDEX_SETTINGS = {
     "languages-internal": [],
     "prefixes-external": [

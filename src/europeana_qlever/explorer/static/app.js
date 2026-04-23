@@ -1,10 +1,23 @@
-// Europeana Data Explorer — server-backed edition.
+// Europeana Data Explorer — reactive Preact + htm app.
 //
-// All queries run server-side in Python DuckDB. The browser just sends JSON
-// filter specs over fetch() and renders results with Chart.js.
+// State lives in the top-level <App>. Effects fetch from the JSON API and
+// AbortController cancels stale requests. Labels for any Europeana IRI are
+// resolved lazily via a shared, batched fetcher.
+
+import { h, render } from "https://esm.sh/preact@10";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "https://esm.sh/preact@10/hooks";
+import htm from "https://esm.sh/htm@3";
+
+const html = htm.bind(h);
 
 const TOP_VALUES_PER_FACET = 200;
-const DEBOUNCE_MS = 150;
+const SAMPLE_SIZE = 10;
 const EUROPEANA_PORTAL = "https://www.europeana.eu/";
 const EUROPEANA_DATA = "http://data.europeana.eu/";
 
@@ -12,37 +25,15 @@ const EUROPEANA_DATA = "http://data.europeana.eu/";
 // Utilities
 // ---------------------------------------------------------------------------
 
-const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat();
 const fmtN = (n) => (n == null ? "—" : fmt.format(Number(n)));
 
-function debounce(fn, ms) {
-  let t = null;
-  return (...args) => {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-
-function setLoading(show, text) {
-  const el = $("loading");
-  if (text) $("loading-text").textContent = text;
-  el.classList.toggle("hidden", !show);
-}
-
-function showError(message) {
-  const box = document.createElement("div");
-  box.className = "error";
-  box.textContent = message;
-  document.body.appendChild(box);
-  console.error(message);
-}
-
-async function api(path, body) {
+async function api(path, body, signal) {
   const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
+    signal,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -51,488 +42,649 @@ async function api(path, body) {
   return res.json();
 }
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
-let columns = [];          // [{name, type, category, min?, max?}]
-let columnByName = new Map();
-let totalCount = 0;
-let chart = null;
-let queryId = 0;
-let labelColumns = new Set();   // columns whose values can be resolved to labels
-const labelCache = new Map();   // iri → label (or "" when known to be unresolvable)
-
-const state = {
-  filters: {},              // { col: {kind, ...} }
-  groupBy: null,
-};
-
-// ---------------------------------------------------------------------------
-// Label lookup (lazy, server-resolved)
-// ---------------------------------------------------------------------------
-
-async function fetchLabels(values) {
-  if (!labelColumns.size) return;
-  const need = [];
-  const seen = new Set();
-  for (const v of values) {
-    if (typeof v !== "string" || !v) continue;
-    if (labelCache.has(v) || seen.has(v)) continue;
-    seen.add(v);
-    need.push(v);
-  }
-  if (!need.length) return;
-  try {
-    const res = await api("/api/labels", { values: need });
-    const labels = res.labels || {};
-    for (const v of need) {
-      labelCache.set(v, labels[v] ?? "");
-    }
-  } catch (e) {
-    // Mark as resolved-empty so we don't retry on every render.
-    for (const v of need) labelCache.set(v, "");
-    console.warn("label lookup failed", e);
-  }
-}
-
-function labelFor(value) {
-  if (typeof value !== "string") return "";
-  return labelCache.get(value) || "";
-}
-
-// ---------------------------------------------------------------------------
-// Facets
-// ---------------------------------------------------------------------------
-
-function renderFacets() {
-  const list = $("facets-list");
-  list.innerHTML = "";
-
-  const groupBySelect = $("group-by");
-  groupBySelect.innerHTML = "";
-
-  for (const c of columns) {
-    if (c.category === "skip") continue;
-    const el = document.createElement("div");
-    el.className = "facet";
-    el.dataset.col = c.name;
-    el.innerHTML = `
-      <h4>${c.name}<span class="count"></span></h4>
-      <div class="facet-body"></div>
-    `;
-    list.appendChild(el);
-    buildFacetBody(c, el.querySelector(".facet-body"));
-
-    if (c.category === "categorical" || c.category === "boolean") {
-      const opt = document.createElement("option");
-      opt.value = c.name;
-      opt.textContent = c.name;
-      groupBySelect.appendChild(opt);
-    }
-  }
-
-  if (!state.groupBy && groupBySelect.options.length) {
-    state.groupBy = groupBySelect.options[0].value;
-  }
-  if (state.groupBy) groupBySelect.value = state.groupBy;
-}
-
-function buildFacetBody(col, body) {
-  if (col.category === "boolean") {
-    const active = state.filters[col.name];
-    const mark = (v) => (active && active.kind === "bool" && active.value === v) ? "active" : "";
-    const anyMark = !active ? "active" : "";
-    body.innerHTML = `
-      <div class="toggle">
-        <button data-v="any" class="${anyMark}">Any</button>
-        <button data-v="true" class="${mark(true)}">True</button>
-        <button data-v="false" class="${mark(false)}">False</button>
-      </div>
-    `;
-    body.querySelectorAll("button").forEach((b) => {
-      b.addEventListener("click", () => {
-        body.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-        const v = b.dataset.v;
-        if (v === "any") delete state.filters[col.name];
-        else state.filters[col.name] = { kind: "bool", value: v === "true" };
-        triggerUpdate();
-      });
-    });
-  } else if (col.category === "numeric") {
-    const active = state.filters[col.name];
-    const lo = active?.min ?? col.min ?? 0;
-    const hi = active?.max ?? col.max ?? 0;
-    body.innerHTML = `
-      <div class="range">
-        <span class="muted">min</span>
-        <input type="number" class="min" value="${lo}" />
-        <span class="muted">max</span>
-        <input type="number" class="max" value="${hi}" />
-      </div>
-      <div class="muted" style="margin-top:4px">Data range ${fmtN(col.min)}–${fmtN(col.max)}</div>
-    `;
-    const commit = () => {
-      const min = body.querySelector(".min").value;
-      const max = body.querySelector(".max").value;
-      const minN = min === "" ? null : Number(min);
-      const maxN = max === "" ? null : Number(max);
-      if (minN == null && maxN == null) delete state.filters[col.name];
-      else state.filters[col.name] = { kind: "range", min: minN, max: maxN };
-      triggerUpdate();
-    };
-    body.querySelector(".min").addEventListener("change", commit);
-    body.querySelector(".max").addEventListener("change", commit);
-  } else {
-    body.innerHTML = `
-      <div class="facet-search-slot"></div>
-      <div class="facet-values muted">Waiting…</div>
-    `;
-  }
-}
-
-async function loadFacetValues(col) {
-  const facet = document.querySelector(`.facet[data-col="${col.name}"]`);
-  if (!facet) return;
-  const body = facet.querySelector(".facet-body");
-  const container = body.querySelector(".facet-values");
-  const searchSlot = body.querySelector(".facet-search-slot");
-  const countEl = facet.querySelector("h4 .count");
-
-  let cache = col._cache;
-  if (!cache) {
-    container.classList.add("muted");
-    container.textContent = "Loading top values…";
-    try {
-      const res = await api("/api/top-values", { col: col.name, limit: TOP_VALUES_PER_FACET });
-      cache = { rows: res.values, truncated: !!res.truncated };
-      col._cache = cache;
-    } catch (e) {
-      container.innerHTML = `<span class="muted">Failed: ${e.message}</span>`;
-      return;
-    }
-  }
-
-  if (countEl) {
-    countEl.textContent = cache.truncated
-      ? `${fmt.format(cache.rows.length)}+ values`
-      : `${fmt.format(cache.rows.length)} values`;
-  }
-  renderFacetValueList(col, container, cache.rows);
-
-  const matches = labelColumns.has(col.name)
-    ? (q, row) => {
-        const v = String(row.value ?? "").toLowerCase();
-        const l = labelFor(row.value).toLowerCase();
-        return v.includes(q) || (l && l.includes(q));
-      }
-    : (q, row) => String(row.value ?? "").toLowerCase().includes(q);
-
-  if (cache.truncated) {
-    searchSlot.innerHTML = '<input type="search" placeholder="Search top values…" />';
-    const searchInput = searchSlot.querySelector("input");
-    searchInput.addEventListener("input", () => {
-      const q = searchInput.value.toLowerCase();
-      const filtered = cache.rows.filter((r) => matches(q, r));
-      renderFacetValueList(col, container, filtered);
-    });
-  }
-
-  // Lazy-resolve labels for the visible top values, then re-render.
-  if (labelColumns.has(col.name)) {
-    await fetchLabels(cache.rows.map((r) => r.value));
-    // Re-render with the same currently-visible filter applied.
-    const searchInput = searchSlot.querySelector("input");
-    const q = searchInput ? searchInput.value.toLowerCase() : "";
-    const visible = q
-      ? cache.rows.filter((r) => matches(q, r))
-      : cache.rows;
-    renderFacetValueList(col, container, visible);
-  }
-}
-
-function renderFacetValueList(col, container, rows) {
-  container.innerHTML = "";
-  container.classList.remove("muted");
-  const selected = new Set(state.filters[col.name]?.values ?? []);
-  if (rows.length === 0) {
-    container.innerHTML = '<div class="muted">No values.</div>';
-    return;
-  }
-  const resolveLabels = labelColumns.has(col.name);
-  for (const r of rows) {
-    const v = r.value;
-    const raw = v == null ? "(null)" : String(v);
-    const resolved = resolveLabels ? labelFor(v) : "";
-    const display = resolved || raw;
-    const row = document.createElement("label");
-    row.className = "facet-value";
-    const checked = selected.has(v);
-    const title = resolved ? `${resolved}\n${raw}` : raw;
-    row.innerHTML = `
-      <input type="checkbox" ${checked ? "checked" : ""} />
-      <span class="fv-label" title="${title.replace(/"/g, "&quot;")}">${display}</span>
-      <span class="fv-count">${fmt.format(r.count)}</span>
-    `;
-    row.querySelector("input").addEventListener("change", (e) => {
-      const current = state.filters[col.name]?.values ?? [];
-      let next;
-      if (e.target.checked) next = [...current, v];
-      else next = current.filter((x) => x !== v);
-      if (next.length === 0) delete state.filters[col.name];
-      else state.filters[col.name] = { kind: "in", values: next };
-      triggerUpdate();
-    });
-    container.appendChild(row);
-  }
-}
-
-async function loadAllFacetValues() {
-  for (const c of columns) {
-    if (c.category === "categorical") {
-      await loadFacetValues(c);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Chart + summary
-// ---------------------------------------------------------------------------
-
-function renderChart(rows, groupBy) {
-  const useLabels = labelColumns.has(groupBy);
-  const labels = rows.map((r) => {
-    const raw = r.value == null ? "(null)" : String(r.value);
-    if (!useLabels) return raw;
-    return labelFor(r.value) || raw;
-  });
-  const data = rows.map((r) => r.count);
-  const ctx = $("chart").getContext("2d");
-
-  const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const grid = isDark ? "#1f2937" : "#e5e7eb";
-  const fg = isDark ? "#e5e7eb" : "#111418";
-  const bar = isDark ? "#60a5fa" : "#3b82f6";
-
-  if (chart) chart.destroy();
-  chart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: `count by ${groupBy}`,
-        data,
-        backgroundColor: bar,
-        borderWidth: 0,
-      }],
-    },
-    options: {
-      indexAxis: "y",
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` ${fmt.format(ctx.parsed.x)} items`,
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: { color: fg, callback: (v) => fmt.format(v) },
-          grid: { color: grid },
-        },
-        y: {
-          ticks: { color: fg, autoSkip: false },
-          grid: { display: false },
-        },
-      },
-      onClick: (_event, elements) => {
-        if (!elements.length) return;
-        const idx = elements[0].index;
-        toggleDrillDown(groupBy, rows[idx].value);
-      },
-    },
-  });
-}
-
-function toggleDrillDown(colName, rawValue) {
-  const col = columnByName.get(colName);
-  if (!col) return;
-  if (col.category === "boolean") {
-    state.filters[colName] = { kind: "bool", value: !!rawValue };
-  } else {
-    const current = state.filters[colName]?.values ?? [];
-    const exists = current.some((v) => v === rawValue);
-    const next = exists
-      ? current.filter((v) => v !== rawValue)
-      : [...current, rawValue];
-    if (next.length === 0) delete state.filters[colName];
-    else state.filters[colName] = { kind: "in", values: next };
-  }
-  renderFacets();
-  loadAllFacetValues();
-  triggerUpdate();
-}
-
-function renderSummary(filtered, countries, providers) {
-  $("card-total").textContent = fmtN(totalCount);
-  $("card-filtered").textContent = fmtN(filtered);
-  if (totalCount > 0) {
-    const pct = ((filtered / totalCount) * 100).toFixed(1);
-    $("card-filtered-pct").textContent = `${pct}% of total`;
-  } else {
-    $("card-filtered-pct").textContent = "";
-  }
-  $("card-countries").textContent = fmtN(countries);
-  $("card-providers").textContent = fmtN(providers);
-}
-
-// ---------------------------------------------------------------------------
-// Sample table
-// ---------------------------------------------------------------------------
-
 function europeanaLinkFor(iri) {
   if (typeof iri !== "string") return null;
   if (!iri.startsWith(EUROPEANA_DATA)) return null;
   return EUROPEANA_PORTAL + iri.substring(EUROPEANA_DATA.length);
 }
 
-function renderSample(rows) {
-  const host = $("sample-table");
-  if (!rows.length) {
-    host.textContent = "No rows matched the current filters.";
-    host.classList.add("muted");
-    return;
-  }
-  host.classList.remove("muted");
-  const cols = Object.keys(rows[0]);
-  const table = document.createElement("table");
-  table.className = "sample";
-  const thead = document.createElement("thead");
-  const trh = document.createElement("tr");
-  for (const c of cols) {
-    const th = document.createElement("th");
-    th.textContent = c;
-    trh.appendChild(th);
-  }
-  thead.appendChild(trh);
-  table.appendChild(thead);
-  const tbody = document.createElement("tbody");
-  for (const r of rows) {
-    const tr = document.createElement("tr");
-    for (const c of cols) {
-      const td = document.createElement("td");
-      const v = r[c];
-      if (c === "k_iri") {
-        const href = europeanaLinkFor(v);
-        if (href) {
-          const a = document.createElement("a");
-          a.href = href;
-          a.target = "_blank";
-          a.rel = "noopener noreferrer";
-          a.textContent = v;
-          td.appendChild(a);
-        } else {
-          td.textContent = v == null ? "" : String(v);
+function looksLikeEuropeanaIri(v) {
+  return typeof v === "string" && v.startsWith(EUROPEANA_DATA);
+}
+
+// ---------------------------------------------------------------------------
+// Shared label fetcher — batches IRI requests across components within a
+// 30 ms window and dedupes against a known set.
+// ---------------------------------------------------------------------------
+
+function useLabelFetcher() {
+  const [labels, setLabels] = useState({});
+  const pendingRef = useRef(new Set());
+  const knownRef = useRef(new Set());
+  const timerRef = useRef(null);
+
+  const requestLabels = useCallback((iris) => {
+    if (!iris) return;
+    let any = false;
+    for (const iri of iris) {
+      if (typeof iri !== "string" || !iri) continue;
+      if (knownRef.current.has(iri)) continue;
+      knownRef.current.add(iri);
+      pendingRef.current.add(iri);
+      any = true;
+    }
+    if (!any || timerRef.current) return;
+    timerRef.current = setTimeout(async () => {
+      timerRef.current = null;
+      const batch = Array.from(pendingRef.current);
+      pendingRef.current.clear();
+      try {
+        const res = await api("/api/labels", { values: batch });
+        if (res.labels && Object.keys(res.labels).length) {
+          setLabels((prev) => ({ ...prev, ...res.labels }));
         }
-      } else {
-        td.textContent = v == null ? "" : String(v);
+      } catch (e) {
+        console.warn("label fetch failed", e);
       }
-      td.title = v == null ? "" : String(v);
-      tr.appendChild(td);
+    }, 30);
+  }, []);
+
+  return [labels, requestLabels];
+}
+
+// ---------------------------------------------------------------------------
+// Cards
+// ---------------------------------------------------------------------------
+
+function Cards({ total, summary }) {
+  const filtered = summary ? summary.filtered : null;
+  const pct =
+    filtered != null && total > 0
+      ? `${((filtered / total) * 100).toFixed(1)}% of total`
+      : "";
+  return html`
+    <div class="cards">
+      <div class="card">
+        <div class="label">Total items</div>
+        <div class="value">${fmtN(total)}</div>
+      </div>
+      <div class="card">
+        <div class="label">Filtered</div>
+        <div class="value">${fmtN(filtered)}</div>
+        <div class="sub">${pct}</div>
+      </div>
+      <div class="card">
+        <div class="label">Countries</div>
+        <div class="value">${fmtN(summary?.countries)}</div>
+      </div>
+      <div class="card">
+        <div class="label">Data providers</div>
+        <div class="value">${fmtN(summary?.providers)}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Facets
+// ---------------------------------------------------------------------------
+
+function CategoricalFacet({ col, filters, setFilters, labels, requestLabels }) {
+  const [data, setData] = useState(null); // {rows, truncated} | null
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState(null);
+
+  // Top values for this column should reflect every *other* facet's filter.
+  const otherFilters = useMemo(() => {
+    const o = {};
+    for (const k of Object.keys(filters)) {
+      if (k !== col.name) o[k] = filters[k];
     }
-    tbody.appendChild(tr);
+    return o;
+  }, [filters, col.name]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setError(null);
+    api(
+      "/api/top-values",
+      { col: col.name, filters: otherFilters, limit: TOP_VALUES_PER_FACET },
+      ctrl.signal
+    )
+      .then((res) => setData({ rows: res.values, truncated: !!res.truncated }))
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e.message);
+      });
+    return () => ctrl.abort();
+  }, [col.name, otherFilters]);
+
+  useEffect(() => {
+    if (data) requestLabels(data.rows.map((r) => r.value));
+  }, [data, requestLabels]);
+
+  const selected = new Set(filters[col.name]?.values ?? []);
+
+  const matches = (q, row) => {
+    if (!q) return true;
+    const v = String(row.value ?? "").toLowerCase();
+    const lab = (labels[row.value] || "").toLowerCase();
+    return v.includes(q) || (lab && lab.includes(q));
+  };
+  const visible = data
+    ? data.rows.filter((r) => matches(search.toLowerCase(), r))
+    : [];
+
+  function toggle(value, checked) {
+    const cur = filters[col.name]?.values ?? [];
+    const next = checked ? [...cur, value] : cur.filter((v) => v !== value);
+    const f = { ...filters };
+    if (next.length === 0) delete f[col.name];
+    else f[col.name] = { kind: "in", values: next };
+    setFilters(f);
   }
-  table.appendChild(tbody);
-  host.innerHTML = "";
-  host.appendChild(table);
+
+  return html`
+    <div class="facet">
+      <h4>
+        ${col.name}
+        <span class="count">
+          ${data
+            ? data.truncated
+              ? `${fmt.format(data.rows.length)}+ values`
+              : `${fmt.format(data.rows.length)} values`
+            : ""}
+        </span>
+      </h4>
+      ${data && data.truncated
+        ? html`<input
+            type="search"
+            placeholder="Search top values…"
+            value=${search}
+            onInput=${(e) => setSearch(e.target.value)}
+          />`
+        : null}
+      <div class="facet-values">
+        ${error
+          ? html`<div class="muted">Failed: ${error}</div>`
+          : !data
+          ? html`<div class="muted">Loading…</div>`
+          : visible.length === 0
+          ? html`<div class="muted">No values.</div>`
+          : visible.map((r) => {
+              const lab = labels[r.value] || "";
+              const raw = r.value == null ? "(null)" : String(r.value);
+              const display = lab || raw;
+              const title = lab ? `${lab}\n${raw}` : raw;
+              return html`
+                <label class="facet-value" key=${r.value}>
+                  <input
+                    type="checkbox"
+                    checked=${selected.has(r.value)}
+                    onChange=${(e) => toggle(r.value, e.target.checked)}
+                  />
+                  <span class="fv-label" title=${title}>${display}</span>
+                  <span class="fv-count">${fmt.format(r.count)}</span>
+                </label>
+              `;
+            })}
+      </div>
+    </div>
+  `;
 }
 
-async function loadSample() {
-  const btn = $("sample-btn");
-  btn.disabled = true;
-  const host = $("sample-table");
-  host.textContent = "Loading sample…";
-  host.classList.add("muted");
-  try {
-    const res = await api("/api/sample", { filters: state.filters, n: 10 });
-    renderSample(res.rows);
-  } catch (e) {
-    host.textContent = `Sample failed: ${e.message}`;
-  } finally {
-    btn.disabled = false;
+function BooleanFacet({ col, filters, setFilters }) {
+  const active = filters[col.name];
+  const cls = (kind) => {
+    if (kind === "any") return !active ? "active" : "";
+    if (kind === "true") return active && active.value === true ? "active" : "";
+    return active && active.value === false ? "active" : "";
+  };
+  function set(kind) {
+    const f = { ...filters };
+    if (kind === "any") delete f[col.name];
+    else f[col.name] = { kind: "bool", value: kind === "true" };
+    setFilters(f);
   }
+  return html`
+    <div class="facet">
+      <h4>${col.name}</h4>
+      <div class="toggle">
+        <button class=${cls("any")} onClick=${() => set("any")}>Any</button>
+        <button class=${cls("true")} onClick=${() => set("true")}>True</button>
+        <button class=${cls("false")} onClick=${() => set("false")}>False</button>
+      </div>
+    </div>
+  `;
 }
 
-// ---------------------------------------------------------------------------
-// Orchestration
-// ---------------------------------------------------------------------------
+function NumericFacet({ col, filters, setFilters }) {
+  const active = filters[col.name];
+  const [lo, setLo] = useState(active?.min ?? col.min ?? 0);
+  const [hi, setHi] = useState(active?.max ?? col.max ?? 0);
 
-const triggerUpdate = debounce(update, DEBOUNCE_MS);
-
-async function update() {
-  const myId = ++queryId;
-  try {
-    const res = await api("/api/summary", {
-      filters: state.filters,
-      group_by: state.groupBy,
-    });
-    if (myId !== queryId) return;
-    renderSummary(res.filtered, res.countries, res.providers);
-    renderChart(res.chart, state.groupBy);
-    // Lazy-resolve labels for the chart bars and re-render once they arrive.
-    if (labelColumns.has(state.groupBy)) {
-      await fetchLabels(res.chart.map((r) => r.value));
-      if (myId !== queryId) return;
-      renderChart(res.chart, state.groupBy);
+  // Reset local inputs when the filter is cleared from outside.
+  useEffect(() => {
+    if (!active) {
+      setLo(col.min ?? 0);
+      setHi(col.max ?? 0);
     }
-  } catch (e) {
-    showError(`Query failed: ${e.message}`);
+  }, [active, col.min, col.max]);
+
+  function commit() {
+    const min = lo === "" ? null : Number(lo);
+    const max = hi === "" ? null : Number(hi);
+    const f = { ...filters };
+    if (min == null && max == null) delete f[col.name];
+    else f[col.name] = { kind: "range", min, max };
+    setFilters(f);
   }
+
+  return html`
+    <div class="facet">
+      <h4>${col.name}</h4>
+      <div class="range">
+        <span class="muted">min</span>
+        <input
+          type="number"
+          class="min"
+          value=${lo}
+          onInput=${(e) => setLo(e.target.value)}
+          onChange=${commit}
+        />
+        <span class="muted">max</span>
+        <input
+          type="number"
+          class="max"
+          value=${hi}
+          onInput=${(e) => setHi(e.target.value)}
+          onChange=${commit}
+        />
+      </div>
+      <div class="muted" style="margin-top:4px">
+        Data range ${fmtN(col.min)}–${fmtN(col.max)}
+      </div>
+    </div>
+  `;
 }
 
-function clearFilters() {
-  for (const k of Object.keys(state.filters)) delete state.filters[k];
-  renderFacets();
-  loadAllFacetValues();
-  triggerUpdate();
+function FacetSidebar({ schema, filters, setFilters, labels, requestLabels }) {
+  return html`
+    <aside id="facets">
+      <div class="facets-header">
+        Filters
+        <button class="subtle" onClick=${() => setFilters({})}>clear all</button>
+      </div>
+      ${schema.columns
+        .filter((c) => c.category !== "skip")
+        .map((col) => {
+          if (col.category === "categorical") {
+            return html`<${CategoricalFacet}
+              key=${col.name}
+              col=${col}
+              filters=${filters}
+              setFilters=${setFilters}
+              labels=${labels}
+              requestLabels=${requestLabels}
+            />`;
+          }
+          if (col.category === "boolean") {
+            return html`<${BooleanFacet}
+              key=${col.name}
+              col=${col}
+              filters=${filters}
+              setFilters=${setFilters}
+            />`;
+          }
+          if (col.category === "numeric") {
+            return html`<${NumericFacet}
+              key=${col.name}
+              col=${col}
+              filters=${filters}
+              setFilters=${setFilters}
+            />`;
+          }
+          return null;
+        })}
+    </aside>
+  `;
 }
 
 // ---------------------------------------------------------------------------
-// Boot
+// Chart
 // ---------------------------------------------------------------------------
 
-async function main() {
-  try {
-    setLoading(true, "Connecting to server…");
-    const schema = await api("/api/schema");
-    columns = schema.columns;
-    columnByName = new Map(columns.map((c) => [c.name, c]));
-    totalCount = schema.total;
-    labelColumns = new Set(schema.label_columns || []);
+function ChartView({ summary, groupBy, labels, onBarClick }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  const onClickRef = useRef(onBarClick);
 
-    renderFacets();
+  // Keep latest click handler reachable from the long-lived Chart.js instance.
+  useEffect(() => {
+    onClickRef.current = onBarClick;
+  }, [onBarClick]);
 
-    $("group-by").addEventListener("change", (e) => {
-      state.groupBy = e.target.value;
-      triggerUpdate();
+  // Create / destroy on groupBy change.
+  useEffect(() => {
+    if (!canvasRef.current || !groupBy) return;
+    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const grid = isDark ? "#1f2937" : "#e5e7eb";
+    const fg = isDark ? "#e5e7eb" : "#111418";
+    const bar = isDark ? "#60a5fa" : "#3b82f6";
+    chartRef.current = new Chart(canvasRef.current.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: `count by ${groupBy}`,
+            data: [],
+            backgroundColor: bar,
+            borderWidth: 0,
+          },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${fmt.format(ctx.parsed.x)} items`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: fg, callback: (v) => fmt.format(v) },
+            grid: { color: grid },
+          },
+          y: {
+            ticks: { color: fg, autoSkip: false },
+            grid: { display: false },
+          },
+        },
+        onClick: (_evt, els) => {
+          if (!els.length) return;
+          onClickRef.current(els[0].index);
+        },
+      },
     });
-    $("sample-btn").addEventListener("click", loadSample);
-    $("clear-filters").addEventListener("click", clearFilters);
+    return () => {
+      chartRef.current?.destroy();
+      chartRef.current = null;
+    };
+  }, [groupBy]);
 
-    await update();
-    setLoading(false);
+  // Push new data when summary or labels change.
+  useEffect(() => {
+    if (!chartRef.current || !summary) return;
+    chartRef.current.data.labels = summary.chart.map((r) => {
+      const raw = r.value == null ? "(null)" : String(r.value);
+      return labels[r.value] || raw;
+    });
+    chartRef.current.data.datasets[0].data = summary.chart.map((r) => r.count);
+    chartRef.current.update();
+  }, [summary, labels]);
 
-    // Populate facet checklists in the background after the chart is up.
-    loadAllFacetValues();
-  } catch (e) {
-    setLoading(false);
-    showError(`Startup failed: ${e.message}`);
-    console.error(e);
-  }
+  return html`<div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>`;
 }
 
-main();
+// ---------------------------------------------------------------------------
+// Sample table
+// ---------------------------------------------------------------------------
+
+function SampleTable({ filters, labels, requestLabels }) {
+  const [rows, setRows] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api("/api/sample", { filters, n: SAMPLE_SIZE });
+      setRows(res.rows);
+      const iris = [];
+      for (const row of res.rows) {
+        for (const v of Object.values(row)) {
+          if (looksLikeEuropeanaIri(v)) iris.push(v);
+        }
+      }
+      requestLabels(iris);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  let body;
+  if (error) body = html`<div class="muted">Sample failed: ${error}</div>`;
+  else if (rows == null)
+    body = html`<div class="muted">Click the button above to load samples.</div>`;
+  else if (rows.length === 0)
+    body = html`<div class="muted">No rows matched the current filters.</div>`;
+  else body = html`<${SampleRows} rows=${rows} labels=${labels} />`;
+
+  return html`
+    <div class="sample-wrap">
+      <div class="sample-header">
+        <h3>Sample rows</h3>
+        <button class="primary" onClick=${load} disabled=${loading}>
+          ${loading ? "Loading…" : `Load ${SAMPLE_SIZE} random samples`}
+        </button>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+
+function SampleRows({ rows, labels }) {
+  const cols = Object.keys(rows[0]);
+  return html`
+    <table class="sample">
+      <thead>
+        <tr>${cols.map((c) => html`<th key=${c}>${c}</th>`)}</tr>
+      </thead>
+      <tbody>
+        ${rows.map(
+          (r, i) => html`
+            <tr key=${i}>
+              ${cols.map((c) => {
+                const v = r[c];
+                const lab = (typeof v === "string" && labels[v]) || "";
+                const display = lab || (v == null ? "" : String(v));
+                const title = lab ? `${lab}\n${v}` : v == null ? "" : String(v);
+                const href = c === "k_iri" ? europeanaLinkFor(v) : null;
+                if (href) {
+                  return html`<td key=${c} title=${title}>
+                    <a href=${href} target="_blank" rel="noopener noreferrer">
+                      ${display}
+                    </a>
+                  </td>`;
+                }
+                return html`<td key=${c} title=${title}>${display}</td>`;
+              })}
+            </tr>
+          `
+        )}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// View (toolbar + chart + sample)
+// ---------------------------------------------------------------------------
+
+function View({
+  schema,
+  summary,
+  groupBy,
+  setGroupBy,
+  filters,
+  setFilters,
+  labels,
+  requestLabels,
+}) {
+  const groupByOptions = useMemo(
+    () =>
+      schema.columns.filter(
+        (c) => c.category === "categorical" || c.category === "boolean"
+      ),
+    [schema]
+  );
+
+  const onBarClick = useCallback(
+    (idx) => {
+      if (!summary || !summary.chart[idx]) return;
+      const value = summary.chart[idx].value;
+      const col = groupBy;
+      const colDef = schema.columns.find((c) => c.name === col);
+      const f = { ...filters };
+      if (colDef?.category === "boolean") {
+        f[col] = { kind: "bool", value: !!value };
+      } else {
+        const cur = f[col]?.values ?? [];
+        const exists = cur.some((x) => x === value);
+        const next = exists
+          ? cur.filter((x) => x !== value)
+          : [...cur, value];
+        if (next.length === 0) delete f[col];
+        else f[col] = { kind: "in", values: next };
+      }
+      setFilters(f);
+    },
+    [summary, groupBy, filters, schema, setFilters]
+  );
+
+  return html`
+    <section id="view">
+      <div class="toolbar">
+        <label>
+          Group by
+          <select
+            value=${groupBy ?? ""}
+            onChange=${(e) => setGroupBy(e.target.value)}
+          >
+            ${groupByOptions.map(
+              (c) => html`<option key=${c.name} value=${c.name}>${c.name}</option>`
+            )}
+          </select>
+        </label>
+      </div>
+      <${ChartView}
+        summary=${summary}
+        groupBy=${groupBy}
+        labels=${labels}
+        onBarClick=${onBarClick}
+      />
+      <${SampleTable}
+        filters=${filters}
+        labels=${labels}
+        requestLabels=${requestLabels}
+      />
+    </section>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// App root
+// ---------------------------------------------------------------------------
+
+function App() {
+  const [schema, setSchema] = useState(null);
+  const [schemaError, setSchemaError] = useState(null);
+  const [filters, setFilters] = useState({});
+  const [groupBy, setGroupBy] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [labels, requestLabels] = useLabelFetcher();
+
+  // Load schema once.
+  useEffect(() => {
+    let alive = true;
+    api("/api/schema")
+      .then((s) => {
+        if (!alive) return;
+        setSchema(s);
+        const first = s.columns.find(
+          (c) => c.category === "categorical" || c.category === "boolean"
+        );
+        if (first) setGroupBy(first.name);
+      })
+      .catch((e) => {
+        if (alive) setSchemaError(e.message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Fetch summary when filters or groupBy change.
+  useEffect(() => {
+    if (!groupBy) return;
+    const ctrl = new AbortController();
+    api(
+      "/api/summary",
+      { filters, group_by: groupBy },
+      ctrl.signal
+    )
+      .then((s) => setSummary(s))
+      .catch((e) => {
+        if (e.name !== "AbortError") console.error("summary failed", e);
+      });
+    return () => ctrl.abort();
+  }, [filters, groupBy]);
+
+  // Lazy-resolve labels for chart bars.
+  useEffect(() => {
+    if (summary?.chart) requestLabels(summary.chart.map((r) => r.value));
+  }, [summary, requestLabels]);
+
+  if (schemaError) {
+    return html`<div class="error">Startup failed: ${schemaError}</div>`;
+  }
+  if (!schema) {
+    return html`
+      <div class="loading">
+        <div class="loading-box">
+          <div class="spinner"></div>
+          <div>Connecting to server…</div>
+          <div class="sub">
+            Queries run server-side against DuckDB over the local Parquet file.
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return html`
+    <header>
+      <div class="title">Europeana Data Explorer</div>
+      <${Cards} total=${schema.total} summary=${summary} />
+    </header>
+    <main>
+      <${FacetSidebar}
+        schema=${schema}
+        filters=${filters}
+        setFilters=${setFilters}
+        labels=${labels}
+        requestLabels=${requestLabels}
+      />
+      <${View}
+        schema=${schema}
+        summary=${summary}
+        groupBy=${groupBy}
+        setGroupBy=${setGroupBy}
+        filters=${filters}
+        setFilters=${setFilters}
+        labels=${labels}
+        requestLabels=${requestLabels}
+      />
+    </main>
+  `;
+}
+
+render(html`<${App} />`, document.getElementById("app"));

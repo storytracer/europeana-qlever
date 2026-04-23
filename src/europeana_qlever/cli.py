@@ -2273,11 +2273,46 @@ def grasp_stop(ctx: click.Context):
 # explore
 # ---------------------------------------------------------------------------
 
+def _kill_listener_on(port: int) -> None:
+    """Terminate any process currently listening on ``port``."""
+    import psutil
+
+    victims: list[psutil.Process] = []
+    for conn in psutil.net_connections(kind="inet"):
+        if (
+            conn.status == psutil.CONN_LISTEN
+            and conn.laddr
+            and conn.laddr.port == port
+            and conn.pid
+        ):
+            try:
+                victims.append(psutil.Process(conn.pid))
+            except psutil.NoSuchProcess:
+                pass
+
+    for proc in victims:
+        try:
+            display.console.print(
+                f"[yellow]Killing existing listener on :{port} "
+                f"(pid={proc.pid}, {proc.name()})[/yellow]"
+            )
+            proc.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    gone, alive = psutil.wait_procs(victims, timeout=3)
+    for proc in alive:
+        try:
+            display.console.print(
+                f"[red]pid={proc.pid} did not exit on SIGTERM, "
+                "sending SIGKILL[/red]"
+            )
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+
 @cli.command()
-@click.option(
-    "--port", default=1378, show_default=True, type=int,
-    help="Local port (tries the next 20 if busy).",
-)
 @click.option(
     "--no-open", is_flag=True, default=False,
     help="Don't auto-open the browser.",
@@ -2288,18 +2323,21 @@ def grasp_stop(ctx: click.Context):
          "If omitted, the local {work_dir}/exports/group_items.parquet is served.",
 )
 @click.pass_context
-def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
+def explore(ctx: click.Context, no_open: bool, data_url: str | None):
     """Launch a local server-backed DuckDB explorer over group_items.parquet.
 
     A small threaded HTTP server serves the bundled single-page app and
     answers /api/* JSON queries from a shared DuckDB connection over the
-    local (or remote) Parquet file. Runs until Ctrl+C.
+    local (or remote) Parquet file. Always binds to the fixed
+    EXPLORER_PORT (constants.py); any prior listener on that port is
+    killed first. Runs until Ctrl+C.
     """
     import webbrowser
     from threading import Thread
 
+    from .constants import EXPLORER_PORT
     from .explorer import static_dir
-    from .explorer.server import ExplorerEngine, find_free_port, serve
+    from .explorer.server import ExplorerEngine, serve
 
     exports_dir: Path = ctx.obj["exports_dir"]
     budget = ctx.obj["budget"]
@@ -2320,16 +2358,7 @@ def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
         parquet_source = str(parquet_path)
         data_banner = f"local: {parquet_path}"
 
-    organizations_path = exports_dir / "values_foaf_Organization.parquet"
-    organizations_source = (
-        str(organizations_path) if organizations_path.exists() else None
-    )
-
-    try:
-        bound_port = find_free_port(port, attempts=20)
-    except OSError as e:
-        display.console.print(f"[red]{e}[/red]")
-        raise SystemExit(1)
+    _kill_listener_on(EXPLORER_PORT)
 
     display.console.print(f"[bold]Europeana Data Explorer[/bold]")
     display.console.print(f"  static : {display.short_path(static_root)}")
@@ -2344,24 +2373,32 @@ def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
             parquet_source,
             memory_limit=budget.duckdb_memory(),
             threads=budget.duckdb_threads(),
-            organizations_parquet=organizations_source,
+            exports_dir=exports_dir,
         )
     except Exception as e:
         display.console.print(f"[red]Failed to open {data_banner}: {e}[/red]")
         raise SystemExit(1)
 
-    if organizations_source:
-        display.console.print(
-            f"  labels : {display.short_path(organizations_path)}"
-        )
+    sources = engine.schema_payload()["iri_sources"]
+    if sources:
+        names = ", ".join(s["name"] for s in sources)
+        display.console.print(f"  labels : {names}")
     else:
         display.console.print(
-            "  labels : [dim]values_foaf_Organization.parquet not found — "
-            "provider labels disabled[/dim]"
+            "  labels : [dim]no entity parquets found — "
+            "IRI labels disabled[/dim]"
         )
 
-    server = serve(static_root, engine, bound_port)
-    url = f"http://localhost:{bound_port}/"
+    try:
+        server = serve(static_root, engine, EXPLORER_PORT)
+    except OSError as e:
+        display.console.print(
+            f"[red]Could not bind to :{EXPLORER_PORT}: {e}[/red]"
+        )
+        engine.close()
+        raise SystemExit(1)
+
+    url = f"http://localhost:{EXPLORER_PORT}/"
 
     display.console.print(
         f"  rows   : {engine.total_count:,} across {len(engine.columns)} columns"

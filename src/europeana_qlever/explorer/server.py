@@ -8,7 +8,7 @@ DuckDB connection:
 - ``POST /api/summary``    → filtered count, chart bars, distinct-count cards
 - ``POST /api/top-values`` → facet values for a column
 - ``POST /api/sample``     → N random rows matching filters
-- ``POST /api/labels``     → resolve organisation IRIs to skos:prefLabel
+- ``POST /api/labels``     → resolve any known Europeana IRI to a label
 
 All user-supplied values are bound as DuckDB parameters. Column identifiers
 are whitelisted against the schema before being spliced into SQL.
@@ -23,6 +23,7 @@ import socketserver
 import threading
 import traceback
 import urllib.parse
+from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -38,9 +39,85 @@ _MAX_BODY_BYTES = 1_000_000
 _CHART_LIMIT = 30
 _MAX_LABEL_LOOKUP = 1_000
 
-# Columns whose values are organisation IRIs that can be resolved to
-# human-readable labels via the values_foaf_Organization parquet.
-_LABEL_RESOLVABLE_COLUMNS = ("v_edm_dataProvider", "v_edm_provider")
+
+# ---------------------------------------------------------------------------
+# IRI label resolution
+# ---------------------------------------------------------------------------
+
+# All Europeana entity tables share the same shape: k_iri, v_skos_prefLabel,
+# x_prefLabel_lang. A single SQL template handles all of them.
+_ENTITY_LABEL_SQL = (
+    "SELECT k_iri, ARG_MIN(v_skos_prefLabel, "
+    "CASE WHEN x_prefLabel_lang = 'en' THEN 0 "
+    "WHEN COALESCE(x_prefLabel_lang, '') = '' THEN 1 "
+    "ELSE 2 END) AS label "
+    "FROM {view} WHERE k_iri IN ({placeholders}) GROUP BY k_iri"
+)
+
+# CHO titles need a Proxy → CHO join because dc:title hangs off the
+# provider proxy IRI, but we want to look up by the CHO (item) IRI.
+_CHO_TITLE_VIEW_SQL = (
+    "CREATE VIEW {view} AS "
+    "SELECT p.k_iri_cho AS k_iri, t.x_value AS label, "
+    "t.x_value_lang AS lang "
+    "FROM read_parquet('{proxies}') p "
+    "JOIN read_parquet('{titles}') t ON t.k_iri = p.k_iri "
+    "WHERE p.v_edm_europeanaProxy = 'false'"
+)
+
+_CHO_TITLE_LOOKUP_SQL = (
+    "SELECT k_iri, ARG_MIN(label, "
+    "CASE WHEN lang = 'en' THEN 0 "
+    "WHEN COALESCE(lang, '') = '' THEN 1 "
+    "ELSE 2 END) AS label "
+    "FROM {view} WHERE k_iri IN ({placeholders}) GROUP BY k_iri"
+)
+
+
+@dataclass
+class _IRISource:
+    """One IRI-prefix → DuckDB-view label resolver."""
+    name: str
+    view: str
+    iri_prefix: str
+    lookup_sql_template: str
+
+    def lookup_sql(self, n: int) -> str:
+        placeholders = ", ".join(["?"] * n)
+        return self.lookup_sql_template.format(
+            view=self.view, placeholders=placeholders
+        )
+
+
+def _entity_source(parquet: str, view: str, prefix: str) -> _IRISource:
+    return _IRISource(
+        name=view,
+        view=view,
+        iri_prefix=prefix,
+        lookup_sql_template=_ENTITY_LABEL_SQL,
+    )
+
+
+# Standard Europeana entity tables. Registered if the corresponding
+# {view}.parquet file exists in the exports directory.
+_ENTITY_TABLES = (
+    # (parquet filename, view name, IRI prefix)
+    ("values_foaf_Organization.parquet", "organizations",
+     "http://data.europeana.eu/organization/"),
+    ("values_edm_Agent.parquet", "agents",
+     "http://data.europeana.eu/agent/"),
+    ("values_edm_Place.parquet", "places",
+     "http://data.europeana.eu/place/"),
+    ("values_skos_Concept.parquet", "concepts",
+     "http://data.europeana.eu/concept/"),
+    ("values_edm_TimeSpan.parquet", "timespans",
+     "http://data.europeana.eu/timespan/"),
+)
+
+# CHO titles need both the proxies table and the dc:title link partition.
+_CHO_PROXIES = "values_ore_Proxy.parquet"
+_CHO_TITLES = "links_ore_Proxy/x_property=v_dc_title/data.parquet"
+_CHO_PREFIX = "http://data.europeana.eu/item/"
 
 
 class ExplorerEngine:
@@ -52,7 +129,7 @@ class ExplorerEngine:
         *,
         memory_limit: str = "4GB",
         threads: int = 2,
-        organizations_parquet: str | None = None,
+        exports_dir: Path | None = None,
     ) -> None:
         self.lock = threading.Lock()
         self.con = duckdb.connect()
@@ -85,16 +162,38 @@ class ExplorerEngine:
 
         self._load_numeric_ranges()
 
-        self.label_columns: list[str] = []
-        if organizations_parquet:
-            escaped_orgs = organizations_parquet.replace("'", "''")
+        self.iri_sources: list[_IRISource] = []
+        if exports_dir is not None:
+            self._register_iri_sources(exports_dir)
+
+    def _register_iri_sources(self, exports_dir: Path) -> None:
+        for filename, view, prefix in _ENTITY_TABLES:
+            path = exports_dir / filename
+            if not path.exists():
+                continue
+            escaped = str(path).replace("'", "''")
             self.con.execute(
-                "CREATE VIEW organizations AS "
-                f"SELECT * FROM read_parquet('{escaped_orgs}')"
+                f"CREATE VIEW {view} AS SELECT * FROM read_parquet('{escaped}')"
             )
-            self.label_columns = [
-                c for c in _LABEL_RESOLVABLE_COLUMNS if c in self.column_set
-            ]
+            self.iri_sources.append(_entity_source(filename, view, prefix))
+
+        proxies = exports_dir / _CHO_PROXIES
+        titles = exports_dir / _CHO_TITLES
+        if proxies.exists() and titles.exists():
+            view = "cho_titles"
+            self.con.execute(
+                _CHO_TITLE_VIEW_SQL.format(
+                    view=view,
+                    proxies=str(proxies).replace("'", "''"),
+                    titles=str(titles).replace("'", "''"),
+                )
+            )
+            self.iri_sources.append(_IRISource(
+                name=view,
+                view=view,
+                iri_prefix=_CHO_PREFIX,
+                lookup_sql_template=_CHO_TITLE_LOOKUP_SQL,
+            ))
 
     # -- startup ---------------------------------------------------------
 
@@ -150,35 +249,48 @@ class ExplorerEngine:
         return {
             "total": self.total_count,
             "columns": self.columns,
-            "label_columns": list(self.label_columns),
+            "iri_sources": [
+                {"name": s.name, "prefix": s.iri_prefix}
+                for s in self.iri_sources
+            ],
         }
 
     def resolve_labels(self, values: list[str]) -> dict:
-        if not self.label_columns:
+        if not self.iri_sources:
             return {"labels": {}}
-        iris = [v for v in values if isinstance(v, str) and v]
-        if not iris:
-            return {"labels": {}}
-        if len(iris) > _MAX_LABEL_LOOKUP:
-            iris = iris[:_MAX_LABEL_LOOKUP]
-        # Dedupe while preserving order.
+        # Dedupe while preserving order; cap input.
         seen: dict[str, None] = {}
-        for v in iris:
-            seen.setdefault(v, None)
+        for v in values:
+            if isinstance(v, str) and v:
+                seen.setdefault(v, None)
+            if len(seen) >= _MAX_LABEL_LOOKUP:
+                break
         unique = list(seen.keys())
-        placeholders = ", ".join(["?"] * len(unique))
-        # Prefer English labels, then unspecified language, then anything else.
-        sql = (
-            "SELECT k_iri, ARG_MIN(v_skos_prefLabel, "
-            "CASE WHEN x_prefLabel_lang = 'en' THEN 0 "
-            "WHEN COALESCE(x_prefLabel_lang, '') = '' THEN 1 "
-            "ELSE 2 END) AS label "
-            f"FROM organizations WHERE k_iri IN ({placeholders}) "
-            "GROUP BY k_iri"
-        )
+        if not unique:
+            return {"labels": {}}
+
+        # Partition by source prefix; IRIs that don't match any source
+        # are silently dropped (returned absent).
+        partitions: dict[str, list[str]] = {}
+        for iri in unique:
+            for source in self.iri_sources:
+                if iri.startswith(source.iri_prefix):
+                    partitions.setdefault(source.name, []).append(iri)
+                    break
+
+        out: dict[str, str] = {}
         with self.lock:
-            rows = self.con.execute(sql, unique).fetchall()
-        return {"labels": {iri: label for iri, label in rows if label}}
+            for source in self.iri_sources:
+                iris = partitions.get(source.name)
+                if not iris:
+                    continue
+                rows = self.con.execute(
+                    source.lookup_sql(len(iris)), iris
+                ).fetchall()
+                for iri, label in rows:
+                    if label:
+                        out[iri] = label
+        return {"labels": out}
 
     def summary(self, filters: dict, group_by: str) -> dict:
         if group_by not in self.column_set:
@@ -487,17 +599,6 @@ def make_handler(
 class ThreadedServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
-
-
-def find_free_port(start: int, attempts: int = 20) -> int:
-    for port in range(start, start + attempts):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            try:
-                sock.bind(("127.0.0.1", port))
-            except OSError:
-                continue
-            return port
-    raise OSError(f"No free port in range {start}..{start + attempts - 1}")
 
 
 def serve(

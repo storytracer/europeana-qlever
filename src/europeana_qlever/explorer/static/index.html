@@ -8,50 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
-<header>
-  <div class="title">Europeana Data Explorer</div>
-  <div class="cards">
-    <div class="card"><div class="label">Total items</div><div class="value" id="card-total">…</div></div>
-    <div class="card"><div class="label">Filtered</div><div class="value" id="card-filtered">…</div><div class="sub" id="card-filtered-pct"></div></div>
-    <div class="card"><div class="label">Countries</div><div class="value" id="card-countries">…</div></div>
-    <div class="card"><div class="label">Data providers</div><div class="value" id="card-providers">…</div></div>
-  </div>
-</header>
-
-<main>
-  <aside id="facets">
-    <div class="facets-header">Filters <button id="clear-filters" class="subtle">clear all</button></div>
-    <div id="facets-list"><div class="muted">Loading schema…</div></div>
-  </aside>
-
-  <section id="view">
-    <div class="toolbar">
-      <label>Group by
-        <select id="group-by"></select>
-      </label>
-      <span class="grow"></span>
-      <button id="sample-btn" class="primary">Load 10 random samples</button>
-    </div>
-
-    <div class="chart-wrap">
-      <canvas id="chart"></canvas>
-    </div>
-
-    <div class="sample-wrap">
-      <h3>Sample rows</h3>
-      <div id="sample-table" class="muted">Click the button above to load samples.</div>
-    </div>
-  </section>
-</main>
-
-<div id="loading" class="loading">
-  <div class="loading-box">
-    <div class="spinner"></div>
-    <div id="loading-text">Connecting to server…</div>
-    <div class="sub" id="loading-sub">Queries run server-side against DuckDB over the local Parquet file.</div>
-  </div>
-</div>
-
+<div id="app"></div>
 <script type="module" src="app.js"></script>
 </body>
 </html>

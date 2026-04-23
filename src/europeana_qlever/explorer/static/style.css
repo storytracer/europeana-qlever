@@ -47,6 +47,13 @@ body {
   overflow: hidden;
 }
 
+#app {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 header {
   display: flex;
   align-items: center;
@@ -96,8 +103,8 @@ main {
 }
 
 aside#facets {
-  width: 280px;
-  flex: 0 0 280px;
+  width: 380px;
+  flex: 0 0 380px;
   border-right: 1px solid var(--border);
   overflow-y: auto;
   padding: 12px;
@@ -299,13 +306,21 @@ button.subtle:hover { color: var(--fg); border-color: var(--fg); }
   flex: 0 0 auto;
 }
 
-.sample-wrap h3 {
-  margin: 0 0 6px 0;
+.sample-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.sample-header h3 {
+  margin: 0;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
+  flex: 1;
 }
 
 table.sample {
