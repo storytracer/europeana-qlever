@@ -47,6 +47,7 @@ prefixes:
   schema: http://schema.org/
   skos: http://www.w3.org/2004/02/skos/core#
   svcs: http://rdfs.org/sioc/services#
+  view: https://qlever.cs.uni-freiburg.de/materializedView/
   wgs84_pos: http://www.w3.org/2003/01/geo/wgs84_pos#
   xsd: http://www.w3.org/2001/XMLSchema#
 
@@ -161,6 +162,7 @@ classes:
       export_sets: "pipeline,raw"
       sparql_base_pattern: "?k_iri a edm:ProvidedCHO ."
       required_prefixes: "edm"
+      sample_subject_variable: "k_iri"
     attributes:
       k_iri:
         range: uri
@@ -186,6 +188,7 @@ classes:
       export_sets: "pipeline,raw"
       sparql_base_pattern: "?k_iri ore:proxyFor ?k_iri_cho ."
       required_prefixes: "edm,ore"
+      sample_subject_variable: "k_iri_cho"
     attributes:
       k_iri:
         range: uri
@@ -254,6 +257,7 @@ classes:
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri ore:proxyFor ?_cho ."
       required_prefixes: "dc,dcterms,edm,ore,owl,skos"
+      sample_subject_variable: "_cho"
       # Comma-separated list of multi-valued EDM properties.
       # Each produces one intermediate SPARQL scan.
       link_properties: >-
@@ -306,6 +310,7 @@ classes:
       # (provider aggregations have dataProvider, EuropeanaAggregation does not).
       sparql_extra: "?k_iri edm:dataProvider ?v_edm_dataProvider ."
       required_prefixes: "dcterms,edm,ore"
+      sample_subject_variable: "k_iri_cho"
     attributes:
       k_iri:
         range: uri
@@ -388,6 +393,7 @@ classes:
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri edm:aggregatedCHO ?_cho . ?k_iri edm:dataProvider ?_dp ."
       required_prefixes: "dc,dqv,edm,ore"
+      sample_subject_variable: "_cho"
       link_properties: >-
         dc:rights, dqv:hasQualityAnnotation, edm:hasView,
         edm:intermediateProvider
@@ -414,6 +420,7 @@ classes:
       sparql_base_pattern: "?k_iri a edm:EuropeanaAggregation ."
       sparql_extra: "?k_iri edm:aggregatedCHO ?k_iri_cho ."
       required_prefixes: "edm"
+      sample_subject_variable: "k_iri_cho"
     attributes:
       k_iri:
         range: uri
@@ -481,6 +488,7 @@ classes:
       # property path disjunction instead.
       sparql_base_pattern: "?_agg edm:aggregatedCHO ?k_iri_cho . { ?_agg edm:isShownBy ?k_iri } UNION { ?_agg edm:hasView ?k_iri }"
       required_prefixes: "ebucore,edm,rdf,schema"
+      sample_subject_variable: "k_iri_cho"
     attributes:
       k_iri:
         range: uri
@@ -622,6 +630,7 @@ classes:
       export_sets: "pipeline,raw"
       subject_base_pattern: "?_agg edm:aggregatedCHO ?_cho . { ?_agg edm:isShownBy ?k_iri } UNION { ?_agg edm:hasView ?k_iri }"
       required_prefixes: "dc,dcterms,edm,owl,rdfs,svcs"
+      sample_subject_variable: "_cho"
       link_properties: >-
         dc:creator, dc:description, dc:format, dc:language, dc:rights,
         dc:source, dc:title, dc:type, dcterms:conformsTo, dcterms:created,

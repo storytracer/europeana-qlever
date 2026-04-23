@@ -29,6 +29,7 @@ QLEVER_ACCESS_TOKEN = "europeana-qlever"
 
 # Materialized view names (QLever ≥ 0.5.37)
 VIEW_OPEN_ITEMS = "open-items"
+VIEW_SAMPLE_ITEMS = "sample-items"
 
 # Language resolution strategy:
 # - Entity labels (agents, concepts): English preferred, fallback to any available.

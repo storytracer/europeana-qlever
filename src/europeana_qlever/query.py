@@ -56,6 +56,14 @@ class SparqlHelpers:
         """Escape a string for use inside a SPARQL literal."""
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
+    @staticmethod
+    def sample_service_clause(cho_var: str, view_name: str) -> str:
+        """SERVICE block that binds ?<cho_var> to rows from the sample-items view."""
+        return (
+            f"SERVICE view:{view_name} "
+            f"{{ [ view:column-item ?{cho_var} ] }}"
+        )
+
 
 S = SparqlHelpers
 
@@ -80,6 +88,8 @@ class QueryFilters:
 
     limit: int | None = None
     offset: int | None = None
+    sample_size: int | None = None
+    sample_view_name: str = "sample-items"
     # Back-compat fields (accepted but not used during SPARQL generation)
     countries: list[str] | None = None
     types: list[str] | None = None
@@ -181,6 +191,7 @@ class QueryRegistry:
 
         base_pattern = annots.get("sparql_base_pattern", "").strip()
         extra = annots.get("sparql_extra", "").strip()
+        sample_cho_var = annots.get("sample_subject_variable", "").strip() or None
 
         select_parts: list[str] = []
         where_extras: list[str] = []
@@ -205,13 +216,24 @@ class QueryRegistry:
                 select_parts.append(f"?{attr_name}")
                 where_extras.append(binding)
 
-        where_lines = [base_pattern]
+        where_lines: list[str] = []
+        tail = ""
+        if f.sample_size is not None and sample_cho_var:
+            pfx_set.add("view")
+            where_lines.append(S.sample_service_clause(sample_cho_var, f.sample_view_name))
+        elif f.sample_size is not None:
+            # Entity table (no CHO link) — fall back to a plain LIMIT.
+            tail = f"LIMIT {f.sample_size}"
+
+        where_lines.append(base_pattern)
         if extra:
             where_lines.append(extra)
         where_lines.extend(where_extras)
         where_body = "\n  ".join(w for w in where_lines if w)
 
         select_str = " ".join(select_parts)
+        if not tail:
+            tail = f.limit_clause()
 
         query = textwrap.dedent(f"""\
             {S.prefix_block(pfx_set)}
@@ -219,7 +241,7 @@ class QueryRegistry:
             WHERE {{
               {where_body}
             }}
-            {f.limit_clause()}
+            {tail}
         """).strip()
         return query
 
@@ -234,12 +256,28 @@ class QueryRegistry:
         subject_clause = entry.subject_base_pattern or f"?k_iri {entry.curie} ?_raw ."
         property_literal = f'"{entry.property_column}"'
 
+        where_lines: list[str] = []
+        tail = ""
+        if f.sample_size is not None and entry.sample_subject_variable:
+            pfx_set.add("view")
+            where_lines.append(
+                S.sample_service_clause(entry.sample_subject_variable, f.sample_view_name)
+            )
+        elif f.sample_size is not None:
+            tail = f"LIMIT {f.sample_size}"
+
+        where_lines.append(subject_clause)
+        where_lines.append(f"?k_iri {entry.curie} ?_raw .")
+        where_body = "\n  ".join(where_lines)
+
+        if not tail:
+            tail = f.limit_clause()
+
         return textwrap.dedent(f"""\
             {S.prefix_block(pfx_set)}
             SELECT ?k_iri ({property_literal} AS ?x_property) (STR(?_raw) AS ?x_value) (isIRI(?_raw) AS ?x_value_is_iri) (LANG(?_raw) AS ?x_value_lang)
             WHERE {{
-              {subject_clause}
-              ?k_iri {entry.curie} ?_raw .
+              {where_body}
             }}
-            {f.limit_clause()}
+            {tail}
         """).strip()

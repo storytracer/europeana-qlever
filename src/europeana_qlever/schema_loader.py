@@ -230,6 +230,7 @@ class LinkScanEntry:
     property_column: str        # e.g. "v_dc_subject" — goes into x_property
     subject_base_pattern: str   # SPARQL pattern that binds ?k_iri
     required_prefixes: list[str]
+    sample_subject_variable: str | None = None   # e.g. "_cho" — for sample-items SERVICE injection
 
 
 def link_properties(table_name: str) -> list[tuple[str, str]]:
@@ -255,6 +256,7 @@ def links_scan_entries() -> dict[str, LinkScanEntry]:
             continue
         subject_pattern = info.annotations.get("subject_base_pattern", "").strip()
         required_pfx = _parse_csv(info.annotations.get("required_prefixes", ""))
+        sample_var = info.annotations.get("sample_subject_variable", "").strip() or None
         for curie, col in link_properties(info.table_name):
             pfx, local = curie.split(":", 1)
             scan_name = f"{info.table_name}__{pfx}_{local}"
@@ -268,6 +270,7 @@ def links_scan_entries() -> dict[str, LinkScanEntry]:
                 property_column=col,
                 subject_base_pattern=subject_pattern,
                 required_prefixes=sorted(extra_pfx),
+                sample_subject_variable=sample_var,
             )
     return result
 

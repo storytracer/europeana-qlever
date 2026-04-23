@@ -558,8 +558,20 @@ def tsv_to_parquet(
                     total_rows += len(parsed_rows)
                     progress.update(task, advance=len(parsed_rows))
 
-        if writer is not None:
-            writer.close()
+        if writer is None:
+            # Zero data rows — still emit an empty Parquet so callers can
+            # stat() the path and downstream DuckDB composition can read it.
+            schema = static_schema or pa.schema(
+                [pa.field(n, pa.string()) for n in col_names]
+            )
+            writer = pq.ParquetWriter(
+                str(parquet_path),
+                schema,
+                compression="zstd",
+                write_statistics=True,
+                use_dictionary=True,
+            )
+        writer.close()
 
     return total_rows
 
@@ -584,6 +596,7 @@ class ExportPipeline:
         temp_directory: Path | None = None,
         dashboard: object | None = None,
         *,
+        filters: QueryFilters | None = None,
         keep_base: bool = True,
         reuse_tsv: bool = False,
         http_chunk_size: int = 1_048_576,
@@ -602,6 +615,7 @@ class ExportPipeline:
         self._duckdb_threads = duckdb_threads
         self._temp_directory = temp_directory
         self._dashboard = dashboard
+        self._filters = filters
         self._keep_base = keep_base
         self._reuse_tsv = reuse_tsv
         self._http_chunk_size = http_chunk_size
@@ -662,7 +676,7 @@ class ExportPipeline:
 
     def _exports_full_registry(self) -> dict[str, Export]:
         if not hasattr(self, "_full_registry_cache"):
-            self._full_registry_cache = ExportRegistry().exports
+            self._full_registry_cache = ExportRegistry(filters=self._filters).exports
         return self._full_registry_cache
 
     def run(self) -> ExportResult:
@@ -779,7 +793,7 @@ class ExportPipeline:
         needs_deps = any(isinstance(e, CompositeExport) for e in self._exports.values())
         if not needs_deps:
             return all_exports
-        full_registry = ExportRegistry().exports
+        full_registry = ExportRegistry(filters=self._filters).exports
         # BFS from user-requested composites.
         frontier = [
             name for name, exp in self._exports.items()

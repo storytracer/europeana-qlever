@@ -38,6 +38,7 @@ from .constants import (
     QLEVER_QUERY_TIMEOUT,
     STATE_FILENAME,
     VIEW_OPEN_ITEMS,
+    VIEW_SAMPLE_ITEMS,
 )
 from .export import EXPORT_SETS
 from .query import QueryFilters
@@ -718,45 +719,33 @@ def _open_items_sparql() -> str:
         }}""")
 
 
-def _qlever_port_from_qleverfile(index_dir: Path) -> int:
-    """Read the QLever port from an existing Qleverfile."""
-    qleverfile = index_dir / "Qleverfile"
-    if not qleverfile.exists():
-        return QLEVER_PORT
-    sections = _parse_qleverfile(qleverfile)
-    return int(sections.get("server", {}).get("PORT", QLEVER_PORT))
+def _sample_items_sparql(n: int) -> str:
+    """SPARQL body for the ``sample-items`` materialized view (N CHO IRIs)."""
+    return textwrap.dedent(f"""\
+        PREFIX edm: <http://www.europeana.eu/schemas/edm/>
+        SELECT ?item WHERE {{
+          ?item a edm:ProvidedCHO .
+        }}
+        LIMIT {n}""")
 
 
-@cli.command("create-views")
-@click.pass_context
-def create_views(ctx: click.Context):
-    """Create QLever materialized views for faster SPARQL queries.
+def _write_view(base_url: str, view_name: str, sparql: str) -> None:
+    """Create (or replace) a QLever materialized view and preload it.
 
-    Creates the ``open_items`` view — a precomputed index of all items
-    with open reuse rights, joined with their edm:type.  This replaces
-    expensive STRSTARTS(STR(?rights), ...) filters with instant indexed
-    lookups via SERVICE syntax.
-
-    Requires a running QLever server.
+    Issues ``write-materialized-view`` followed by ``load-materialized-view``.
+    Raises :class:`SystemExit` on failure so callers get a clear exit code.
     """
     import httpx
 
-    index_dir: Path = ctx.obj["index_dir"]
-    port = _qlever_port_from_qleverfile(index_dir)
-    base_url = f"http://localhost:{port}"
-
-    # Build and create the view
-    sparql = _open_items_sparql()
-    display.console.print(f"[bold]Creating materialized view [cyan]{VIEW_OPEN_ITEMS}[/cyan][/bold]")
+    display.console.print(f"[bold]Creating materialized view [cyan]{view_name}[/cyan][/bold]")
     display.console.print(f"  Server: {base_url}")
-    display.console.print()
 
-    with display.console.status("Writing view (this may take several minutes)…"):
+    with display.console.status(f"Writing view {view_name} (this may take several minutes)…"):
         resp = httpx.post(
             base_url,
             params={
                 "cmd": "write-materialized-view",
-                "view-name": VIEW_OPEN_ITEMS,
+                "view-name": view_name,
                 "timeout": "2h",
                 "access-token": QLEVER_ACCESS_TOKEN,
             },
@@ -767,21 +756,17 @@ def create_views(ctx: click.Context):
             content=sparql,
             timeout=7200,
         )
-
     if resp.status_code != 200:
         display.console.print(f"[red]Failed to create view: {resp.text}[/red]")
         raise SystemExit(1)
+    display.console.print(f"[green]View created:[/green] {resp.json()}")
 
-    result = resp.json()
-    display.console.print(f"[green]View created:[/green] {result}")
-
-    # Preload the view so first query is fast
-    with display.console.status("Preloading view…"):
+    with display.console.status(f"Preloading view {view_name}…"):
         load_resp = httpx.get(
             base_url,
             params={
                 "cmd": "load-materialized-view",
-                "view-name": VIEW_OPEN_ITEMS,
+                "view-name": view_name,
                 "access-token": QLEVER_ACCESS_TOKEN,
             },
             timeout=600,
@@ -789,7 +774,45 @@ def create_views(ctx: click.Context):
     if load_resp.status_code == 200:
         display.console.print(f"[green]View preloaded:[/green] {load_resp.json()}")
     else:
-        display.console.print(f"[yellow]Preload returned {load_resp.status_code}: {load_resp.text}[/yellow]")
+        display.console.print(
+            f"[yellow]Preload returned {load_resp.status_code}: {load_resp.text}[/yellow]"
+        )
+
+
+def _qlever_port_from_qleverfile(index_dir: Path) -> int:
+    """Read the QLever port from an existing Qleverfile."""
+    qleverfile = index_dir / "Qleverfile"
+    if not qleverfile.exists():
+        return QLEVER_PORT
+    sections = _parse_qleverfile(qleverfile)
+    return int(sections.get("server", {}).get("PORT", QLEVER_PORT))
+
+
+@cli.command("create-views")
+@click.option("--sample-size", type=int, default=None,
+              help="Also (re)create the sample-items view with N CHO IRIs, "
+                   "used by `export --sample-size` for coherent smoke tests.")
+@click.pass_context
+def create_views(ctx: click.Context, sample_size: int | None):
+    """Create QLever materialized views for faster SPARQL queries.
+
+    Creates the ``open-items`` view — a precomputed index of all items
+    with open reuse rights, joined with their edm:type.  This replaces
+    expensive STRSTARTS(STR(?rights), ...) filters with instant indexed
+    lookups via SERVICE syntax.
+
+    When ``--sample-size N`` is given, also (re)creates the ``sample-items``
+    view holding N ProvidedCHO IRIs.
+
+    Requires a running QLever server.
+    """
+    index_dir: Path = ctx.obj["index_dir"]
+    port = _qlever_port_from_qleverfile(index_dir)
+    base_url = f"http://localhost:{port}"
+
+    _write_view(base_url, VIEW_OPEN_ITEMS, _open_items_sparql())
+    if sample_size is not None:
+        _write_view(base_url, VIEW_SAMPLE_ITEMS, _sample_items_sparql(sample_size))
 
 
 # ---------------------------------------------------------------------------
@@ -880,9 +903,10 @@ def _resolve_exports(
     filter_languages: tuple[str, ...],
     dataset_names: tuple[str, ...],
     limit: int | None = None,
+    sample_size: int | None = None,
     property_scan: str | None = None,
-) -> dict[str, "Export"]:
-    """Resolve CLI args into a dict of Export objects."""
+) -> tuple[dict[str, "Export"], QueryFilters]:
+    """Resolve CLI args into a (exports, filters) pair."""
     from .export import Export, ExportRegistry
     from .schema_loader import export_classes, link_properties
 
@@ -908,6 +932,7 @@ def _resolve_exports(
         languages=list(filter_languages) or None,
         dataset_names=list(dataset_names) or None,
         limit=limit,
+        sample_size=sample_size,
     )
 
     registry = ExportRegistry(filters=filters)
@@ -933,14 +958,14 @@ def _resolve_exports(
             )
         pfx, local = want[2:].split("_", 1)
         scan_name = f"{parent}__{pfx}_{local}"
-        return {scan_name: registry.get(scan_name)}
+        return {scan_name: registry.get(scan_name)}, filters
 
     if run_all:
-        return registry.for_set("pipeline")
+        return registry.for_set("pipeline"), filters
     if export_set:
         if export_set == "all":
-            return registry.exports
-        return registry.for_set(export_set)
+            return registry.exports, filters
+        return registry.for_set(export_set), filters
 
     # Positional names
     exports: dict[str, Export] = {}
@@ -951,7 +976,7 @@ def _resolve_exports(
             raise click.UsageError(
                 f"Unknown export: '{name}'. Use `list-exports` to see available exports."
             )
-    return exports
+    return exports, filters
 
 
 def _analysis_output_path(
@@ -1061,7 +1086,7 @@ def analyze_qlever(
     from .analysis import analyze_all, render_markdown
     from .export import CompositeExport, QueryExport
 
-    all_exports = _resolve_exports(
+    all_exports, _ = _resolve_exports(
         names, run_all, export_set,
         countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
@@ -1158,7 +1183,7 @@ def analyze_static(
     from .analysis import render_static_markdown, static_analyze_all
     from .export import CompositeExport, QueryExport
 
-    all_exports = _resolve_exports(
+    all_exports, _ = _resolve_exports(
         names, run_all, export_set,
         countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
@@ -1225,6 +1250,10 @@ def analyze_static(
 @click.option("--dataset-name", "dataset_names", multiple=True,
               help="Filter by datasetName (repeatable).")
 @click.option("--limit", type=int, help="LIMIT clause for SPARQL exports.")
+@click.option("--sample-size", type=int, default=None,
+              help="Restrict every export to the same sample of N ProvidedCHO items "
+                   "via the sample-items materialized view. Ideal for fast, coherent "
+                   "end-to-end pipeline smoke tests. Overrides --limit.")
 @click.option("--qlever-url", default=f"http://localhost:{QLEVER_PORT}",
               show_default=True, help="QLever HTTP endpoint.")
 @click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
@@ -1260,6 +1289,7 @@ def export(
     filter_languages: tuple[str, ...],
     dataset_names: tuple[str, ...],
     limit: int | None,
+    sample_size: int | None,
     qlever_url: str,
     timeout: int,
     skip_existing: bool,
@@ -1284,11 +1314,11 @@ def export(
     from .export import ExportPipeline
     from .telemetry import command_span
 
-    exports = _resolve_exports(
+    exports, filters = _resolve_exports(
         names, run_all, export_set,
         countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
-        dataset_names, limit=limit,
+        dataset_names, limit=limit, sample_size=sample_size,
         property_scan=property_scan,
     )
 
@@ -1299,6 +1329,15 @@ def export(
 
     if duckdb_memory == "auto":
         duckdb_memory = budget.duckdb_memory()
+
+    if sample_size is not None:
+        index_dir: Path = ctx.obj["index_dir"]
+        port = _qlever_port_from_qleverfile(index_dir)
+        _write_view(
+            f"http://localhost:{port}",
+            VIEW_SAMPLE_ITEMS,
+            _sample_items_sparql(sample_size),
+        )
 
     with command_span(telemetry, {
         "names": list(names), "run_all": run_all, "export_set": export_set,
@@ -1312,6 +1351,7 @@ def export(
             memory_limit=duckdb_memory,
             duckdb_threads=budget.duckdb_threads(),
             temp_directory=exports_dir / ".duckdb_tmp",
+            filters=filters,
             keep_base=keep_base,
             reuse_tsv=reuse_tsv,
             http_chunk_size=budget.http_chunk_size(),
