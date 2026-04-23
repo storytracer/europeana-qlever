@@ -63,6 +63,7 @@ _EUROPEANA_AGG_COLS = [
     "v_edm_country",
     "v_edm_datasetName",
     "v_edm_landingPage",
+    "v_edm_language",
     "v_edm_preview",
 ]
 
@@ -245,37 +246,30 @@ def _europeana_proxy_scalars_step(*, chunk_filter: bool = False) -> ComposeStep:
 # ---------------------------------------------------------------------------
 
 
+_PROVIDER_PROXY_HAS_PROPS = ("v_dc_creator", "v_dc_description", "v_dc_subject")
+
+
 def _provider_proxy_properties_step(*, chunk_filter: bool = False) -> ComposeStep:
     """(CHO, x_property) pairs observed on the provider proxy.
 
-    Narrowing cascades through the already-filtered ``proxy_cho`` temp
-    table when running under chunk mode; only ``CREATE OR REPLACE``
-    wrapping is needed here.
+    Reads only the three Hive partitions whose presence powers the
+    downstream ``x_has_creator`` / ``x_has_description`` / ``x_has_subject``
+    booleans, instead of scanning every links_ore_Proxy partition.
     """
     create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    unions = "\nUNION ALL\n".join(
+        f"SELECT k_iri, '{p}' AS x_property "
+        f"FROM read_parquet('{{exports_dir}}/links_ore_Proxy/x_property={p}/**/*.parquet')"
+        for p in _PROVIDER_PROXY_HAS_PROPS
+    )
     sql = (
         f"{create} provider_proxy_properties AS\n"
         "SELECT DISTINCT pc.k_iri_cho AS k_iri, l.x_property\n"
-        f"FROM {_links_read('links_ore_Proxy')} l\n"
+        f"FROM (\n{unions}\n) l\n"
         "JOIN proxy_cho pc ON l.k_iri = pc.k_iri\n"
         "WHERE pc.proxy_type = 'provider'"
     )
     return ComposeStep(name="provider_proxy_properties", sql=sql)
-
-
-def _primary_language_step(*, chunk_filter: bool = False) -> ComposeStep:
-    """First dc:language per CHO from the provider proxy."""
-    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
-    sql = (
-        f"{create} primary_language AS\n"
-        "SELECT pc.k_iri_cho AS k_iri,\n"
-        "       MIN(l.x_value) AS lang\n"
-        f"FROM {_links_read('links_ore_Proxy')} l\n"
-        "JOIN proxy_cho pc ON l.k_iri = pc.k_iri\n"
-        "WHERE pc.proxy_type = 'provider' AND l.x_property = 'v_dc_language'\n"
-        "GROUP BY pc.k_iri_cho"
-    )
-    return ComposeStep(name="primary_language", sql=sql)
 
 
 def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
@@ -296,7 +290,7 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
         "(hd.k_iri IS NOT NULL) AS x_has_description",
         "COALESCE(primary_wr.x_has_iiif, false) AS x_has_iiif",
         "(hs.k_iri IS NOT NULL) AS x_has_subject",
-        "primary_language.lang AS x_primary_language",
+        "eagg.v_edm_language AS x_primary_language",
         f"{reuse_level_sql('agg.v_edm_rights')} AS x_reuse_level",
         f"{duckdb_family_case('agg.v_edm_rights')} AS x_rights_family",
     ]
@@ -316,7 +310,6 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
         "LEFT JOIN europeana_agg eagg ON eagg.k_iri = cho.k_iri\n"
         "LEFT JOIN europeana_proxy_scalars ON europeana_proxy_scalars.k_iri = cho.k_iri\n"
         "LEFT JOIN primary_wr ON primary_wr.k_iri = cho.k_iri\n"
-        "LEFT JOIN primary_language ON primary_language.k_iri = cho.k_iri\n"
         "LEFT JOIN (SELECT k_iri FROM provider_proxy_properties "
         "WHERE x_property = 'v_dc_creator') hc ON hc.k_iri = cho.k_iri\n"
         "LEFT JOIN (SELECT k_iri FROM provider_proxy_properties "
@@ -353,7 +346,6 @@ def group_items_chunk_steps() -> list[ComposeStep]:
         _chunk_chos_step(),
         _proxy_cho_step(chunk_filter=True),
         _provider_proxy_properties_step(chunk_filter=True),
-        _primary_language_step(chunk_filter=True),
         _europeana_proxy_scalars_step(chunk_filter=True),
         _group_items_final_step(chunk_filter=True),
     ]
@@ -370,7 +362,6 @@ def group_items_steps() -> list[ComposeStep]:
         _europeana_agg_step(),
         _primary_wr_step(),
         _provider_proxy_properties_step(),
-        _primary_language_step(),
         _europeana_proxy_scalars_step(),
         _group_items_final_step(),
     ]
