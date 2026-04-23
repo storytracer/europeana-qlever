@@ -1297,6 +1297,10 @@ def analyze_static(
               help="For a links_* table, export only a single partition "
                    "(e.g. --property dc_subject). Useful for re-running "
                    "one failed partition scan.")
+@click.option("-v", "--verbose", is_flag=True, default=False,
+              help="Show per-export headers, full SPARQL text, per-step "
+                   "composite output, and ephemeral progress bars instead "
+                   "of the default two persistent progress bars.")
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -1322,6 +1326,7 @@ def export(
     keep_base: bool,
     reuse_tsv: bool,
     property_scan: str | None,
+    verbose: bool,
 ):
     """Export data from QLever as Parquet files.
 
@@ -1385,6 +1390,7 @@ def export(
             duckdb_row_group_size=budget.duckdb_row_group_size(),
             max_retries=budget.export_max_retries(),
             retry_delays=budget.export_retry_delays(),
+            verbose=verbose,
         ).run()
         counters["succeeded"] = len(result.succeeded)
         counters["failed"] = len(result.failed)

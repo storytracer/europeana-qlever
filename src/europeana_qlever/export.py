@@ -23,6 +23,7 @@ import os
 import time
 from datetime import datetime
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import nullcontext
 from functools import partial
@@ -295,26 +296,38 @@ def _stream_query(
     *,
     http_chunk_size: int = 1_048_576,
     http_connect_timeout: int = 30,
+    on_chunk: "Callable[[int], None] | None" = None,
 ) -> int:
+    """Stream a SPARQL TSV result to disk.
+
+    If ``on_chunk`` is provided, the caller drives progress reporting and
+    no internal UI is rendered. Otherwise an ephemeral Rich Progress bar
+    is shown for the duration of the stream.
+    """
     total_bytes = 0
     newlines = 0
 
-    columns: list[ProgressColumn] = [
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        DownloadColumn(),
-    ]
-    if not display.is_narrow():
-        columns.append(TransferSpeedColumn())
-    columns.append(TimeElapsedColumn())
+    progress: Progress | None = None
+    task = None
+    if on_chunk is None:
+        columns: list[ProgressColumn] = [
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            DownloadColumn(),
+        ]
+        if not display.is_narrow():
+            columns.append(TransferSpeedColumn())
+        columns.append(TimeElapsedColumn())
 
-    desc = output_path.stem
-    if display.is_narrow() and len(desc) > 15:
-        desc = desc[:14] + "…"
+        desc = output_path.stem
+        if display.is_narrow() and len(desc) > 15:
+            desc = desc[:14] + "…"
 
-    with Progress(*columns, console=display.console) as progress:
+        progress = Progress(*columns, console=display.console)
+        progress.start()
         task = progress.add_task(f"→ {desc}", total=None)
 
+    try:
         with httpx.stream(
             "POST",
             qlever_url,
@@ -334,7 +347,13 @@ def _stream_query(
                     fh.write(chunk)
                     total_bytes += len(chunk)
                     newlines += chunk.count(b"\n")
-                    progress.update(task, completed=total_bytes)
+                    if progress is not None:
+                        progress.update(task, completed=total_bytes)
+                    if on_chunk is not None:
+                        on_chunk(len(chunk))
+    finally:
+        if progress is not None:
+            progress.stop()
 
     return max(0, newlines - 1)
 
@@ -357,6 +376,7 @@ def run_query_to_tsv(
     retry_delays: tuple[int, ...] = DEFAULT_EXPORT_RETRY_DELAYS,
     http_chunk_size: int = 1_048_576,
     http_connect_timeout: int = 30,
+    on_chunk: "Callable[[int], None] | None" = None,
 ) -> int:
     """Stream a SPARQL query result from QLever directly to a TSV file."""
     last_exc: Exception | None = None
@@ -366,6 +386,7 @@ def run_query_to_tsv(
                 query, output_path, qlever_url, timeout,
                 http_chunk_size=http_chunk_size,
                 http_connect_timeout=http_connect_timeout,
+                on_chunk=on_chunk,
             )
         except Exception as exc:
             last_exc = exc
@@ -495,8 +516,13 @@ def tsv_to_parquet(
     total_hint: int | None = None,
     static_schema: pa.Schema | None = None,
     show_progress: bool = True,
+    on_rows: "Callable[[int], None] | None" = None,
 ) -> int:
-    """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow."""
+    """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow.
+
+    If ``on_rows`` is provided, the caller drives progress reporting and
+    no internal UI is rendered (``show_progress`` is implicitly False).
+    """
     if workers is None:
         workers = max(1, (os.cpu_count() or 4) // 2)
 
@@ -528,9 +554,10 @@ def tsv_to_parquet(
             prog_cols.append(TimeRemainingColumn())
         prog_cols.append(TimeElapsedColumn())
 
+        use_internal_ui = show_progress and on_rows is None
         progress_ctx = (
             Progress(*prog_cols, console=display.console)
-            if show_progress
+            if use_internal_ui
             else nullcontext()
         )
         with progress_ctx as progress:
@@ -569,6 +596,8 @@ def tsv_to_parquet(
                     total_rows += len(parsed_rows)
                     if progress is not None:
                         progress.update(task, advance=len(parsed_rows))
+                    if on_rows is not None:
+                        on_rows(len(parsed_rows))
 
         if writer is None:
             # Zero data rows — still emit an empty Parquet so callers can
@@ -591,6 +620,204 @@ def tsv_to_parquet(
 # ---------------------------------------------------------------------------
 # ExportPipeline
 # ---------------------------------------------------------------------------
+
+
+class ExportProgress:
+    """Persistent two-bar progress UI for the export pipeline.
+
+    Lives for the duration of ``ExportPipeline.run()`` and exposes
+    callback-style methods that the pipeline calls as it streams TSV from
+    QLever and converts it to Parquet. The two bars track different units
+    (bytes vs rows) so they live in separate ``Progress`` instances
+    grouped under a single Rich ``Live``.
+
+    When ``enabled=False`` (verbose mode, dashboard mode), all methods
+    are no-ops and the original chatter prints take over.
+    """
+
+    def __init__(
+        self,
+        *,
+        enabled: bool = True,
+        total_exports: int = 0,
+        console=None,
+    ) -> None:
+        self._enabled = enabled
+        self._console = console or display.console
+        self._total_exports = total_exports
+        self._completed = 0
+        self._tsv_progress: Progress | None = None
+        self._cvt_progress: Progress | None = None
+        self._live = None
+        self._tsv_task = None
+        self._cvt_task = None
+
+        if not enabled:
+            return
+
+        from rich.console import Group
+        from rich.live import Live
+        from rich.table import Column
+
+        # Every column is pinned to a fixed width so nothing shifts when
+        # values grow (37.2 MB → 1.2 GB, 100k rows → 1M rows, etc.). Long
+        # export names ellipsise inside the description column.
+        def col(width: int, justify: str = "left") -> Column:
+            return Column(width=width, no_wrap=True,
+                          overflow="ellipsis", justify=justify)
+
+        # Per-task counter ("3/159") goes in its own column so it doesn't
+        # eat into the description width and stays aligned.
+        count_fmt = "[dim]{task.fields[count]}[/dim]"
+        count_width = max(7, 2 * len(str(total_exports)) + 1)
+
+        self._tsv_progress = Progress(
+            SpinnerColumn(),
+            TextColumn(count_fmt, table_column=col(count_width, "right")),
+            TextColumn(
+                "[bold blue]TSV    [/bold blue] {task.description}",
+                table_column=col(50),
+            ),
+            BarColumn(bar_width=40),
+            DownloadColumn(table_column=col(20, "right")),
+            TransferSpeedColumn(table_column=col(24, "right")),
+            TimeElapsedColumn(table_column=col(8, "right")),
+            TimeRemainingColumn(table_column=col(8, "right")),
+            console=self._console,
+        )
+        self._cvt_progress = Progress(
+            SpinnerColumn(),
+            TextColumn(count_fmt, table_column=col(count_width, "right")),
+            TextColumn(
+                "[bold cyan]Parquet[/bold cyan] {task.description}",
+                table_column=col(50),
+            ),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(table_column=col(20, "right")),
+            _RowSpeedColumn(table_column=col(24, "right")),
+            TimeElapsedColumn(table_column=col(8, "right")),
+            TimeRemainingColumn(table_column=col(8, "right")),
+            console=self._console,
+        )
+        self._live = Live(
+            Group(self._tsv_progress, self._cvt_progress),
+            console=self._console,
+            refresh_per_second=8,
+            transient=False,
+        )
+
+    def __enter__(self) -> "ExportProgress":
+        if not self._enabled:
+            return self
+        self._live.__enter__()
+        self._tsv_task = self._tsv_progress.add_task(
+            "[dim]idle[/dim]", total=None, start=False, count="",
+        )
+        self._cvt_task = self._cvt_progress.add_task(
+            "[dim]idle[/dim]", total=None, start=False, count="",
+        )
+        return self
+
+    def __exit__(self, *args) -> None:
+        if self._enabled and self._live is not None:
+            self._live.__exit__(*args)
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def _count_text(self) -> str:
+        if self._total_exports > 0:
+            return f"{self._completed + 1}/{self._total_exports}"
+        return ""
+
+    # -- TSV stream lane ----------------------------------------------------
+
+    def begin_stream(self, name: str) -> None:
+        if not self._enabled:
+            return
+        self._tsv_progress.reset(
+            self._tsv_task,
+            total=None,
+            description=name,
+            start=True,
+            count=self._count_text(),
+        )
+
+    def stream_chunk(self, n: int) -> None:
+        if not self._enabled:
+            return
+        self._tsv_progress.update(self._tsv_task, advance=n)
+
+    def end_stream(self) -> None:
+        if not self._enabled:
+            return
+        self._tsv_progress.stop_task(self._tsv_task)
+        self._tsv_progress.update(
+            self._tsv_task, description="[dim]idle[/dim]", count="",
+        )
+
+    # -- Parquet convert lane ----------------------------------------------
+
+    def begin_convert(self, name: str, total_rows: int) -> None:
+        if not self._enabled:
+            return
+        self._cvt_progress.reset(
+            self._cvt_task,
+            total=total_rows or None,
+            description=name,
+            start=True,
+            count=self._count_text(),
+        )
+
+    def convert_rows(self, n: int) -> None:
+        if not self._enabled:
+            return
+        self._cvt_progress.update(self._cvt_task, advance=n)
+
+    def end_convert(self) -> None:
+        """Reset the convert lane to idle. Pure visual; does not advance
+        the per-export counter — call ``mark_done`` for that."""
+        if not self._enabled:
+            return
+        self._cvt_progress.stop_task(self._cvt_task)
+        self._cvt_progress.update(
+            self._cvt_task, description="[dim]idle[/dim]", count="",
+        )
+
+    # -- Composite lane (reuses convert bar) -------------------------------
+
+    def begin_composite(self, name: str, total_steps: int) -> None:
+        """Use the convert lane to track DuckDB compose step progress."""
+        if not self._enabled:
+            return
+        self._cvt_progress.reset(
+            self._cvt_task,
+            total=total_steps or None,
+            description=f"[magenta]compose[/magenta] {name}",
+            start=True,
+            count=self._count_text(),
+        )
+
+    def composite_step(self, step_name: str) -> None:
+        if not self._enabled:
+            return
+        self._cvt_progress.update(self._cvt_task, advance=1)
+
+    def end_composite(self) -> None:
+        """Reset the convert lane to idle after a composite finishes."""
+        self.end_convert()
+
+    # -- Misc ---------------------------------------------------------------
+
+    def mark_done(self) -> None:
+        """Advance the per-export counter shown in bar descriptions."""
+        if self._enabled:
+            self._completed += 1
+
+    def log(self, message: str) -> None:
+        """Print a line above the live bars (e.g. failures, summaries)."""
+        self._console.print(message)
 
 
 @dataclass
@@ -635,6 +862,7 @@ class ExportPipeline:
         duckdb_row_group_size: int = 100_000,
         max_retries: int = DEFAULT_EXPORT_MAX_RETRIES,
         retry_delays: tuple[int, ...] = DEFAULT_EXPORT_RETRY_DELAYS,
+        verbose: bool = False,
     ) -> None:
         self._output_dir = output_dir
         self._exports = exports
@@ -654,6 +882,11 @@ class ExportPipeline:
         self._duckdb_row_group_size = duckdb_row_group_size
         self._max_retries = max_retries
         self._retry_delays = retry_delays
+        # Default UI is the persistent two-bar Live. Verbose mode and
+        # dashboard mode (which already owns its own Live) fall back to
+        # plain console prints + ephemeral per-call progress widgets.
+        self._verbose = verbose or dashboard is not None
+        self._ui: ExportProgress | None = None
 
     def _path_for(self, export: Export) -> Path:
         """Path of the Parquet artifact produced by *export*.
@@ -718,100 +951,118 @@ class ExportPipeline:
         all_exports = self._resolve_dependencies(dependency_only)
         order = self._topological_order(all_exports)
 
+        # Build the persistent two-bar UI unless the user asked for verbose
+        # output or a parent dashboard already owns the terminal.
+        ui = ExportProgress(
+            enabled=not self._verbose,
+            total_exports=len(order),
+            console=display.console,
+        )
+        self._ui = ui
+
         # Single-slot background conversion: while iteration N streams its
         # TSV, iteration N-1's TSV→Parquet runs here. Await before anything
         # that needs the previous Parquet on disk (composite, dep check).
         converter = ThreadPoolExecutor(max_workers=1, thread_name_prefix="convert")
         pending: _PendingConversion | None = None
         try:
-            for name in order:
-                export = all_exports[name]
-                parquet_path = self._path_for(export)
+            with ui:
+                for name in order:
+                    export = all_exports[name]
+                    parquet_path = self._path_for(export)
 
-                # Anything that reads previously-produced Parquets needs the
-                # background conversion drained first.
-                if pending is not None and not isinstance(export, QueryExport):
-                    pending = self._await_pending(pending, result, dependency_only)
+                    # Anything that reads previously-produced Parquets needs
+                    # the background conversion drained first.
+                    if pending is not None and not isinstance(export, QueryExport):
+                        pending = self._await_pending(pending, result, dependency_only)
 
-                if self._skip_existing and self._artifact_exists(export, parquet_path):
-                    display.console.print(f"[dim]Skipping {name} (exists)[/dim]")
-                    result.succeeded.append(name)
-                    if name not in dependency_only:
-                        result.parquet_files.append(parquet_path)
-                    self._advance_dashboard()
-                    continue
-
-                if isinstance(export, CompositeExport):
-                    missing = [
-                        dep for dep in export.depends_on
-                        if dep not in result.succeeded
-                        and not self._path_for(all_exports[dep]).exists()
-                    ]
-                    if missing:
-                        msg = f"Missing dependencies: {', '.join(missing)}"
-                        logger.error("Composite export %s skipped: %s", name, msg)
-                        display.console.print(f"  [red]SKIPPED: {msg}[/red]")
-                        result.failed[name] = msg
-                        self._advance_dashboard()
-                        continue
-
-                is_composite = isinstance(export, CompositeExport)
-                if is_composite and self._is_links_directory(export):
-                    tag = "[cyan]links[/cyan] [dim](partitioned)[/dim]"
-                elif is_composite:
-                    tag = "[cyan]compose[/cyan]"
-                else:
-                    tag = "[blue]SPARQL[/blue]"
-                    if isinstance(export, QueryExport) and export.partition_of:
-                        tag += f" [dim](partition of {export.partition_of})[/dim]"
-                display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
-                if isinstance(export, QueryExport) and export.sparql:
-                    display.console.print(f"[dim]{export.sparql}[/dim]")
-                if self._dashboard is not None:
-                    try:
-                        self._dashboard.set_info("export", name)
-                    except Exception:
-                        pass
-
-                try:
-                    if isinstance(export, CompositeExport):
-                        count, pq_mb = self._run_composite(export, parquet_path)
+                    if self._skip_existing and self._artifact_exists(export, parquet_path):
+                        if self._verbose:
+                            display.console.print(f"[dim]Skipping {name} (exists)[/dim]")
                         result.succeeded.append(name)
                         if name not in dependency_only:
                             result.parquet_files.append(parquet_path)
-                        logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
+                        ui.mark_done()
                         self._advance_dashboard()
-                    elif isinstance(export, QueryExport):
-                        # Foreground: stream this export's TSV from QLever.
-                        # Background (in parallel): the previous export's
-                        # TSV→Parquet conversion is running in `pending`.
-                        tsv_path, rows = self._stream_query_export(export, parquet_path)
-                        # Drain previous conversion before kicking off ours
-                        # so we never run two ProcessPools at once.
-                        if pending is not None:
-                            pending = self._await_pending(pending, result, dependency_only)
-                        pending = self._submit_conversion(
-                            converter, name, parquet_path, tsv_path, rows,
-                        )
-                    else:
-                        raise TypeError(f"Unknown export type: {type(export)}")
+                        continue
 
-                except Exception as exc:
-                    logger.error("Export failed for %s: %s", name, exc)
-                    display.console.print(f"  [red]FAILED: {exc}[/red]")
-                    result.failed[name] = str(exc)
-                    if isinstance(export, QueryExport):
-                        tsv_path = parquet_path.with_suffix(".tsv")
-                        _cleanup_partial(tsv_path, parquet_path)
-                    else:
-                        _cleanup_partial(parquet_path)
-                    self._advance_dashboard()
+                    if isinstance(export, CompositeExport):
+                        missing = [
+                            dep for dep in export.depends_on
+                            if dep not in result.succeeded
+                            and not self._path_for(all_exports[dep]).exists()
+                        ]
+                        if missing:
+                            msg = f"Missing dependencies: {', '.join(missing)}"
+                            logger.error("Composite export %s skipped: %s", name, msg)
+                            ui.log(f"  [red]{name}: SKIPPED — {msg}[/red]")
+                            result.failed[name] = msg
+                            ui.mark_done()
+                            self._advance_dashboard()
+                            continue
 
-            # Drain the final background conversion before cleanup/Croissant.
-            if pending is not None:
-                pending = self._await_pending(pending, result, dependency_only)
+                    if self._verbose:
+                        is_composite = isinstance(export, CompositeExport)
+                        if is_composite and self._is_links_directory(export):
+                            tag = "[cyan]links[/cyan] [dim](partitioned)[/dim]"
+                        elif is_composite:
+                            tag = "[cyan]compose[/cyan]"
+                        else:
+                            tag = "[blue]SPARQL[/blue]"
+                            if isinstance(export, QueryExport) and export.partition_of:
+                                tag += f" [dim](partition of {export.partition_of})[/dim]"
+                        display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
+                        if isinstance(export, QueryExport) and export.sparql:
+                            display.console.print(f"[dim]{export.sparql}[/dim]")
+                    if self._dashboard is not None:
+                        try:
+                            self._dashboard.set_info("export", name)
+                        except Exception:
+                            pass
+
+                    try:
+                        if isinstance(export, CompositeExport):
+                            count, pq_mb = self._run_composite(export, parquet_path)
+                            result.succeeded.append(name)
+                            if name not in dependency_only:
+                                result.parquet_files.append(parquet_path)
+                            logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
+                            ui.mark_done()
+                            self._advance_dashboard()
+                        elif isinstance(export, QueryExport):
+                            # Foreground: stream this export's TSV from QLever.
+                            # Background (in parallel): the previous export's
+                            # TSV→Parquet conversion is running in `pending`.
+                            tsv_path, rows = self._stream_query_export(export, parquet_path)
+                            # Drain previous conversion before kicking off ours
+                            # so we never run two ProcessPools at once.
+                            if pending is not None:
+                                pending = self._await_pending(pending, result, dependency_only)
+                            pending = self._submit_conversion(
+                                converter, name, parquet_path, tsv_path, rows,
+                            )
+                        else:
+                            raise TypeError(f"Unknown export type: {type(export)}")
+
+                    except Exception as exc:
+                        logger.error("Export failed for %s: %s", name, exc)
+                        ui.log(f"  [red]{name}: FAILED — {exc}[/red]")
+                        result.failed[name] = str(exc)
+                        if isinstance(export, QueryExport):
+                            tsv_path = parquet_path.with_suffix(".tsv")
+                            _cleanup_partial(tsv_path, parquet_path)
+                            ui.end_stream()
+                        else:
+                            _cleanup_partial(parquet_path)
+                        ui.mark_done()
+                        self._advance_dashboard()
+
+                # Drain the final background conversion before cleanup/Croissant.
+                if pending is not None:
+                    pending = self._await_pending(pending, result, dependency_only)
         finally:
             converter.shutdown(wait=True)
+            self._ui = None
 
         # Clean up dependency-only base tables (never delete links partitions).
         if not self._keep_base:
@@ -899,11 +1150,15 @@ class ExportPipeline:
         if not export.compose_steps:
             return self._summarize_links_directory(export, parquet_path)
 
-        threads_info = f", {self._duckdb_threads} threads" if self._duckdb_threads else ""
-        display.console.print(
-            f"  Composing from base tables "
-            f"[dim]({self._memory_limit} memory{threads_info})[/dim]"
-        )
+        ui = self._ui
+        if self._verbose:
+            threads_info = (
+                f", {self._duckdb_threads} threads" if self._duckdb_threads else ""
+            )
+            display.console.print(
+                f"  Composing from base tables "
+                f"[dim]({self._memory_limit} memory{threads_info})[/dim]"
+            )
         duckdb_tmp = self._temp_directory or (self._output_dir / ".duckdb_tmp")
         dir_str = str(self._output_dir)
 
@@ -917,38 +1172,49 @@ class ExportPipeline:
             con.execute(f"SET temp_directory = '{duckdb_tmp}'")
 
         total = len(export.compose_steps)
-        for i, step in enumerate(export.compose_steps, 1):
-            step_sql = step.sql.replace("{exports_dir}", dir_str)
-            t0 = time.perf_counter()
-            if step.is_final:
-                parquet_path.parent.mkdir(parents=True, exist_ok=True)
-                con.execute(f"""
-                    COPY ({step_sql})
-                    TO '{parquet_path}'
-                    (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {self._duckdb_row_group_size})
-                """)
-                elapsed = time.perf_counter() - t0
-                display.console.print(
-                    f"  [dim][{i}/{total}][/dim] {step.name} ({elapsed:.1f}s)"
-                )
-            else:
-                con.execute(step_sql)
-                elapsed = time.perf_counter() - t0
-                step_count: int = con.execute(
-                    f"SELECT COUNT(*) FROM {step.name}"
-                ).fetchone()[0]  # type: ignore[index]
-                display.console.print(
-                    f"  [dim][{i}/{total}][/dim] {step.name}: "
-                    f"{step_count:,} rows ({elapsed:.1f}s)"
-                )
+        if ui is not None and ui.enabled:
+            ui.begin_composite(export.name, total)
+        try:
+            for i, step in enumerate(export.compose_steps, 1):
+                step_sql = step.sql.replace("{exports_dir}", dir_str)
+                t0 = time.perf_counter()
+                if step.is_final:
+                    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+                    con.execute(f"""
+                        COPY ({step_sql})
+                        TO '{parquet_path}'
+                        (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {self._duckdb_row_group_size})
+                    """)
+                    elapsed = time.perf_counter() - t0
+                    if self._verbose:
+                        display.console.print(
+                            f"  [dim][{i}/{total}][/dim] {step.name} ({elapsed:.1f}s)"
+                        )
+                else:
+                    con.execute(step_sql)
+                    elapsed = time.perf_counter() - t0
+                    if self._verbose:
+                        step_count: int = con.execute(
+                            f"SELECT COUNT(*) FROM {step.name}"
+                        ).fetchone()[0]  # type: ignore[index]
+                        display.console.print(
+                            f"  [dim][{i}/{total}][/dim] {step.name}: "
+                            f"{step_count:,} rows ({elapsed:.1f}s)"
+                        )
+                if ui is not None and ui.enabled:
+                    ui.composite_step(step.name)
 
-        count: int = con.execute(
-            f"SELECT COUNT(*) FROM '{parquet_path}'"
-        ).fetchone()[0]  # type: ignore[index]
-        con.close()
+            count: int = con.execute(
+                f"SELECT COUNT(*) FROM '{parquet_path}'"
+            ).fetchone()[0]  # type: ignore[index]
+        finally:
+            con.close()
+            if ui is not None and ui.enabled:
+                ui.end_composite()
 
         pq_mb = parquet_path.stat().st_size / 1e6
-        display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+        if self._verbose:
+            display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
         return count, pq_mb
 
     def _summarize_links_directory(
@@ -957,7 +1223,10 @@ class ExportPipeline:
         """Summarize a Hive-partitioned links directory (no composition)."""
         partition_files = sorted(dir_path.glob("x_property=*/data.parquet"))
         if not partition_files:
-            display.console.print("  [yellow]No partition files found.[/yellow]")
+            if self._verbose:
+                display.console.print("  [yellow]No partition files found.[/yellow]")
+            else:
+                self._log(f"  [yellow]{export.name}: no partition files[/yellow]")
             return 0, 0.0
 
         total_bytes = sum(f.stat().st_size for f in partition_files)
@@ -975,9 +1244,10 @@ class ExportPipeline:
             logger.warning("Row count for %s failed: %s", export.name, exc)
             count = 0
 
-        display.console.print(
-            f"  {len(partition_files)} partitions · {count:,} rows · {pq_mb:.1f} MB"
-        )
+        if self._verbose:
+            display.console.print(
+                f"  {len(partition_files)} partitions · {count:,} rows · {pq_mb:.1f} MB"
+            )
         return count, pq_mb
 
     def _stream_query_export(
@@ -987,23 +1257,34 @@ class ExportPipeline:
         parquet_path.parent.mkdir(parents=True, exist_ok=True)
         tsv_path = parquet_path.with_suffix(".tsv")
 
+        ui = self._ui
         if self._reuse_tsv and tsv_path.exists():
             with open(tsv_path, "rb") as f:
                 rows = sum(1 for _ in f) - 1
             tsv_mb = tsv_path.stat().st_size / 1e6
-            display.console.print(
-                f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB [dim](reused)[/dim]"
-            )
+            if self._verbose:
+                display.console.print(
+                    f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB [dim](reused)[/dim]"
+                )
         else:
-            rows = run_query_to_tsv(
-                export.sparql, tsv_path, self._qlever_url, self._timeout,
-                max_retries=self._max_retries,
-                retry_delays=self._retry_delays,
-                http_chunk_size=self._http_chunk_size,
-                http_connect_timeout=self._http_connect_timeout,
-            )
-            tsv_mb = tsv_path.stat().st_size / 1e6
-            display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
+            on_chunk = ui.stream_chunk if (ui is not None and ui.enabled) else None
+            if ui is not None and ui.enabled:
+                ui.begin_stream(export.name)
+            try:
+                rows = run_query_to_tsv(
+                    export.sparql, tsv_path, self._qlever_url, self._timeout,
+                    max_retries=self._max_retries,
+                    retry_delays=self._retry_delays,
+                    http_chunk_size=self._http_chunk_size,
+                    http_connect_timeout=self._http_connect_timeout,
+                    on_chunk=on_chunk,
+                )
+            finally:
+                if ui is not None and ui.enabled:
+                    ui.end_stream()
+            if self._verbose:
+                tsv_mb = tsv_path.stat().st_size / 1e6
+                display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
         return tsv_path, rows
 
@@ -1022,7 +1303,12 @@ class ExportPipeline:
         except (KeyError, ImportError):
             pq_schema = None
 
-        display.console.print("  Converting to Parquet [dim](in background)[/dim]…")
+        ui = self._ui
+        on_rows = ui.convert_rows if (ui is not None and ui.enabled) else None
+        if ui is not None and ui.enabled:
+            ui.begin_convert(name, rows)
+        if self._verbose:
+            display.console.print("  Converting to Parquet [dim](in background)[/dim]…")
         future = converter.submit(
             tsv_to_parquet,
             tsv_path,
@@ -1031,6 +1317,7 @@ class ExportPipeline:
             total_hint=rows,
             static_schema=pq_schema,
             show_progress=False,
+            on_rows=on_rows,
         )
         return _PendingConversion(
             name=name,
@@ -1046,13 +1333,17 @@ class ExportPipeline:
         dependency_only: set[str],
     ) -> None:
         """Block on a background conversion and record its outcome."""
+        ui = self._ui
         try:
             count = pending.future.result()
             pq_mb = pending.parquet_path.stat().st_size / 1e6
-            display.console.print(
-                f"  [dim]✓[/dim] {pending.name}: "
-                f"{count:,} rows · {pq_mb:.1f} MB"
-            )
+            if ui is not None:
+                ui.end_convert()
+            if self._verbose:
+                display.console.print(
+                    f"  Parquet {pending.name}: "
+                    f"{count:,} rows · {pq_mb:.1f} MB"
+                )
             result.succeeded.append(pending.name)
             if pending.name not in dependency_only:
                 result.parquet_files.append(pending.parquet_path)
@@ -1066,13 +1357,24 @@ class ExportPipeline:
                     pass
         except Exception as exc:
             logger.error("Conversion failed for %s: %s", pending.name, exc)
-            display.console.print(
+            if ui is not None:
+                ui.end_convert()
+            self._log(
                 f"  [red]✗ {pending.name}: conversion failed: {exc}[/red]"
             )
             result.failed[pending.name] = str(exc)
             _cleanup_partial(pending.tsv_path, pending.parquet_path)
+        if ui is not None:
+            ui.mark_done()
         self._advance_dashboard()
         return None
+
+    def _log(self, message: str) -> None:
+        """Print a message above the persistent UI (or to plain console)."""
+        if self._ui is not None:
+            self._ui.log(message)
+        else:
+            display.console.print(message)
 
     def _advance_dashboard(self) -> None:
         if self._dashboard is not None:
