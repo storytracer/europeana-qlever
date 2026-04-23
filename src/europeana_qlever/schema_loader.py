@@ -164,7 +164,7 @@ class ExportClassInfo:
 
     cls_name: str
     table_name: str
-    export_type: str  # "values", "links_union", "links_scan", "merged", "group", "map"
+    export_type: str  # "values", "links", "links_scan", "merged", "group", "map"
     export_sets: list[str]
     class_uri: str | None
     attributes: dict[str, AttributeInfo]
@@ -216,10 +216,11 @@ def export_classes() -> dict[str, ExportClassInfo]:
 class LinkScanEntry:
     """Metadata for one synthetic per-property links_scan export.
 
-    A ``links_union`` table (like ``links_ore_Proxy``) has many link
-    properties; each becomes its own intermediate SPARQL scan, producing
-    a Parquet with the same 5-column shape. The final ``links_union``
-    Parquet is a UNION ALL over all scans for that table.
+    A ``links`` table (like ``links_ore_Proxy``) has many link
+    properties; each becomes its own per-property SPARQL scan, written
+    to a Hive-partitioned directory (``<table>/x_property=<col>/data.parquet``)
+    with the same 5-column shape. Readers see the directory as one
+    logical table via DuckDB's ``hive_partitioning=true``.
     """
 
     parent_table: str           # e.g. "links_ore_Proxy"
@@ -232,9 +233,9 @@ class LinkScanEntry:
 
 
 def link_properties(table_name: str) -> list[tuple[str, str]]:
-    """Return (curie, v_column_name) pairs for a links_union table."""
+    """Return (curie, v_column_name) pairs for a links table."""
     info = export_classes().get(table_name)
-    if info is None or info.export_type != "links_union":
+    if info is None or info.export_type != "links":
         return []
     raw = info.annotations.get("link_properties", "")
     out: list[tuple[str, str]] = []
@@ -250,7 +251,7 @@ def links_scan_entries() -> dict[str, LinkScanEntry]:
     """Enumerate all synthetic per-property links_scan exports across all tables."""
     result: dict[str, LinkScanEntry] = {}
     for info in export_classes().values():
-        if info.export_type != "links_union":
+        if info.export_type != "links":
             continue
         subject_pattern = info.annotations.get("subject_base_pattern", "").strip()
         required_pfx = _parse_csv(info.annotations.get("required_prefixes", ""))
@@ -298,7 +299,7 @@ def raw_tables() -> list[str]:
     return sorted([
         info.table_name
         for info in export_classes().values()
-        if info.export_type in ("values", "links_union")
+        if info.export_type in ("values", "links")
     ])
 
 
@@ -512,7 +513,7 @@ def pyarrow_schema(export_name: str):
     if info is None:
         raise KeyError(f"Unknown export: {export_name!r}")
 
-    if info.export_type == "links_union":
+    if info.export_type == "links":
         return _links_pa_schema()
 
     # values / merged / group / map — derive from attributes, alphabetical.
@@ -604,13 +605,13 @@ def parquet_schema_description() -> str:
     )
     lines.append("")
     for info in sorted(export_classes().values(), key=lambda e: e.table_name):
-        if info.export_type not in ("values", "links_union"):
+        if info.export_type not in ("values", "links"):
             continue
         lines.append(f"### {info.table_name}")
         cls = schema_view().get_class(info.cls_name)
         if cls and cls.description:
             lines.append(cls.description.strip())
-        if info.export_type == "links_union":
+        if info.export_type == "links":
             curies = [c for c, _ in link_properties(info.table_name)]
             lines.append("Columns: k_iri, x_property, x_value, x_value_is_iri, x_value_lang.")
             lines.append(

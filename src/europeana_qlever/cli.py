@@ -799,24 +799,25 @@ def create_views(ctx: click.Context):
 @cli.command("list-exports")
 @click.option("--export-set", default=None,
               help="Filter to a specific export set.")
-@click.option("--all-intermediates", is_flag=True, default=False,
-              help="Include the per-property links_scan intermediate exports.")
+@click.option("--all-partitions", is_flag=True, default=False,
+              help="Also list the per-property partition scans that make up "
+                   "each links_* Hive-partitioned table.")
 @click.pass_context
 def list_exports_cmd(
     ctx: click.Context,
     export_set: str | None,
-    all_intermediates: bool,
+    all_partitions: bool,
 ):
     """List all available exports.
 
-    By default shows only the 30 final exports (values_*, links_*,
-    merged_items, group_items, map_*).  Pass ``--all-intermediates`` to
-    also see the synthetic per-property links_scan queries used to build
-    the links_* tables.
+    By default shows only the 30 logical exports (values_*, links_*,
+    merged_items, group_items, map_*).  Pass ``--all-partitions`` to
+    also see the per-property SPARQL scans that populate each Hive-
+    partitioned links_* directory.
     """
     from rich.table import Table
 
-    from .export import CompositeExport, ExportRegistry
+    from .export import CompositeExport, ExportRegistry, QueryExport
 
     registry = ExportRegistry()
 
@@ -830,8 +831,11 @@ def list_exports_cmd(
     else:
         exports = registry.exports
 
-    if not all_intermediates:
-        exports = {n: e for n, e in exports.items() if not e.is_intermediate}
+    if not all_partitions:
+        exports = {
+            n: e for n, e in exports.items()
+            if not (isinstance(e, QueryExport) and e.partition_of is not None)
+        }
 
     table = Table(title=f"Exports ({export_set or 'all'})")
     table.add_column("Name", style="cyan")
@@ -839,9 +843,14 @@ def list_exports_cmd(
     table.add_column("Sets", style="green")
     table.add_column("Description")
     for name, export in exports.items():
-        etype = "composite" if isinstance(export, CompositeExport) else "SPARQL"
-        if export.is_intermediate:
-            etype += " (int.)"
+        if isinstance(export, QueryExport) and export.partition_of is not None:
+            etype = f"partition of {export.partition_of}"
+        elif isinstance(export, CompositeExport) and not export.compose_steps:
+            etype = "links (partitioned)"
+        elif isinstance(export, CompositeExport):
+            etype = "composite"
+        else:
+            etype = "SPARQL"
         member_of = [es.name for es in EXPORT_SETS.values() if name in es.members]
         table.add_row(name, etype, ", ".join(member_of) or "—", export.description)
     display.console.print(table)
@@ -871,9 +880,11 @@ def _resolve_exports(
     filter_languages: tuple[str, ...],
     dataset_names: tuple[str, ...],
     limit: int | None = None,
+    property_scan: str | None = None,
 ) -> dict[str, "Export"]:
     """Resolve CLI args into a dict of Export objects."""
     from .export import Export, ExportRegistry
+    from .schema_loader import export_classes, link_properties
 
     modes = sum([bool(run_all), bool(names), bool(export_set)])
     if modes == 0:
@@ -900,6 +911,29 @@ def _resolve_exports(
     )
 
     registry = ExportRegistry(filters=filters)
+
+    if property_scan is not None:
+        if run_all or export_set or len(names) != 1:
+            raise click.UsageError(
+                "--property requires exactly one positional links_* table."
+            )
+        parent = names[0]
+        info = export_classes().get(parent)
+        if info is None or info.export_type != "links":
+            raise click.UsageError(
+                f"--property only applies to links_* tables. '{parent}' is not one."
+            )
+        valid = {col for _, col in link_properties(parent)}
+        want = property_scan if property_scan.startswith("v_") else f"v_{property_scan}"
+        if want not in valid:
+            choices = ", ".join(sorted(v[2:] for v in valid))
+            raise click.UsageError(
+                f"Unknown property '{property_scan}' for {parent}. "
+                f"Valid: {choices}"
+            )
+        pfx, local = want[2:].split("_", 1)
+        scan_name = f"{parent}__{pfx}_{local}"
+        return {scan_name: registry.get(scan_name)}
 
     if run_all:
         return registry.for_set("pipeline")
@@ -1205,6 +1239,10 @@ def analyze_static(
 @click.option("--reuse-tsv", is_flag=True, default=False,
               help="Skip SPARQL download if the .tsv file already exists. "
                    "Useful for re-testing Parquet conversion without re-downloading.")
+@click.option("--property", "property_scan", default=None,
+              help="For a links_* table, export only a single partition "
+                   "(e.g. --property dc_subject). Useful for re-running "
+                   "one failed partition scan.")
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -1228,6 +1266,7 @@ def export(
     duckdb_memory: str,
     keep_base: bool,
     reuse_tsv: bool,
+    property_scan: str | None,
 ):
     """Export data from QLever as Parquet files.
 
@@ -1237,7 +1276,10 @@ def export(
 
     Composite exports (like merged_items) automatically export their
     dependencies first, then compose the final Parquet via DuckDB.
-    Use --no-keep-base to clean up intermediate base table files.
+
+    links_* tables are Hive-partitioned directories; each property
+    becomes one partition. Use --property <name> to export just a
+    single partition (e.g. re-running one failed scan).
     """
     from .export import ExportPipeline
     from .telemetry import command_span
@@ -1247,6 +1289,7 @@ def export(
         countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
         dataset_names, limit=limit,
+        property_scan=property_scan,
     )
 
     exports_dir: Path = ctx.obj["exports_dir"]

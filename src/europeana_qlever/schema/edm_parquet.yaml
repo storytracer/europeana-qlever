@@ -250,7 +250,7 @@ classes:
     class_uri: ore:Proxy
     annotations:
       table_name: links_ore_Proxy
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri ore:proxyFor ?_cho ."
       required_prefixes: "dc,dcterms,edm,ore,owl,skos"
@@ -384,7 +384,7 @@ classes:
     class_uri: ore:Aggregation
     annotations:
       table_name: links_ore_Aggregation
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri edm:aggregatedCHO ?_cho . ?k_iri edm:dataProvider ?_dp ."
       required_prefixes: "dc,dqv,edm,ore"
@@ -618,7 +618,7 @@ classes:
     class_uri: edm:WebResource
     annotations:
       table_name: links_edm_WebResource
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?_agg edm:aggregatedCHO ?_cho . { ?_agg edm:isShownBy ?k_iri } UNION { ?_agg edm:hasView ?k_iri }"
       required_prefixes: "dc,dcterms,edm,owl,rdfs,svcs"
@@ -711,7 +711,7 @@ classes:
     class_uri: edm:Agent
     annotations:
       table_name: links_edm_Agent
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri a edm:Agent ."
       required_prefixes: "dc,dcterms,edm,foaf,owl,rdaGr2,skos"
@@ -785,7 +785,7 @@ classes:
     class_uri: edm:Place
     annotations:
       table_name: links_edm_Place
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri a edm:Place ."
       required_prefixes: "dcterms,edm,owl,skos"
@@ -836,7 +836,7 @@ classes:
     class_uri: skos:Concept
     annotations:
       table_name: links_skos_Concept
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri a skos:Concept ."
       required_prefixes: "owl,skos"
@@ -909,7 +909,7 @@ classes:
     class_uri: edm:TimeSpan
     annotations:
       table_name: links_edm_TimeSpan
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri a edm:TimeSpan ."
       required_prefixes: "dcterms,edm,owl,skos"
@@ -975,7 +975,7 @@ classes:
     class_uri: foaf:Organization
     annotations:
       table_name: links_foaf_Organization
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri a foaf:Organization ."
       required_prefixes: "edm,foaf,owl"
@@ -1020,7 +1020,7 @@ classes:
     class_uri: svcs:Service
     annotations:
       table_name: links_svcs_Service
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?_wr svcs:has_service ?k_iri ."
       required_prefixes: "dcterms,doap,svcs"
@@ -1115,7 +1115,7 @@ classes:
     class_uri: edm:PersistentIdentifier
     annotations:
       table_name: links_edm_PersistentIdentifier
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri a edm:PersistentIdentifier ."
       required_prefixes: "edm,skos"
@@ -1150,7 +1150,7 @@ classes:
     class_uri: edm:PersistentIdentifierScheme
     annotations:
       table_name: links_edm_PersistentIdentifierScheme
-      export_type: links_union
+      export_type: links
       export_sets: "pipeline,raw"
       subject_base_pattern: "?k_iri a edm:PersistentIdentifierScheme ."
       required_prefixes: "dcterms,edm"

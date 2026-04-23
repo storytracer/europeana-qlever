@@ -194,13 +194,67 @@ def generate_croissant(exports_dir: Path) -> Path:
     ordered_names = sorted(exports.keys())
 
     for table_name in ordered_names:
-        parquet_path = exports_dir / f"{table_name}.parquet"
-        if not parquet_path.exists():
-            continue
-
         info = exports[table_name]
         cls = schema_view().get_class(info.cls_name)
         table_desc = (cls.description or "").strip() if cls else ""
+
+        if info.export_type == "links":
+            # Hive-partitioned directory: emit a FileSet over the glob,
+            # plus one FileObject per partition for per-file checksums.
+            links_dir = exports_dir / table_name
+            partition_files = sorted(links_dir.glob("x_property=*/data.parquet"))
+            if not partition_files:
+                continue
+
+            fileset_id = f"{table_name}-files"
+            part_desc = (
+                f"{table_desc} Hive-partitioned by x_property; each "
+                f"subdirectory holds one EDM link property."
+            ).strip()
+            distributions.append(mlc.FileSet(
+                ctx=ctx,
+                id=fileset_id,
+                name=table_name,
+                encoding_formats=[mlc.EncodingFormat.PARQUET],
+                includes=[f"{table_name}/**/*.parquet"],
+                description=part_desc,
+            ))
+
+            for pq_file in partition_files:
+                rel = pq_file.relative_to(exports_dir).as_posix()
+                partition_col = pq_file.parent.name  # e.g. "x_property=v_dc_subject"
+                display.console.print(
+                    f"  [dim]{table_name}/{partition_col}[/dim]: computing checksum…"
+                )
+                sha = _sha256(pq_file)
+                size_bytes = pq_file.stat().st_size
+                distributions.append(mlc.FileObject(
+                    ctx=ctx,
+                    id=f"{table_name}-{partition_col}",
+                    name=rel,
+                    content_url=rel,
+                    encoding_formats=[mlc.EncodingFormat.PARQUET],
+                    contained_in=[fileset_id],
+                    description=f"Partition {partition_col} of {table_name}",
+                    sha256=sha,
+                    content_size=f"{size_bytes} B",
+                ))
+
+            fields = _build_fields_from_parquet(
+                ctx, table_name, fileset_id, partition_files[0]
+            )
+            record_sets.append(mlc.RecordSet(
+                ctx=ctx,
+                id=table_name,
+                name=table_name,
+                description=part_desc,
+                fields=fields,
+            ))
+            continue
+
+        parquet_path = exports_dir / f"{table_name}.parquet"
+        if not parquet_path.exists():
+            continue
 
         file_obj_id = f"{table_name}-parquet"
 
@@ -219,14 +273,9 @@ def generate_croissant(exports_dir: Path) -> Path:
             content_size=f"{size_bytes} B",
         ))
 
-        # For tables with declared attributes (all except links_union),
-        # build from the schema so list/struct columns are properly
-        # typed.  links_union tables have a fixed 5-column schema —
-        # build from the Parquet directly.
-        if info.export_type == "links_union":
-            fields = _build_fields_from_parquet(ctx, table_name, file_obj_id, parquet_path)
-        else:
-            fields = _build_fields_from_schema(ctx, table_name, file_obj_id, info.attributes)
+        fields = _build_fields_from_schema(
+            ctx, table_name, file_obj_id, info.attributes
+        )
 
         record_sets.append(mlc.RecordSet(
             ctx=ctx,
@@ -244,7 +293,11 @@ def generate_croissant(exports_dir: Path) -> Path:
             "exported as Parquet files from the QLever SPARQL engine. "
             "Covers the full Europeana Data Model with class boundaries "
             "preserved in raw values_*/links_* tables, and a denormalized "
-            "merged_items table for user-friendly analysis."
+            "merged_items table for user-friendly analysis. "
+            "links_* tables are Hive-partitioned directories "
+            "(x_property=<col>/data.parquet); readers that understand "
+            "Hive partitioning (DuckDB, HuggingFace datasets) transparently "
+            "prune partitions when filtering on x_property."
         ),
         url="https://github.com/storytracer/europeana-qlever",
         license="https://creativecommons.org/publicdomain/zero/1.0/",

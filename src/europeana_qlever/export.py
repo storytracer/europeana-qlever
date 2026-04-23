@@ -6,10 +6,11 @@ to compose final exports from raw Parquet tables (values_*, links_*).
 
 Composable exports:
 
-- ``links_union`` tables are built by UNION-ing per-property intermediate
-  Parquets (one SPARQL scan per link property).  Intermediates live in
-  ``{exports_dir}/.intermediates/`` and are cleaned up after the final
-  union Parquet is written (unless ``--keep-base`` is set).
+- ``links`` tables are Hive-partitioned directories. Each declared link
+  property becomes one SPARQL scan written directly to
+  ``{exports_dir}/<table>/x_property=<col>/data.parquet``. Readers see
+  the directory as a single logical table with DuckDB's
+  ``hive_partitioning=true``.
 - ``merged``, ``group``, and ``map`` exports are built by DuckDB
   composition from raw Parquets.
 """
@@ -69,9 +70,6 @@ logger = logging.getLogger(__name__)
 logging.getLogger("rdflib.term").setLevel(logging.ERROR)
 
 
-INTERMEDIATES_DIR_NAME = ".intermediates"
-
-
 # ---------------------------------------------------------------------------
 # Export type hierarchy
 # ---------------------------------------------------------------------------
@@ -82,19 +80,26 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Export:
-    """Base class for anything that produces a Parquet file."""
+    """Base class for anything that produces a Parquet file (or Parquet set)."""
 
     name: str
     description: str = ""
     depends_on: list[str] = field(default_factory=list)
-    is_intermediate: bool = False
 
 
 @dataclass
 class QueryExport(Export):
-    """Exports a SPARQL query result to Parquet (Phase 1)."""
+    """Exports a SPARQL query result to Parquet (Phase 1).
+
+    For an ordinary ``values_*`` or composite-base query the output is a
+    single ``<name>.parquet`` file. For per-property links scans
+    (``partition_of`` set) the output goes to the parent links table's
+    Hive partition: ``<parent>/x_property=<column>/data.parquet``.
+    """
 
     sparql: str = ""
+    partition_of: str | None = None   # parent links table, if this is a partition scan
+    partition_column: str | None = None  # e.g. "v_dc_subject"
 
     @classmethod
     def from_query(
@@ -102,19 +107,26 @@ class QueryExport(Export):
         query: Query,
         filters: QueryFilters | None = None,
         *,
-        is_intermediate: bool = False,
+        partition_of: str | None = None,
+        partition_column: str | None = None,
     ) -> QueryExport:
         return cls(
             name=query.name,
             description=query.description,
             sparql=query.sparql(filters),
-            is_intermediate=is_intermediate,
+            partition_of=partition_of,
+            partition_column=partition_column,
         )
 
 
 @dataclass
 class CompositeExport(Export):
-    """Composes Parquet files via DuckDB (Phase 2)."""
+    """Composes Parquet files via DuckDB (Phase 2).
+
+    If ``compose_steps`` is empty, the export is a pure dependency
+    aggregator (used for Hive-partitioned links tables that are just a
+    directory of per-property scans).
+    """
 
     compose_steps: list[ComposeStep] = field(default_factory=list)
 
@@ -208,26 +220,30 @@ class ExportRegistry:
                 q = self._query_registry.get(info.table_name)
                 exports[info.table_name] = QueryExport.from_query(q, self._filters)
 
-        # 2. Synthetic per-property links_scan intermediates.
-        for scan_name in scan_entries:
+        # 2. Per-property links scans — one QueryExport per partition.
+        for scan_name, entry in scan_entries.items():
             q = self._query_registry.get(scan_name)
             exports[scan_name] = QueryExport.from_query(
-                q, self._filters, is_intermediate=True
+                q,
+                self._filters,
+                partition_of=entry.parent_table,
+                partition_column=entry.property_column,
             )
 
-        # 3. links_union final exports — CompositeExport depending on all
-        #    per-property scans for that table.
+        # 3. links tables — Hive-partitioned directory, represented as a
+        #    no-op CompositeExport whose only job is to depend on every
+        #    per-property scan for that table.
         parent_scans: dict[str, list[str]] = {}
         for scan_name, entry in scan_entries.items():
             parent_scans.setdefault(entry.parent_table, []).append(scan_name)
         for info in export_classes().values():
-            if info.export_type != "links_union":
+            if info.export_type != "links":
                 continue
             deps = sorted(parent_scans.get(info.table_name, []))
             exports[info.table_name] = CompositeExport(
                 name=info.table_name,
-                description=f"{info.cls_name}: unioned multi-valued properties",
-                compose_steps=compose_steps_for(info.table_name),
+                description=f"{info.cls_name}: Hive-partitioned links (by x_property)",
+                compose_steps=[],
                 depends_on=deps,
             )
 
@@ -594,17 +610,64 @@ class ExportPipeline:
         self._duckdb_row_group_size = duckdb_row_group_size
         self._max_retries = max_retries
         self._retry_delays = retry_delays
-        self._intermediates_dir = output_dir / INTERMEDIATES_DIR_NAME
 
     def _path_for(self, export: Export) -> Path:
-        if export.is_intermediate:
-            return self._intermediates_dir / f"{export.name}.parquet"
+        """Path of the Parquet artifact produced by *export*.
+
+        - Per-property links scans (``QueryExport`` with ``partition_of``
+          set) write to a Hive partition:
+          ``<output_dir>/<parent>/x_property=<column>/data.parquet``.
+        - Logical ``links`` tables are a directory path — returned so
+          callers can test existence as "directory with any partition
+          files inside".
+        - Everything else is a plain single Parquet file.
+        """
+        if isinstance(export, QueryExport) and export.partition_of is not None:
+            return (
+                self._output_dir
+                / export.partition_of
+                / f"x_property={export.partition_column}"
+                / "data.parquet"
+            )
+        if self._is_links_directory(export):
+            return self._output_dir / export.name
         return self._output_dir / f"{export.name}.parquet"
+
+    @staticmethod
+    def _is_links_directory(export: Export) -> bool:
+        """True if *export* is the no-op aggregator for a Hive links table."""
+        return (
+            isinstance(export, CompositeExport)
+            and not export.compose_steps
+            and bool(export.depends_on)
+        )
+
+    def _artifact_exists(self, export: Export, path: Path) -> bool:
+        """Check whether an export's artifact already exists on disk.
+
+        For a links directory the artifact "exists" iff every declared
+        partition file is present.
+        """
+        if self._is_links_directory(export):
+            if not path.is_dir():
+                return False
+            for dep_name in export.depends_on:
+                dep = self._exports_full_registry().get(dep_name)
+                if dep is None:
+                    return False
+                if not self._path_for(dep).exists():
+                    return False
+            return True
+        return path.exists()
+
+    def _exports_full_registry(self) -> dict[str, Export]:
+        if not hasattr(self, "_full_registry_cache"):
+            self._full_registry_cache = ExportRegistry().exports
+        return self._full_registry_cache
 
     def run(self) -> ExportResult:
         """Execute all exports in dependency order."""
         self._output_dir.mkdir(parents=True, exist_ok=True)
-        self._intermediates_dir.mkdir(parents=True, exist_ok=True)
         result = ExportResult()
 
         dependency_only: set[str] = set()
@@ -615,10 +678,10 @@ class ExportPipeline:
             export = all_exports[name]
             parquet_path = self._path_for(export)
 
-            if self._skip_existing and parquet_path.exists():
-                display.console.print(f"[dim]Skipping {name} (parquet exists)[/dim]")
+            if self._skip_existing and self._artifact_exists(export, parquet_path):
+                display.console.print(f"[dim]Skipping {name} (exists)[/dim]")
                 result.succeeded.append(name)
-                if not export.is_intermediate and name not in dependency_only:
+                if name not in dependency_only:
                     result.parquet_files.append(parquet_path)
                 self._advance_dashboard()
                 continue
@@ -638,9 +701,14 @@ class ExportPipeline:
                     continue
 
             is_composite = isinstance(export, CompositeExport)
-            tag = "[cyan]compose[/cyan]" if is_composite else "[blue]SPARQL[/blue]"
-            if export.is_intermediate:
-                tag += " [dim](intermediate)[/dim]"
+            if is_composite and self._is_links_directory(export):
+                tag = "[cyan]links[/cyan] [dim](partitioned)[/dim]"
+            elif is_composite:
+                tag = "[cyan]compose[/cyan]"
+            else:
+                tag = "[blue]SPARQL[/blue]"
+                if isinstance(export, QueryExport) and export.partition_of:
+                    tag += f" [dim](partition of {export.partition_of})[/dim]"
             display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
             if isinstance(export, QueryExport) and export.sparql:
                 display.console.print(f"[dim]{export.sparql}[/dim]")
@@ -659,7 +727,7 @@ class ExportPipeline:
                     raise TypeError(f"Unknown export type: {type(export)}")
 
                 result.succeeded.append(name)
-                if not export.is_intermediate and name not in dependency_only:
+                if name not in dependency_only:
                     result.parquet_files.append(parquet_path)
                 logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
 
@@ -675,14 +743,19 @@ class ExportPipeline:
 
             self._advance_dashboard()
 
-        # Clean up intermediates / dependency-only base tables.
+        # Clean up dependency-only base tables (never delete links partitions).
         if not self._keep_base:
             for exp_name, exp in all_exports.items():
-                if exp.is_intermediate or exp_name in dependency_only:
-                    path = self._path_for(exp)
-                    if path.exists():
-                        path.unlink()
-                        logger.info("Removed intermediate/base: %s", exp_name)
+                if exp_name not in dependency_only:
+                    continue
+                if isinstance(exp, QueryExport) and exp.partition_of is not None:
+                    continue
+                if self._is_links_directory(exp):
+                    continue
+                path = self._path_for(exp)
+                if path.exists() and path.is_file():
+                    path.unlink()
+                    logger.info("Removed dependency-only base: %s", exp_name)
 
         # Generate Croissant metadata.
         if result.succeeded:
@@ -751,6 +824,11 @@ class ExportPipeline:
         return ordered
 
     def _run_composite(self, export: CompositeExport, parquet_path: Path) -> tuple[int, float]:
+        # Links directories aggregate per-property scans via dependencies
+        # only — no DuckDB composition to run.
+        if not export.compose_steps:
+            return self._summarize_links_directory(export, parquet_path)
+
         threads_info = f", {self._duckdb_threads} threads" if self._duckdb_threads else ""
         display.console.print(
             f"  Composing from base tables "
@@ -758,7 +836,6 @@ class ExportPipeline:
         )
         duckdb_tmp = self._temp_directory or (self._output_dir / ".duckdb_tmp")
         dir_str = str(self._output_dir)
-        intermediates_str = str(self._intermediates_dir)
 
         con = duckdb.connect()
         con.execute(f"SET memory_limit = '{self._memory_limit}'")
@@ -771,11 +848,7 @@ class ExportPipeline:
 
         total = len(export.compose_steps)
         for i, step in enumerate(export.compose_steps, 1):
-            step_sql = (
-                step.sql
-                .replace("{exports_dir}", dir_str)
-                .replace("{intermediates_dir}", intermediates_str)
-            )
+            step_sql = step.sql.replace("{exports_dir}", dir_str)
             t0 = time.perf_counter()
             if step.is_final:
                 parquet_path.parent.mkdir(parents=True, exist_ok=True)
@@ -806,6 +879,35 @@ class ExportPipeline:
 
         pq_mb = parquet_path.stat().st_size / 1e6
         display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+        return count, pq_mb
+
+    def _summarize_links_directory(
+        self, export: CompositeExport, dir_path: Path
+    ) -> tuple[int, float]:
+        """Summarize a Hive-partitioned links directory (no composition)."""
+        partition_files = sorted(dir_path.glob("x_property=*/data.parquet"))
+        if not partition_files:
+            display.console.print("  [yellow]No partition files found.[/yellow]")
+            return 0, 0.0
+
+        total_bytes = sum(f.stat().st_size for f in partition_files)
+        pq_mb = total_bytes / 1e6
+
+        try:
+            con = duckdb.connect()
+            con.execute(f"SET memory_limit = '{self._memory_limit}'")
+            count: int = con.execute(
+                f"SELECT COUNT(*) FROM read_parquet("
+                f"'{dir_path}/**/*.parquet', hive_partitioning=true)"
+            ).fetchone()[0]  # type: ignore[index]
+            con.close()
+        except Exception as exc:
+            logger.warning("Row count for %s failed: %s", export.name, exc)
+            count = 0
+
+        display.console.print(
+            f"  {len(partition_files)} partitions · {count:,} rows · {pq_mb:.1f} MB"
+        )
         return count, pq_mb
 
     def _run_query_export(self, export: QueryExport, parquet_path: Path) -> tuple[int, float]:
@@ -873,4 +975,14 @@ class ExportPipeline:
                 f"\n[green bold]{len(user_succeeded)} export(s) complete.[/green bold]"
             )
             for p in result.parquet_files:
-                display.console.print(f"  {p.name}: {p.stat().st_size / 1e6:.1f} MB")
+                if p.is_dir():
+                    parts = list(p.glob("**/*.parquet"))
+                    size = sum(f.stat().st_size for f in parts)
+                    display.console.print(
+                        f"  {p.name}/ ({len(parts)} partitions): "
+                        f"{size / 1e6:.1f} MB"
+                    )
+                else:
+                    display.console.print(
+                        f"  {p.name}: {p.stat().st_size / 1e6:.1f} MB"
+                    )

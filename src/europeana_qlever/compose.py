@@ -1,15 +1,12 @@
 """DuckDB composition SQL for the europeana-qlever export pipeline.
 
-Composable exports (``links_union``, ``merged``, ``group``, ``map``) are
-built from raw Parquet files (values_*, links_*) via a sequence of
+Composable exports (``merged``, ``group``, ``map``) are built from raw
+Parquet files (values_*, links_*/Hive-partitioned) via a sequence of
 DuckDB ``ComposeStep``s.  The final step of each export is written to
 Parquet via a COPY wrapper by :class:`~.export.ExportPipeline`.
 
-SQL templates use placeholders replaced at execution time:
-
-- ``{exports_dir}``     — absolute path to the exports directory
-- ``{intermediates_dir}`` — ``{exports_dir}/.intermediates`` (where
-  per-property links_scan Parquets live)
+SQL templates use ``{exports_dir}`` — the absolute path to the exports
+directory — replaced at execution time.
 """
 
 from __future__ import annotations
@@ -20,7 +17,6 @@ from .rights import duckdb_family_case, duckdb_is_open_case, duckdb_label_case
 from .schema_loader import (
     authority_sql,
     export_classes,
-    link_properties,
     reuse_level_sql,
 )
 
@@ -39,26 +35,12 @@ class ComposeStep:
     is_final: bool = False
 
 
-# ---------------------------------------------------------------------------
-# links_union — UNION ALL the per-property intermediate Parquets
-# ---------------------------------------------------------------------------
-
-
-def links_union_steps(table_name: str) -> list[ComposeStep]:
-    """Return compose steps that UNION ALL all per-property intermediate
-    Parquets for ``table_name`` into a single final Parquet."""
-    props = link_properties(table_name)
-    if not props:
-        return []
-
-    # Build a UNION ALL of the intermediate Parquets. Using a glob pattern
-    # is simplest — DuckDB UNIONs all files matching ``{table}__*.parquet``.
-    # Columns in each intermediate Parquet are identical.
-    sql = (
-        f"SELECT k_iri, x_property, x_value, x_value_is_iri, x_value_lang\n"
-        f"FROM read_parquet('{{intermediates_dir}}/{table_name}__*.parquet')"
+def _links_read(table_name: str) -> str:
+    """DuckDB expression reading a Hive-partitioned links directory."""
+    return (
+        f"read_parquet('{{exports_dir}}/{table_name}/**/*.parquet', "
+        f"hive_partitioning=true)"
     )
-    return [ComposeStep(name=f"{table_name}_union", sql=sql, is_final=True)]
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +155,7 @@ def _agg_step(
         f"CREATE TEMP TABLE {temp_name} AS\n"
         f"SELECT pc.k_iri_cho AS k_iri,\n"
         f"       {agg_expr}\n"
-        f"FROM read_parquet('{{exports_dir}}/links_ore_Proxy.parquet') l\n"
+        f"FROM {_links_read('links_ore_Proxy')} l\n"
         f"JOIN proxy_cho pc ON l.k_iri = pc.k_iri\n"
         f"{join_label}\n"
         f"WHERE l.x_property = '{source_property}' AND {proxy_filter}\n"
@@ -575,7 +557,7 @@ def map_sameAs_steps() -> list[ComposeStep]:
             f"SELECT k_iri, x_value AS v_owl_sameAs,\n"
             f"       {auth_case} AS x_authority,\n"
             f"       '{ecls}' AS x_entity_class\n"
-            f"FROM read_parquet('{{exports_dir}}/{table}.parquet')\n"
+            f"FROM {_links_read(table)}\n"
             f"WHERE x_property = 'v_owl_sameAs'"
         )
     sql = "\nUNION ALL\n".join(unions)
@@ -632,7 +614,7 @@ def map_cho_entities_steps() -> list[ComposeStep]:
         "  l.x_value AS k_iri_entity,\n"
         "  e.x_entity_class AS x_entity_class,\n"
         "  l.x_property AS x_property\n"
-        "FROM read_parquet('{exports_dir}/links_ore_Proxy.parquet') l\n"
+        f"FROM {_links_read('links_ore_Proxy')} l\n"
         "JOIN proxy_cho pc ON l.k_iri = pc.k_iri\n"
         "JOIN entity_iris e ON l.x_value = e.k_iri\n"
         "WHERE l.x_value_is_iri"
@@ -652,8 +634,6 @@ def compose_steps_for(table_name: str) -> list[ComposeStep]:
     if info is None:
         return []
     et = info.export_type
-    if et == "links_union":
-        return links_union_steps(table_name)
     if et == "merged" and table_name == "merged_items":
         return merged_items_steps()
     if et == "group" and table_name == "group_items":

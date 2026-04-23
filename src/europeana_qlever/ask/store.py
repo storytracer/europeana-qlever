@@ -70,6 +70,24 @@ class ParquetStore:
                 )
             self._tables[name] = pq_file
 
+        # Hive-partitioned links directories. Each links_* subdir contains
+        # x_property=<col>/data.parquet files; register the whole directory
+        # as a single view and let DuckDB prune by partition key.
+        for links_dir in sorted(self._exports_dir.iterdir()):
+            if not links_dir.is_dir():
+                continue
+            if not links_dir.name.startswith("links_"):
+                continue
+            if not any(links_dir.glob("x_property=*/data.parquet")):
+                continue
+            name = links_dir.name
+            self._con.execute(
+                f'CREATE VIEW "{name}" AS '
+                f"SELECT * FROM read_parquet("
+                f"'{links_dir}/**/*.parquet', hive_partitioning=true)"
+            )
+            self._tables[name] = links_dir
+
         # Back-compat alias for reports / agent: items → merged_items.
         if "merged_items" in self._tables:
             self._con.execute(

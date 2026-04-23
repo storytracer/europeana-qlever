@@ -12,10 +12,11 @@ Two export types produce SPARQL:
 
 - ``values``: single SPARQL scan per table, driven by ``sparql_base_pattern``
   and per-attribute ``sparql_binding`` annotations.
-- ``links_scan``: synthetic per-property scans for a ``links_union`` table.
+- ``links_scan``: synthetic per-property scans for a ``links`` table.
   Each produces rows ``(k_iri, x_property, x_value, x_value_is_iri,
   x_value_lang)`` where ``x_property`` is a bound literal like
-  ``"v_dc_subject"``.
+  ``"v_dc_subject"``.  Output is written to a Hive partition of the
+  parent links directory.
 """
 
 from __future__ import annotations
@@ -131,10 +132,11 @@ class QueryRegistry:
     """Builds and holds all :class:`Query` objects for raw exports.
 
     One Query per ``values`` table (from ``export_classes()``), plus one
-    Query per synthetic links_scan intermediate (from
-    ``links_scan_entries()``).  ``merged``, ``group``, ``map``, and
-    ``links_union`` exports have no SPARQL query — they are composed in
-    DuckDB.
+    Query per synthetic links_scan partition (from
+    ``links_scan_entries()``).  ``links`` tables (the Hive-partitioned
+    directories) themselves have no SPARQL query — they aggregate their
+    partition scans.  ``merged``, ``group``, and ``map`` exports are
+    composed in DuckDB.
     """
 
     def __init__(self) -> None:
