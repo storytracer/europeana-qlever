@@ -1,6 +1,6 @@
 """Threaded HTTP server for the DuckDB-backed explorer.
 
-Serves the bundled single-page app at ``/`` and exposes four JSON POST
+Serves the bundled single-page app at ``/`` and exposes JSON POST
 endpoints that a :class:`ExplorerEngine` answers directly against a local
 DuckDB connection:
 
@@ -8,6 +8,7 @@ DuckDB connection:
 - ``POST /api/summary``    → filtered count, chart bars, distinct-count cards
 - ``POST /api/top-values`` → facet values for a column
 - ``POST /api/sample``     → N random rows matching filters
+- ``POST /api/labels``     → resolve organisation IRIs to skos:prefLabel
 
 All user-supplied values are bound as DuckDB parameters. Column identifiers
 are whitelisted against the schema before being spliced into SQL.
@@ -35,6 +36,11 @@ import duckdb
 
 _MAX_BODY_BYTES = 1_000_000
 _CHART_LIMIT = 30
+_MAX_LABEL_LOOKUP = 1_000
+
+# Columns whose values are organisation IRIs that can be resolved to
+# human-readable labels via the values_foaf_Organization parquet.
+_LABEL_RESOLVABLE_COLUMNS = ("v_edm_dataProvider", "v_edm_provider")
 
 
 class ExplorerEngine:
@@ -46,6 +52,7 @@ class ExplorerEngine:
         *,
         memory_limit: str = "4GB",
         threads: int = 2,
+        organizations_parquet: str | None = None,
     ) -> None:
         self.lock = threading.Lock()
         self.con = duckdb.connect()
@@ -77,6 +84,17 @@ class ExplorerEngine:
         )
 
         self._load_numeric_ranges()
+
+        self.label_columns: list[str] = []
+        if organizations_parquet:
+            escaped_orgs = organizations_parquet.replace("'", "''")
+            self.con.execute(
+                "CREATE VIEW organizations AS "
+                f"SELECT * FROM read_parquet('{escaped_orgs}')"
+            )
+            self.label_columns = [
+                c for c in _LABEL_RESOLVABLE_COLUMNS if c in self.column_set
+            ]
 
     # -- startup ---------------------------------------------------------
 
@@ -129,7 +147,38 @@ class ExplorerEngine:
     # -- endpoints -------------------------------------------------------
 
     def schema_payload(self) -> dict:
-        return {"total": self.total_count, "columns": self.columns}
+        return {
+            "total": self.total_count,
+            "columns": self.columns,
+            "label_columns": list(self.label_columns),
+        }
+
+    def resolve_labels(self, values: list[str]) -> dict:
+        if not self.label_columns:
+            return {"labels": {}}
+        iris = [v for v in values if isinstance(v, str) and v]
+        if not iris:
+            return {"labels": {}}
+        if len(iris) > _MAX_LABEL_LOOKUP:
+            iris = iris[:_MAX_LABEL_LOOKUP]
+        # Dedupe while preserving order.
+        seen: dict[str, None] = {}
+        for v in iris:
+            seen.setdefault(v, None)
+        unique = list(seen.keys())
+        placeholders = ", ".join(["?"] * len(unique))
+        # Prefer English labels, then unspecified language, then anything else.
+        sql = (
+            "SELECT k_iri, ARG_MIN(v_skos_prefLabel, "
+            "CASE WHEN x_prefLabel_lang = 'en' THEN 0 "
+            "WHEN COALESCE(x_prefLabel_lang, '') = '' THEN 1 "
+            "ELSE 2 END) AS label "
+            f"FROM organizations WHERE k_iri IN ({placeholders}) "
+            "GROUP BY k_iri"
+        )
+        with self.lock:
+            rows = self.con.execute(sql, unique).fetchall()
+        return {"labels": {iri: label for iri, label in rows if label}}
 
     def summary(self, filters: dict, group_by: str) -> dict:
         if group_by not in self.column_set:
@@ -393,11 +442,19 @@ def _sample(engine: ExplorerEngine, body: dict) -> dict:
     return engine.sample(filters, int(n))
 
 
+def _labels(engine: ExplorerEngine, body: dict) -> dict:
+    values = body.get("values") or []
+    if not isinstance(values, list):
+        raise ValueError("values must be an array")
+    return engine.resolve_labels(values)
+
+
 _API = {
     "/api/schema": _schema,
     "/api/summary": _summary,
     "/api/top-values": _top_values,
     "/api/sample": _sample,
+    "/api/labels": _labels,
 }
 
 

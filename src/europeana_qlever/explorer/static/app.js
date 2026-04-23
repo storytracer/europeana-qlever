@@ -60,11 +60,46 @@ let columnByName = new Map();
 let totalCount = 0;
 let chart = null;
 let queryId = 0;
+let labelColumns = new Set();   // columns whose values can be resolved to labels
+const labelCache = new Map();   // iri → label (or "" when known to be unresolvable)
 
 const state = {
   filters: {},              // { col: {kind, ...} }
   groupBy: null,
 };
+
+// ---------------------------------------------------------------------------
+// Label lookup (lazy, server-resolved)
+// ---------------------------------------------------------------------------
+
+async function fetchLabels(values) {
+  if (!labelColumns.size) return;
+  const need = [];
+  const seen = new Set();
+  for (const v of values) {
+    if (typeof v !== "string" || !v) continue;
+    if (labelCache.has(v) || seen.has(v)) continue;
+    seen.add(v);
+    need.push(v);
+  }
+  if (!need.length) return;
+  try {
+    const res = await api("/api/labels", { values: need });
+    const labels = res.labels || {};
+    for (const v of need) {
+      labelCache.set(v, labels[v] ?? "");
+    }
+  } catch (e) {
+    // Mark as resolved-empty so we don't retry on every render.
+    for (const v of need) labelCache.set(v, "");
+    console.warn("label lookup failed", e);
+  }
+}
+
+function labelFor(value) {
+  if (typeof value !== "string") return "";
+  return labelCache.get(value) || "";
+}
 
 // ---------------------------------------------------------------------------
 // Facets
@@ -186,16 +221,34 @@ async function loadFacetValues(col) {
   }
   renderFacetValueList(col, container, cache.rows);
 
+  const matches = labelColumns.has(col.name)
+    ? (q, row) => {
+        const v = String(row.value ?? "").toLowerCase();
+        const l = labelFor(row.value).toLowerCase();
+        return v.includes(q) || (l && l.includes(q));
+      }
+    : (q, row) => String(row.value ?? "").toLowerCase().includes(q);
+
   if (cache.truncated) {
     searchSlot.innerHTML = '<input type="search" placeholder="Search top values…" />';
     const searchInput = searchSlot.querySelector("input");
     searchInput.addEventListener("input", () => {
       const q = searchInput.value.toLowerCase();
-      const filtered = cache.rows.filter((r) =>
-        String(r.value ?? "").toLowerCase().includes(q)
-      );
+      const filtered = cache.rows.filter((r) => matches(q, r));
       renderFacetValueList(col, container, filtered);
     });
+  }
+
+  // Lazy-resolve labels for the visible top values, then re-render.
+  if (labelColumns.has(col.name)) {
+    await fetchLabels(cache.rows.map((r) => r.value));
+    // Re-render with the same currently-visible filter applied.
+    const searchInput = searchSlot.querySelector("input");
+    const q = searchInput ? searchInput.value.toLowerCase() : "";
+    const visible = q
+      ? cache.rows.filter((r) => matches(q, r))
+      : cache.rows;
+    renderFacetValueList(col, container, visible);
   }
 }
 
@@ -207,15 +260,19 @@ function renderFacetValueList(col, container, rows) {
     container.innerHTML = '<div class="muted">No values.</div>';
     return;
   }
+  const resolveLabels = labelColumns.has(col.name);
   for (const r of rows) {
     const v = r.value;
-    const label = v == null ? "(null)" : String(v);
+    const raw = v == null ? "(null)" : String(v);
+    const resolved = resolveLabels ? labelFor(v) : "";
+    const display = resolved || raw;
     const row = document.createElement("label");
     row.className = "facet-value";
     const checked = selected.has(v);
+    const title = resolved ? `${resolved}\n${raw}` : raw;
     row.innerHTML = `
       <input type="checkbox" ${checked ? "checked" : ""} />
-      <span class="fv-label" title="${label.replace(/"/g, "&quot;")}">${label}</span>
+      <span class="fv-label" title="${title.replace(/"/g, "&quot;")}">${display}</span>
       <span class="fv-count">${fmt.format(r.count)}</span>
     `;
     row.querySelector("input").addEventListener("change", (e) => {
@@ -244,7 +301,12 @@ async function loadAllFacetValues() {
 // ---------------------------------------------------------------------------
 
 function renderChart(rows, groupBy) {
-  const labels = rows.map((r) => r.value == null ? "(null)" : String(r.value));
+  const useLabels = labelColumns.has(groupBy);
+  const labels = rows.map((r) => {
+    const raw = r.value == null ? "(null)" : String(r.value);
+    if (!useLabels) return raw;
+    return labelFor(r.value) || raw;
+  });
   const data = rows.map((r) => r.count);
   const ctx = $("chart").getContext("2d");
 
@@ -421,6 +483,12 @@ async function update() {
     if (myId !== queryId) return;
     renderSummary(res.filtered, res.countries, res.providers);
     renderChart(res.chart, state.groupBy);
+    // Lazy-resolve labels for the chart bars and re-render once they arrive.
+    if (labelColumns.has(state.groupBy)) {
+      await fetchLabels(res.chart.map((r) => r.value));
+      if (myId !== queryId) return;
+      renderChart(res.chart, state.groupBy);
+    }
   } catch (e) {
     showError(`Query failed: ${e.message}`);
   }
@@ -444,6 +512,7 @@ async function main() {
     columns = schema.columns;
     columnByName = new Map(columns.map((c) => [c.name, c]));
     totalCount = schema.total;
+    labelColumns = new Set(schema.label_columns || []);
 
     renderFacets();
 

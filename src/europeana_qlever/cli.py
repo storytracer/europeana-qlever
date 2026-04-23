@@ -2320,6 +2320,11 @@ def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
         parquet_source = str(parquet_path)
         data_banner = f"local: {parquet_path}"
 
+    organizations_path = exports_dir / "values_foaf_Organization.parquet"
+    organizations_source = (
+        str(organizations_path) if organizations_path.exists() else None
+    )
+
     try:
         bound_port = find_free_port(port, attempts=20)
     except OSError as e:
@@ -2339,10 +2344,21 @@ def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
             parquet_source,
             memory_limit=budget.duckdb_memory(),
             threads=budget.duckdb_threads(),
+            organizations_parquet=organizations_source,
         )
     except Exception as e:
         display.console.print(f"[red]Failed to open {data_banner}: {e}[/red]")
         raise SystemExit(1)
+
+    if organizations_source:
+        display.console.print(
+            f"  labels : {display.short_path(organizations_path)}"
+        )
+    else:
+        display.console.print(
+            "  labels : [dim]values_foaf_Organization.parquet not found — "
+            "provider labels disabled[/dim]"
+        )
 
     server = serve(static_root, engine, bound_port)
     url = f"http://localhost:{bound_port}/"
