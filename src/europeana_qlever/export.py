@@ -23,7 +23,8 @@ import os
 import time
 from datetime import datetime
 from collections import deque
-from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
+from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
 
@@ -493,6 +494,7 @@ def tsv_to_parquet(
     workers: int | None = None,
     total_hint: int | None = None,
     static_schema: pa.Schema | None = None,
+    show_progress: bool = True,
 ) -> int:
     """Parse a SPARQL TSV file with rdflib and write Parquet with PyArrow."""
     if workers is None:
@@ -526,8 +528,17 @@ def tsv_to_parquet(
             prog_cols.append(TimeRemainingColumn())
         prog_cols.append(TimeElapsedColumn())
 
-        with Progress(*prog_cols, console=display.console) as progress:
-            task = progress.add_task(f"→ {desc}", total=total_hint)
+        progress_ctx = (
+            Progress(*prog_cols, console=display.console)
+            if show_progress
+            else nullcontext()
+        )
+        with progress_ctx as progress:
+            task = (
+                progress.add_task(f"→ {desc}", total=total_hint)
+                if progress is not None
+                else None
+            )
 
             with ProcessPoolExecutor(max_workers=workers) as executor:
                 max_inflight = workers * 2
@@ -556,7 +567,8 @@ def tsv_to_parquet(
 
                     _write_batch(writer, schema, parsed_rows)
                     total_rows += len(parsed_rows)
-                    progress.update(task, advance=len(parsed_rows))
+                    if progress is not None:
+                        progress.update(task, advance=len(parsed_rows))
 
         if writer is None:
             # Zero data rows — still emit an empty Parquet so callers can
@@ -581,8 +593,26 @@ def tsv_to_parquet(
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _PendingConversion:
+    """A QueryExport whose TSV is on disk and is being converted to Parquet
+    in a background thread, while the next export's SPARQL stream runs."""
+
+    name: str
+    future: Future
+    parquet_path: Path
+    tsv_path: Path
+
+
 class ExportPipeline:
-    """Executes a set of exports: SPARQL→Parquet and DuckDB composition."""
+    """Executes a set of exports: SPARQL→Parquet and DuckDB composition.
+
+    QueryExport runs are pipelined: while one export's TSV is streaming
+    from QLever, the previous export's TSV→Parquet conversion runs in a
+    background thread (one slot, awaited before submitting the next).
+    Composites and dependency checks await the pending conversion first
+    so all base Parquets are on disk before they are read.
+    """
 
     def __init__(
         self,
@@ -688,74 +718,100 @@ class ExportPipeline:
         all_exports = self._resolve_dependencies(dependency_only)
         order = self._topological_order(all_exports)
 
-        for name in order:
-            export = all_exports[name]
-            parquet_path = self._path_for(export)
+        # Single-slot background conversion: while iteration N streams its
+        # TSV, iteration N-1's TSV→Parquet runs here. Await before anything
+        # that needs the previous Parquet on disk (composite, dep check).
+        converter = ThreadPoolExecutor(max_workers=1, thread_name_prefix="convert")
+        pending: _PendingConversion | None = None
+        try:
+            for name in order:
+                export = all_exports[name]
+                parquet_path = self._path_for(export)
 
-            if self._skip_existing and self._artifact_exists(export, parquet_path):
-                display.console.print(f"[dim]Skipping {name} (exists)[/dim]")
-                result.succeeded.append(name)
-                if name not in dependency_only:
-                    result.parquet_files.append(parquet_path)
-                self._advance_dashboard()
-                continue
+                # Anything that reads previously-produced Parquets needs the
+                # background conversion drained first.
+                if pending is not None and not isinstance(export, QueryExport):
+                    pending = self._await_pending(pending, result, dependency_only)
 
-            if isinstance(export, CompositeExport):
-                missing = [
-                    dep for dep in export.depends_on
-                    if dep not in result.succeeded
-                    and not self._path_for(all_exports[dep]).exists()
-                ]
-                if missing:
-                    msg = f"Missing dependencies: {', '.join(missing)}"
-                    logger.error("Composite export %s skipped: %s", name, msg)
-                    display.console.print(f"  [red]SKIPPED: {msg}[/red]")
-                    result.failed[name] = msg
+                if self._skip_existing and self._artifact_exists(export, parquet_path):
+                    display.console.print(f"[dim]Skipping {name} (exists)[/dim]")
+                    result.succeeded.append(name)
+                    if name not in dependency_only:
+                        result.parquet_files.append(parquet_path)
                     self._advance_dashboard()
                     continue
 
-            is_composite = isinstance(export, CompositeExport)
-            if is_composite and self._is_links_directory(export):
-                tag = "[cyan]links[/cyan] [dim](partitioned)[/dim]"
-            elif is_composite:
-                tag = "[cyan]compose[/cyan]"
-            else:
-                tag = "[blue]SPARQL[/blue]"
-                if isinstance(export, QueryExport) and export.partition_of:
-                    tag += f" [dim](partition of {export.partition_of})[/dim]"
-            display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
-            if isinstance(export, QueryExport) and export.sparql:
-                display.console.print(f"[dim]{export.sparql}[/dim]")
-            if self._dashboard is not None:
-                try:
-                    self._dashboard.set_info("export", name)
-                except Exception:
-                    pass
-
-            try:
                 if isinstance(export, CompositeExport):
-                    count, pq_mb = self._run_composite(export, parquet_path)
-                elif isinstance(export, QueryExport):
-                    count, pq_mb = self._run_query_export(export, parquet_path)
+                    missing = [
+                        dep for dep in export.depends_on
+                        if dep not in result.succeeded
+                        and not self._path_for(all_exports[dep]).exists()
+                    ]
+                    if missing:
+                        msg = f"Missing dependencies: {', '.join(missing)}"
+                        logger.error("Composite export %s skipped: %s", name, msg)
+                        display.console.print(f"  [red]SKIPPED: {msg}[/red]")
+                        result.failed[name] = msg
+                        self._advance_dashboard()
+                        continue
+
+                is_composite = isinstance(export, CompositeExport)
+                if is_composite and self._is_links_directory(export):
+                    tag = "[cyan]links[/cyan] [dim](partitioned)[/dim]"
+                elif is_composite:
+                    tag = "[cyan]compose[/cyan]"
                 else:
-                    raise TypeError(f"Unknown export type: {type(export)}")
+                    tag = "[blue]SPARQL[/blue]"
+                    if isinstance(export, QueryExport) and export.partition_of:
+                        tag += f" [dim](partition of {export.partition_of})[/dim]"
+                display.console.print(f"\n[bold]━━━ {name} ━━━[/bold] {tag}")
+                if isinstance(export, QueryExport) and export.sparql:
+                    display.console.print(f"[dim]{export.sparql}[/dim]")
+                if self._dashboard is not None:
+                    try:
+                        self._dashboard.set_info("export", name)
+                    except Exception:
+                        pass
 
-                result.succeeded.append(name)
-                if name not in dependency_only:
-                    result.parquet_files.append(parquet_path)
-                logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
+                try:
+                    if isinstance(export, CompositeExport):
+                        count, pq_mb = self._run_composite(export, parquet_path)
+                        result.succeeded.append(name)
+                        if name not in dependency_only:
+                            result.parquet_files.append(parquet_path)
+                        logger.info("Exported %s: %d rows, %.1f MB", name, count, pq_mb)
+                        self._advance_dashboard()
+                    elif isinstance(export, QueryExport):
+                        # Foreground: stream this export's TSV from QLever.
+                        # Background (in parallel): the previous export's
+                        # TSV→Parquet conversion is running in `pending`.
+                        tsv_path, rows = self._stream_query_export(export, parquet_path)
+                        # Drain previous conversion before kicking off ours
+                        # so we never run two ProcessPools at once.
+                        if pending is not None:
+                            pending = self._await_pending(pending, result, dependency_only)
+                        pending = self._submit_conversion(
+                            converter, name, parquet_path, tsv_path, rows,
+                        )
+                    else:
+                        raise TypeError(f"Unknown export type: {type(export)}")
 
-            except Exception as exc:
-                logger.error("Export failed for %s: %s", name, exc)
-                display.console.print(f"  [red]FAILED: {exc}[/red]")
-                result.failed[name] = str(exc)
-                if isinstance(export, QueryExport):
-                    tsv_path = parquet_path.with_suffix(".tsv")
-                    _cleanup_partial(tsv_path, parquet_path)
-                else:
-                    _cleanup_partial(parquet_path)
+                except Exception as exc:
+                    logger.error("Export failed for %s: %s", name, exc)
+                    display.console.print(f"  [red]FAILED: {exc}[/red]")
+                    result.failed[name] = str(exc)
+                    if isinstance(export, QueryExport):
+                        tsv_path = parquet_path.with_suffix(".tsv")
+                        _cleanup_partial(tsv_path, parquet_path)
+                    else:
+                        _cleanup_partial(parquet_path)
+                    self._advance_dashboard()
 
-            self._advance_dashboard()
+            # Drain the final background conversion before cleanup/Croissant.
+            if pending is not None:
+                pending = self._await_pending(pending, result, dependency_only)
+        finally:
+            converter.shutdown(wait=True)
 
         # Clean up dependency-only base tables (never delete links partitions).
         if not self._keep_base:
@@ -924,7 +980,10 @@ class ExportPipeline:
         )
         return count, pq_mb
 
-    def _run_query_export(self, export: QueryExport, parquet_path: Path) -> tuple[int, float]:
+    def _stream_query_export(
+        self, export: QueryExport, parquet_path: Path,
+    ) -> tuple[Path, int]:
+        """Foreground step: stream SPARQL TSV from QLever to disk."""
         parquet_path.parent.mkdir(parents=True, exist_ok=True)
         tsv_path = parquet_path.with_suffix(".tsv")
 
@@ -946,25 +1005,74 @@ class ExportPipeline:
             tsv_mb = tsv_path.stat().st_size / 1e6
             display.console.print(f"  TSV: {rows:,} rows · {tsv_mb:.1f} MB")
 
-        display.console.print("  Converting to Parquet…")
+        return tsv_path, rows
+
+    def _submit_conversion(
+        self,
+        converter: ThreadPoolExecutor,
+        name: str,
+        parquet_path: Path,
+        tsv_path: Path,
+        rows: int,
+    ) -> _PendingConversion:
+        """Background step: kick off TSV→Parquet conversion."""
         try:
             from .schema_loader import pyarrow_schema
-            pq_schema = pyarrow_schema(export.name)
+            pq_schema = pyarrow_schema(name)
         except (KeyError, ImportError):
             pq_schema = None
-        count = tsv_to_parquet(
-            tsv_path, parquet_path,
+
+        display.console.print("  Converting to Parquet [dim](in background)[/dim]…")
+        future = converter.submit(
+            tsv_to_parquet,
+            tsv_path,
+            parquet_path,
             row_group_size=self._duckdb_row_group_size,
             total_hint=rows,
             static_schema=pq_schema,
+            show_progress=False,
         )
-        pq_mb = parquet_path.stat().st_size / 1e6
-        display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+        return _PendingConversion(
+            name=name,
+            future=future,
+            parquet_path=parquet_path,
+            tsv_path=tsv_path,
+        )
 
-        if not self._reuse_tsv:
-            tsv_path.unlink()
-
-        return count, pq_mb
+    def _await_pending(
+        self,
+        pending: _PendingConversion,
+        result: ExportResult,
+        dependency_only: set[str],
+    ) -> None:
+        """Block on a background conversion and record its outcome."""
+        try:
+            count = pending.future.result()
+            pq_mb = pending.parquet_path.stat().st_size / 1e6
+            display.console.print(
+                f"  [dim]✓[/dim] {pending.name}: "
+                f"{count:,} rows · {pq_mb:.1f} MB"
+            )
+            result.succeeded.append(pending.name)
+            if pending.name not in dependency_only:
+                result.parquet_files.append(pending.parquet_path)
+            logger.info(
+                "Exported %s: %d rows, %.1f MB", pending.name, count, pq_mb,
+            )
+            if not self._reuse_tsv:
+                try:
+                    pending.tsv_path.unlink()
+                except FileNotFoundError:
+                    pass
+        except Exception as exc:
+            logger.error("Conversion failed for %s: %s", pending.name, exc)
+            display.console.print(
+                f"  [red]✗ {pending.name}: conversion failed: {exc}[/red]"
+            )
+            result.failed[pending.name] = str(exc)
+            _cleanup_partial(pending.tsv_path, pending.parquet_path)
+        self._advance_dashboard()
+        return None
 
     def _advance_dashboard(self) -> None:
         if self._dashboard is not None:
