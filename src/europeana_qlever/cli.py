@@ -1287,6 +1287,9 @@ def analyze_static(
               help="Skip exports whose .parquet already exists.")
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget (e.g. '4GB' or 'auto').")
+@click.option("--chunk-size", type=int, default=5_000_000, show_default=True,
+              help="Rows per chunk for merged_items composition. 0 disables "
+                   "chunking (one-shot aggregation; uses substantially more RAM).")
 @click.option("--keep-base/--no-keep-base", default=True, show_default=True,
               help="Keep intermediate base table Parquet files after composition. "
                    "Use --no-keep-base to clean them up.")
@@ -1323,6 +1326,7 @@ def export(
     timeout: int,
     skip_existing: bool,
     duckdb_memory: str,
+    chunk_size: int,
     keep_base: bool,
     reuse_tsv: bool,
     property_scan: str | None,
@@ -1391,6 +1395,7 @@ def export(
             max_retries=budget.export_max_retries(),
             retry_delays=budget.export_retry_delays(),
             verbose=verbose,
+            chunk_size=(chunk_size or None),
         ).run()
         counters["succeeded"] = len(result.succeeded)
         counters["failed"] = len(result.failed)
@@ -1421,6 +1426,9 @@ def export(
               help="Query result cache size (or 'auto').")
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget for export (e.g. '4GB' or 'auto').")
+@click.option("--compose-chunk-size", type=int, default=5_000_000, show_default=True,
+              help="Rows per chunk for merged_items composition. 0 disables "
+                   "chunking (one-shot aggregation; uses substantially more RAM).")
 @click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
               help="Per-query timeout in seconds for export.")
 @click.option("--skip-merge", is_flag=True, help="Skip merge if chunks already exist.")
@@ -1448,6 +1456,7 @@ def pipeline(
     query_memory: str,
     cache_size: str,
     duckdb_memory: str,
+    compose_chunk_size: int,
     timeout: int,
     skip_merge: bool,
     skip_index: bool,
@@ -1651,6 +1660,7 @@ def pipeline(
                     duckdb_row_group_size=budget.duckdb_row_group_size(),
                     max_retries=budget.export_max_retries(),
                     retry_delays=budget.export_retry_delays(),
+                    chunk_size=(compose_chunk_size or None),
                 ).run()
                 state.update_export(export_result)
                 state.save(state_path)

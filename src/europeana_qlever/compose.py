@@ -108,10 +108,19 @@ def _agg_step(
     proxy_type: str,
     struct_kind: str,
     label_table: str | None,
+    *,
+    chunk_filter: bool = False,
 ) -> ComposeStep:
-    """Build one aggregation temp table for a multi-valued merged_items column."""
+    """Build one aggregation temp table for a multi-valued merged_items column.
+
+    When ``chunk_filter`` is True, the step is written with
+    ``CREATE OR REPLACE`` so it can be rebuilt per chunk; narrowing to
+    the current chunk cascades through the already-filtered
+    ``proxy_cho`` temp table.
+    """
     temp_name = f"agg_{merged_col}"
     proxy_filter = f"pc.proxy_type = '{proxy_type}'"
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
 
     if struct_kind == "lang":
         agg_expr = (
@@ -152,7 +161,7 @@ def _agg_step(
         raise ValueError(f"Unknown struct kind: {struct_kind!r}")
 
     sql = (
-        f"CREATE TEMP TABLE {temp_name} AS\n"
+        f"{create} {temp_name} AS\n"
         f"SELECT pc.k_iri_cho AS k_iri,\n"
         f"       {agg_expr}\n"
         f"FROM {_links_read('links_ore_Proxy')} l\n"
@@ -164,7 +173,7 @@ def _agg_step(
     return ComposeStep(name=temp_name, sql=sql)
 
 
-def _primary_wr_step() -> ComposeStep:
+def _primary_wr_step(*, chunk_filter: bool = False) -> ComposeStep:
     """Build primary_wr temp table with all web-resource scalar columns and IIIF flag."""
     wr_cols = [
         "v_ebucore_audioChannelNumber", "v_ebucore_bitRate", "v_ebucore_duration",
@@ -177,12 +186,18 @@ def _primary_wr_step() -> ComposeStep:
         "v_schema_digitalSourceType",
     ]
     select_cols = ",\n       ".join(f"wr.{c} AS {c}" for c in wr_cols)
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON a.k_iri_cho = cc.k_iri\n"
+        if chunk_filter else ""
+    )
     sql = (
-        "CREATE TEMP TABLE primary_wr AS\n"
+        f"{create} primary_wr AS\n"
         f"SELECT a.k_iri_cho AS k_iri,\n"
         f"       {select_cols},\n"
         f"       (svc.k_iri_webresource IS NOT NULL) AS x_has_iiif\n"
         "FROM read_parquet('{exports_dir}/values_ore_Aggregation.parquet') a\n"
+        f"{chunk_join}"
         "JOIN read_parquet('{exports_dir}/values_edm_WebResource.parquet') wr\n"
         "     ON a.v_edm_isShownBy = wr.k_iri\n"
         "LEFT JOIN (\n"
@@ -193,66 +208,94 @@ def _primary_wr_step() -> ComposeStep:
     return ComposeStep(name="primary_wr", sql=sql)
 
 
-def _proxy_cho_step() -> ComposeStep:
-    """Map proxy URIs → (CHO URI, provider|europeana) for joining with links_ore_Proxy."""
-    sql = (
-        "CREATE TEMP TABLE proxy_cho AS\n"
-        "SELECT k_iri, k_iri_cho,\n"
-        "       CASE WHEN v_edm_europeanaProxy = 'true' THEN 'europeana' ELSE 'provider' END AS proxy_type\n"
-        "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet')"
-    )
+def _proxy_cho_step(*, chunk_filter: bool = False) -> ComposeStep:
+    """Map proxy URIs → (CHO URI, provider|europeana) for joining with links_ore_Proxy.
+
+    When ``chunk_filter`` is True, rows are narrowed to proxies whose CHO
+    lies in the current ``chunk_chos`` temp table; this cascades through
+    every downstream agg_* step without further changes.
+    """
+    if chunk_filter:
+        sql = (
+            "CREATE OR REPLACE TEMP TABLE proxy_cho AS\n"
+            "SELECT p.k_iri, p.k_iri_cho,\n"
+            "       CASE WHEN p.v_edm_europeanaProxy = 'true' THEN 'europeana' ELSE 'provider' END AS proxy_type\n"
+            "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet') p\n"
+            "SEMI JOIN chunk_chos cc ON p.k_iri_cho = cc.k_iri"
+        )
+    else:
+        sql = (
+            "CREATE TEMP TABLE proxy_cho AS\n"
+            "SELECT k_iri, k_iri_cho,\n"
+            "       CASE WHEN v_edm_europeanaProxy = 'true' THEN 'europeana' ELSE 'provider' END AS proxy_type\n"
+            "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet')"
+        )
     return ComposeStep(name="proxy_cho", sql=sql)
 
 
-def merged_items_steps() -> list[ComposeStep]:
-    """Return the full sequence of compose steps for merged_items."""
-    steps: list[ComposeStep] = []
-
-    # 1. Entity label maps (English preferred)
-    steps.append(_entity_label_step("labels_agent",   "values_edm_Agent"))
-    steps.append(_entity_label_step("labels_concept", "values_skos_Concept"))
-    steps.append(_entity_label_step("labels_place",   "values_edm_Place"))
-    steps.append(_entity_label_step("labels_org",     "values_foaf_Organization"))
-
-    # 2. Proxy-CHO mapping (used by all multi-valued aggregations)
-    steps.append(_proxy_cho_step())
-
-    # 3. Per-property aggregations
-    for rule in _AGG_RULES:
-        steps.append(_agg_step(*rule))
-
-    # 4. Primary web resource + IIIF flag
-    steps.append(_primary_wr_step())
-
-    # 5. Provider-proxy and Europeana-proxy scalar helpers
-    steps.append(ComposeStep(
-        name="provider_proxy_scalars",
-        sql=(
-            "CREATE TEMP TABLE provider_proxy_scalars AS\n"
-            "SELECT k_iri_cho AS k_iri,\n"
-            "       MAX(v_edm_currentLocation) AS v_edm_currentLocation\n"
-            "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet')\n"
-            "WHERE v_edm_europeanaProxy IS NULL OR v_edm_europeanaProxy != 'true'\n"
-            "GROUP BY k_iri_cho"
-        ),
-    ))
-    steps.append(ComposeStep(
-        name="europeana_proxy_scalars",
-        sql=(
-            "CREATE TEMP TABLE europeana_proxy_scalars AS\n"
-            "SELECT k_iri_cho AS k_iri,\n"
-            "       MAX(v_edm_type) AS v_edm_type\n"
-            "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet')\n"
-            "WHERE v_edm_europeanaProxy = 'true'\n"
-            "GROUP BY k_iri_cho"
-        ),
-    ))
-
-    # 6. Final SELECT — assemble merged_items with all columns alphabetical
-    agg_joins = "\n".join(
-        f"LEFT JOIN agg_{merged_col} USING (k_iri)"
-        for merged_col, _, _, _, _ in _AGG_RULES
+def _cho_numbered_step() -> ComposeStep:
+    """Full CHO list with a stable ROW_NUMBER. Built once per chunked run."""
+    sql = (
+        "CREATE TEMP TABLE cho_numbered AS\n"
+        "SELECT k_iri, ROW_NUMBER() OVER () AS rn\n"
+        "FROM read_parquet('{exports_dir}/values_edm_ProvidedCHO.parquet')"
     )
+    return ComposeStep(name="cho_numbered", sql=sql)
+
+
+def _chunk_chos_step() -> ComposeStep:
+    """CHO IRIs for the current chunk. ``{chunk_start}`` / ``{chunk_end}``
+    are substituted by the execution layer per iteration."""
+    sql = (
+        "CREATE OR REPLACE TEMP TABLE chunk_chos AS\n"
+        "SELECT k_iri FROM cho_numbered\n"
+        "WHERE rn > {chunk_start} AND rn <= {chunk_end}"
+    )
+    return ComposeStep(name="chunk_chos", sql=sql)
+
+
+def _provider_proxy_scalars_step(*, chunk_filter: bool = False) -> ComposeStep:
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON p.k_iri_cho = cc.k_iri\n"
+        if chunk_filter else ""
+    )
+    sql = (
+        f"{create} provider_proxy_scalars AS\n"
+        "SELECT p.k_iri_cho AS k_iri,\n"
+        "       MAX(p.v_edm_currentLocation) AS v_edm_currentLocation\n"
+        "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet') p\n"
+        f"{chunk_join}"
+        "WHERE p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true'\n"
+        "GROUP BY p.k_iri_cho"
+    )
+    return ComposeStep(name="provider_proxy_scalars", sql=sql)
+
+
+def _europeana_proxy_scalars_step(*, chunk_filter: bool = False) -> ComposeStep:
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON p.k_iri_cho = cc.k_iri\n"
+        if chunk_filter else ""
+    )
+    sql = (
+        f"{create} europeana_proxy_scalars AS\n"
+        "SELECT p.k_iri_cho AS k_iri, MAX(p.v_edm_type) AS v_edm_type\n"
+        "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet') p\n"
+        f"{chunk_join}"
+        "WHERE p.v_edm_europeanaProxy = 'true'\n"
+        "GROUP BY p.k_iri_cho"
+    )
+    return ComposeStep(name="europeana_proxy_scalars", sql=sql)
+
+
+def _merged_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
+    """Build the final assembly step for merged_items.
+
+    When ``chunk_filter`` is True, the CHO base is narrowed via a
+    ``SEMI JOIN chunk_chos`` so the step emits only rows for the current
+    chunk.
+    """
     agg_columns = [merged_col for merged_col, _, _, _, _ in _AGG_RULES]
 
     # Title/description helpers — first English-preferred value
@@ -393,9 +436,15 @@ def merged_items_steps() -> list[ComposeStep]:
 
     select_str = ",\n  ".join(select_parts)
 
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON cho.k_iri = cc.k_iri\n"
+        if chunk_filter else ""
+    )
+
     final_sql = (
         f"SELECT\n  {select_str}\n"
         "FROM read_parquet('{exports_dir}/values_edm_ProvidedCHO.parquet') cho\n"
+        f"{chunk_join}"
         "LEFT JOIN read_parquet('{exports_dir}/values_ore_Aggregation.parquet') agg\n"
         "  ON agg.k_iri_cho = cho.k_iri\n"
         "LEFT JOIN read_parquet('{exports_dir}/values_edm_EuropeanaAggregation.parquet') eagg\n"
@@ -411,7 +460,75 @@ def merged_items_steps() -> list[ComposeStep]:
         )
     )
 
-    steps.append(ComposeStep(name="merged_items_final", sql=final_sql, is_final=True))
+    return ComposeStep(name="merged_items_final", sql=final_sql, is_final=True)
+
+
+def merged_items_shared_steps() -> list[ComposeStep]:
+    """Steps that do not depend on the current chunk.
+
+    Built once per chunked run; reused across all chunks. The
+    ``cho_numbered`` temp table powers cheap per-chunk ``chunk_chos``
+    slicing without rescanning the CHO Parquet.
+    """
+    return [
+        _entity_label_step("labels_agent",   "values_edm_Agent"),
+        _entity_label_step("labels_concept", "values_skos_Concept"),
+        _entity_label_step("labels_place",   "values_edm_Place"),
+        _entity_label_step("labels_org",     "values_foaf_Organization"),
+        _cho_numbered_step(),
+    ]
+
+
+def merged_items_chunk_steps() -> list[ComposeStep]:
+    """Steps rebuilt per chunk via ``CREATE OR REPLACE TEMP TABLE``.
+
+    The first step builds ``chunk_chos`` from ``cho_numbered`` using
+    ``{chunk_start}`` / ``{chunk_end}`` placeholders substituted by the
+    execution layer. All subsequent steps narrow their output to that
+    slice (either via a direct ``SEMI JOIN chunk_chos`` or transitively
+    through the already-filtered ``proxy_cho``).
+    """
+    steps: list[ComposeStep] = [_chunk_chos_step(), _proxy_cho_step(chunk_filter=True)]
+    for rule in _AGG_RULES:
+        steps.append(_agg_step(*rule, chunk_filter=True))
+    steps.append(_primary_wr_step(chunk_filter=True))
+    steps.append(_provider_proxy_scalars_step(chunk_filter=True))
+    steps.append(_europeana_proxy_scalars_step(chunk_filter=True))
+    steps.append(_merged_items_final_step(chunk_filter=True))
+    return steps
+
+
+def merged_items_steps() -> list[ComposeStep]:
+    """Return the full one-shot compose sequence for merged_items.
+
+    Backwards-compatible path used when chunking is disabled. Omits
+    ``cho_numbered`` / ``chunk_chos`` and builds every temp table with
+    the CHO-wide (unfiltered) body.
+    """
+    steps: list[ComposeStep] = []
+
+    # 1. Entity label maps (English preferred)
+    steps.append(_entity_label_step("labels_agent",   "values_edm_Agent"))
+    steps.append(_entity_label_step("labels_concept", "values_skos_Concept"))
+    steps.append(_entity_label_step("labels_place",   "values_edm_Place"))
+    steps.append(_entity_label_step("labels_org",     "values_foaf_Organization"))
+
+    # 2. Proxy-CHO mapping (used by all multi-valued aggregations)
+    steps.append(_proxy_cho_step())
+
+    # 3. Per-property aggregations
+    for rule in _AGG_RULES:
+        steps.append(_agg_step(*rule))
+
+    # 4. Primary web resource + IIIF flag
+    steps.append(_primary_wr_step())
+
+    # 5. Provider-proxy and Europeana-proxy scalar helpers
+    steps.append(_provider_proxy_scalars_step())
+    steps.append(_europeana_proxy_scalars_step())
+
+    # 6. Final assembly
+    steps.append(_merged_items_final_step())
     return steps
 
 

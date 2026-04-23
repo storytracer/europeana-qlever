@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import math
 import os
 import time
 from datetime import datetime
@@ -56,7 +57,12 @@ from .constants import (
     QLEVER_PORT,
     QLEVER_QUERY_TIMEOUT,
 )
-from .compose import ComposeStep, compose_steps_for
+from .compose import (
+    ComposeStep,
+    compose_steps_for,
+    merged_items_chunk_steps,
+    merged_items_shared_steps,
+)
 from .schema_loader import (
     depends_on as _deps_for,
     export_classes,
@@ -863,6 +869,7 @@ class ExportPipeline:
         max_retries: int = DEFAULT_EXPORT_MAX_RETRIES,
         retry_delays: tuple[int, ...] = DEFAULT_EXPORT_RETRY_DELAYS,
         verbose: bool = False,
+        chunk_size: int | None = None,
     ) -> None:
         self._output_dir = output_dir
         self._exports = exports
@@ -886,6 +893,7 @@ class ExportPipeline:
         # dashboard mode (which already owns its own Live) fall back to
         # plain console prints + ephemeral per-call progress widgets.
         self._verbose = verbose or dashboard is not None
+        self._chunk_size = chunk_size if chunk_size and chunk_size > 0 else None
         self._ui: ExportProgress | None = None
 
     def _path_for(self, export: Export) -> Path:
@@ -1150,6 +1158,11 @@ class ExportPipeline:
         if not export.compose_steps:
             return self._summarize_links_directory(export, parquet_path)
 
+        # merged_items gets the chunked path when chunking is enabled —
+        # CHO-wide aggregations otherwise OOM above ~60M rows.
+        if export.name == "merged_items" and self._chunk_size:
+            return self._run_composite_chunked(export, parquet_path)
+
         ui = self._ui
         if self._verbose:
             threads_info = (
@@ -1211,6 +1224,174 @@ class ExportPipeline:
             con.close()
             if ui is not None and ui.enabled:
                 ui.end_composite()
+
+        pq_mb = parquet_path.stat().st_size / 1e6
+        if self._verbose:
+            display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+        return count, pq_mb
+
+    def _run_composite_chunked(
+        self, export: CompositeExport, parquet_path: Path
+    ) -> tuple[int, float]:
+        """Chunked composition for merged_items.
+
+        Runs the shared label/cho_numbered steps once, then loops over
+        CHO slices of ``self._chunk_size`` rows. Each chunk rebuilds
+        every per-chunk temp table narrowed to its slice and writes
+        ``merged_items_chunk_NN.parquet``. After all chunks exist, they
+        are unioned into ``merged_items.parquet`` and the chunk files
+        removed. A chunk whose Parquet already exists is skipped, making
+        interrupted runs resumable.
+        """
+        ui = self._ui
+        chunk_size = self._chunk_size
+        assert chunk_size is not None and chunk_size > 0
+
+        duckdb_tmp = self._temp_directory or (self._output_dir / ".duckdb_tmp")
+        dir_str = str(self._output_dir)
+
+        shared = merged_items_shared_steps()
+        per_chunk = merged_items_chunk_steps()
+
+        if self._verbose:
+            threads_info = (
+                f", {self._duckdb_threads} threads" if self._duckdb_threads else ""
+            )
+            display.console.print(
+                f"  Chunked composition "
+                f"[dim]({self._memory_limit} memory{threads_info}, "
+                f"chunk_size={chunk_size:,})[/dim]"
+            )
+
+        con = duckdb.connect()
+        con.execute(f"SET memory_limit = '{self._memory_limit}'")
+        con.execute("SET preserve_insertion_order = false")
+        if self._duckdb_threads is not None:
+            con.execute(f"SET threads = {self._duckdb_threads}")
+        if duckdb_tmp is not None:
+            duckdb_tmp.mkdir(parents=True, exist_ok=True)
+            con.execute(f"SET temp_directory = '{duckdb_tmp}'")
+
+        total_chos: int = con.execute(
+            f"SELECT COUNT(*) FROM read_parquet("
+            f"'{dir_str}/values_edm_ProvidedCHO.parquet')"
+        ).fetchone()[0]  # type: ignore[index]
+        num_chunks = max(1, math.ceil(total_chos / chunk_size))
+        pad = max(2, len(str(num_chunks - 1)))
+
+        if self._verbose:
+            display.console.print(
+                f"  {total_chos:,} CHOs → {num_chunks} chunk(s) of {chunk_size:,}"
+            )
+
+        progress_total = len(shared) + num_chunks * len(per_chunk) + 1  # +1 combine
+        if ui is not None and ui.enabled:
+            ui.begin_composite(export.name, progress_total)
+
+        try:
+            # Shared steps: labels + cho_numbered (built once, reused across chunks).
+            for i, step in enumerate(shared, 1):
+                sql = step.sql.replace("{exports_dir}", dir_str)
+                t0 = time.perf_counter()
+                con.execute(sql)
+                elapsed = time.perf_counter() - t0
+                if self._verbose:
+                    display.console.print(
+                        f"  [dim][shared {i}/{len(shared)}][/dim] "
+                        f"{step.name} ({elapsed:.1f}s)"
+                    )
+                if ui is not None and ui.enabled:
+                    ui.composite_step(step.name)
+
+            # Chunk loop.
+            chunk_paths: list[Path] = []
+            for idx in range(num_chunks):
+                nn = str(idx).zfill(pad)
+                chunk_path = self._output_dir / f"merged_items_chunk_{nn}.parquet"
+                chunk_paths.append(chunk_path)
+
+                if chunk_path.exists():
+                    if self._verbose:
+                        display.console.print(
+                            f"  [dim][chunk {nn}/{num_chunks-1}][/dim] "
+                            f"skip (exists: {chunk_path.name})"
+                        )
+                    if ui is not None and ui.enabled:
+                        for _ in per_chunk:
+                            ui.composite_step("chunk-skip")
+                    continue
+
+                chunk_start = idx * chunk_size
+                chunk_end = chunk_start + chunk_size  # upper bound; WHERE is safe past total
+                chunk_t0 = time.perf_counter()
+
+                for j, step in enumerate(per_chunk, 1):
+                    sql = (
+                        step.sql
+                        .replace("{exports_dir}", dir_str)
+                        .replace("{chunk_start}", str(chunk_start))
+                        .replace("{chunk_end}", str(chunk_end))
+                    )
+                    t0 = time.perf_counter()
+                    if step.is_final:
+                        con.execute(f"""
+                            COPY ({sql})
+                            TO '{chunk_path}'
+                            (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {self._duckdb_row_group_size})
+                        """)
+                    else:
+                        con.execute(sql)
+                    elapsed = time.perf_counter() - t0
+                    if self._verbose:
+                        display.console.print(
+                            f"  [dim][chunk {nn} {j}/{len(per_chunk)}][/dim] "
+                            f"{step.name} ({elapsed:.1f}s)"
+                        )
+                    if ui is not None and ui.enabled:
+                        ui.composite_step(step.name)
+
+                con.execute("CHECKPOINT")
+                if self._verbose:
+                    total_elapsed = time.perf_counter() - chunk_t0
+                    display.console.print(
+                        f"  [magenta]chunk {nn} done[/magenta] "
+                        f"({total_elapsed:.1f}s)"
+                    )
+
+            # Combine: idempotent union into the final Parquet.
+            combine_t0 = time.perf_counter()
+            glob_pattern = str(self._output_dir / "merged_items_chunk_*.parquet")
+            parquet_path.parent.mkdir(parents=True, exist_ok=True)
+            con.execute(f"""
+                COPY (
+                    SELECT * FROM read_parquet(
+                        '{glob_pattern}', union_by_name=true
+                    )
+                )
+                TO '{parquet_path}'
+                (FORMAT PARQUET, COMPRESSION 'zstd', ROW_GROUP_SIZE {self._duckdb_row_group_size})
+            """)
+            if self._verbose:
+                display.console.print(
+                    f"  [magenta]combined {num_chunks} chunk(s)[/magenta] "
+                    f"({time.perf_counter()-combine_t0:.1f}s)"
+                )
+            if ui is not None and ui.enabled:
+                ui.composite_step("combine")
+
+            count: int = con.execute(
+                f"SELECT COUNT(*) FROM '{parquet_path}'"
+            ).fetchone()[0]  # type: ignore[index]
+        finally:
+            con.close()
+            if ui is not None and ui.enabled:
+                ui.end_composite()
+
+        # Cleanup only if combine succeeded and final file is on disk.
+        if parquet_path.exists():
+            for p in chunk_paths:
+                if p.exists():
+                    p.unlink()
 
         pq_mb = parquet_path.stat().st_size / 1e6
         if self._verbose:
