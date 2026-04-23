@@ -441,7 +441,7 @@ def group_items_steps() -> list[ComposeStep]:
         sql=(
             "CREATE TEMP TABLE provider_proxy_properties AS\n"
             "SELECT DISTINCT pc.k_iri_cho AS k_iri, l.x_property\n"
-            "FROM read_parquet('{exports_dir}/links_ore_Proxy.parquet') l\n"
+            f"FROM {_links_read('links_ore_Proxy')} l\n"
             "JOIN proxy_cho pc ON l.k_iri = pc.k_iri\n"
             "WHERE pc.proxy_type = 'provider'"
         ),
@@ -454,7 +454,7 @@ def group_items_steps() -> list[ComposeStep]:
             "CREATE TEMP TABLE primary_language AS\n"
             "SELECT pc.k_iri_cho AS k_iri,\n"
             "       MIN(l.x_value) AS lang\n"
-            "FROM read_parquet('{exports_dir}/links_ore_Proxy.parquet') l\n"
+            f"FROM {_links_read('links_ore_Proxy')} l\n"
             "JOIN proxy_cho pc ON l.k_iri = pc.k_iri\n"
             "WHERE pc.proxy_type = 'provider' AND l.x_property = 'v_dc_language'\n"
             "GROUP BY pc.k_iri_cho"
