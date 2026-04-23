@@ -61,6 +61,8 @@ from .compose import (
     ComposeStep,
     chunked_compose_steps_for,
     compose_steps_for,
+    merged_items_chunk_sql,
+    merged_items_prepare_specs,
 )
 from .schema_loader import (
     depends_on as _deps_for,
@@ -1157,9 +1159,16 @@ class ExportPipeline:
         if not export.compose_steps:
             return self._summarize_links_directory(export, parquet_path)
 
-        # Chunkable composites (merged_items, group_items) use a per-chunk
-        # loop when chunking is enabled — their CHO-wide aggregations over
-        # links_ore_Proxy otherwise OOM above ~60M rows.
+        # merged_items has its own range-chunked path: aggregate once into
+        # sorted Parquet intermediates, then assemble chunks with filter
+        # pushdown. Single-connection temp-table composition OOMs on the
+        # 60 M CHO dataset; the generic chunked path re-scans the 13 GB
+        # links_ore_Proxy directory per chunk.
+        if self._chunk_size and export.name == "merged_items":
+            return self._run_composite_merged_items(export, parquet_path)
+
+        # group_items: generic shared-then-per-chunk path with CREATE OR
+        # REPLACE TEMP TABLE; scalar-only final SELECT is cheap.
         if self._chunk_size and chunked_compose_steps_for(export.name) is not None:
             return self._run_composite_chunked(export, parquet_path)
 
@@ -1397,6 +1406,243 @@ class ExportPipeline:
             for p in chunk_paths:
                 if p.exists():
                     p.unlink()
+
+        pq_mb = parquet_path.stat().st_size / 1e6
+        if self._verbose:
+            display.console.print(f"  Parquet: {count:,} rows · {pq_mb:.1f} MB")
+        return count, pq_mb
+
+    def _run_composite_merged_items(
+        self, export: CompositeExport, parquet_path: Path
+    ) -> tuple[int, float]:
+        """Range-chunked composition for merged_items.
+
+        Phase A — prepare: run each ``MergedItemsPrepareSpec`` in its own
+        fresh DuckDB connection, materialising a sorted-by-``k_iri``
+        Parquet to ``{output_dir}/.merged_items_intermediates/``. Memory
+        is bounded by a single spec's hash table and is released between
+        specs. Resumable: specs whose output already exists are skipped.
+
+        Phase B — chunk assembly: compute lexicographic ``k_iri`` range
+        boundaries once, then for each range open a fresh DuckDB
+        connection and COPY one chunk of the final assembly SELECT
+        (``merged_items_chunk_sql``). The range predicate on
+        ``cho.k_iri`` propagates to every sorted intermediate via DuckDB's
+        equi-join filter inference, pruning Parquet row groups and
+        keeping per-chunk memory small. Resumable: existing chunk
+        Parquets are skipped.
+
+        Phase C — combine: union-by-name glob over chunks into the final
+        Parquet, delete chunks, delete intermediates unless
+        ``--keep-base`` is set.
+        """
+        ui = self._ui
+        chunk_size = self._chunk_size
+        assert chunk_size is not None and chunk_size > 0
+
+        intermediates_dir = self._output_dir / ".merged_items_intermediates"
+        duckdb_tmp = self._temp_directory or (self._output_dir / ".duckdb_tmp")
+        exports_str = str(self._output_dir)
+        intermediates_str = str(intermediates_dir)
+
+        intermediates_dir.mkdir(parents=True, exist_ok=True)
+        duckdb_tmp.mkdir(parents=True, exist_ok=True)
+
+        def _fresh_con() -> "duckdb.DuckDBPyConnection":
+            con = duckdb.connect()
+            con.execute(f"SET memory_limit = '{self._memory_limit}'")
+            con.execute("SET preserve_insertion_order = false")
+            if self._duckdb_threads is not None:
+                con.execute(f"SET threads = {self._duckdb_threads}")
+            con.execute(f"SET temp_directory = '{duckdb_tmp}'")
+            return con
+
+        specs = merged_items_prepare_specs()
+
+        # Count CHOs up front so we know the chunk count for progress.
+        con = _fresh_con()
+        try:
+            total_chos: int = con.execute(
+                f"SELECT COUNT(*) FROM read_parquet("
+                f"'{exports_str}/values_edm_ProvidedCHO.parquet')"
+            ).fetchone()[0]  # type: ignore[index]
+        finally:
+            con.close()
+        num_chunks = max(1, math.ceil(total_chos / chunk_size))
+        pad = max(2, len(str(num_chunks - 1)))
+        progress_total = len(specs) + num_chunks + 1  # + combine
+
+        if self._verbose:
+            threads_info = (
+                f", {self._duckdb_threads} threads" if self._duckdb_threads else ""
+            )
+            display.console.print(
+                f"  Range-chunked via intermediates "
+                f"[dim]({self._memory_limit} memory{threads_info}, "
+                f"chunk_size={chunk_size:,})[/dim]"
+            )
+            display.console.print(
+                f"  {total_chos:,} CHOs → {num_chunks} chunk(s) of {chunk_size:,}"
+            )
+
+        if ui is not None and ui.enabled:
+            ui.begin_composite(export.name, progress_total)
+
+        chunk_paths: list[Path] = []
+        count = 0
+        try:
+            # ---- Phase A: prepare intermediates ----
+            for i, spec in enumerate(specs, 1):
+                out_path = intermediates_dir / spec.filename
+                if out_path.exists():
+                    if self._verbose:
+                        display.console.print(
+                            f"  [dim][prep {i}/{len(specs)}][/dim] "
+                            f"skip {spec.name} (exists)"
+                        )
+                    if ui is not None and ui.enabled:
+                        ui.composite_step(f"prep/{spec.name}")
+                    continue
+
+                sql = (spec.sql
+                       .replace("{exports_dir}", exports_str)
+                       .replace("{intermediates_dir}", intermediates_str))
+                t0 = time.perf_counter()
+                con = _fresh_con()
+                try:
+                    con.execute(
+                        f"COPY ({sql}) TO '{out_path}' "
+                        f"(FORMAT PARQUET, COMPRESSION 'zstd', "
+                        f"ROW_GROUP_SIZE {self._duckdb_row_group_size})"
+                    )
+                finally:
+                    con.close()
+                elapsed = time.perf_counter() - t0
+                if self._verbose:
+                    size_mb = out_path.stat().st_size / 1e6
+                    display.console.print(
+                        f"  [dim][prep {i}/{len(specs)}][/dim] "
+                        f"{spec.name} ({elapsed:.1f}s, {size_mb:.1f} MB)"
+                    )
+                if ui is not None and ui.enabled:
+                    ui.composite_step(f"prep/{spec.name}")
+
+            # ---- Compute chunk range boundaries ----
+            con = _fresh_con()
+            try:
+                rows = con.execute(
+                    f"""
+                    SELECT k_iri FROM (
+                      SELECT k_iri, ROW_NUMBER() OVER (ORDER BY k_iri) AS rn
+                      FROM read_parquet('{exports_str}/values_edm_ProvidedCHO.parquet')
+                    )
+                    WHERE (rn - 1) % {chunk_size} = 0
+                    ORDER BY rn
+                    """
+                ).fetchall()
+            finally:
+                con.close()
+            boundaries: list[str] = [row[0] for row in rows]
+            assert len(boundaries) == num_chunks, (
+                f"Boundary count {len(boundaries)} != expected {num_chunks}"
+            )
+
+            # ---- Phase B: per-chunk COPY ----
+            chunk_template = merged_items_chunk_sql()
+            for idx in range(num_chunks):
+                nn = str(idx).zfill(pad)
+                chunk_path = self._output_dir / f"{export.name}_chunk_{nn}.parquet"
+                chunk_paths.append(chunk_path)
+
+                if chunk_path.exists():
+                    if self._verbose:
+                        display.console.print(
+                            f"  [dim][chunk {nn}/{num_chunks-1}][/dim] "
+                            f"skip (exists: {chunk_path.name})"
+                        )
+                    if ui is not None and ui.enabled:
+                        ui.composite_step(f"chunk/{nn}")
+                    continue
+
+                lo = boundaries[idx].replace("'", "''")
+                predicate = f"cho.k_iri >= '{lo}'"
+                if idx + 1 < num_chunks:
+                    hi = boundaries[idx + 1].replace("'", "''")
+                    predicate += f" AND cho.k_iri < '{hi}'"
+
+                sql = (chunk_template
+                       .replace("{exports_dir}", exports_str)
+                       .replace("{intermediates_dir}", intermediates_str)
+                       .replace("{range_predicate}", predicate))
+
+                t0 = time.perf_counter()
+                con = _fresh_con()
+                try:
+                    con.execute(
+                        f"COPY ({sql}) TO '{chunk_path}' "
+                        f"(FORMAT PARQUET, COMPRESSION 'zstd', "
+                        f"ROW_GROUP_SIZE {self._duckdb_row_group_size})"
+                    )
+                finally:
+                    con.close()
+                elapsed = time.perf_counter() - t0
+                if self._verbose:
+                    size_mb = chunk_path.stat().st_size / 1e6
+                    display.console.print(
+                        f"  [dim][chunk {nn}/{num_chunks-1}][/dim] "
+                        f"{elapsed:.1f}s, {size_mb:.1f} MB"
+                    )
+                if ui is not None and ui.enabled:
+                    ui.composite_step(f"chunk/{nn}")
+
+            # ---- Phase C: combine chunks ----
+            glob_pattern = str(self._output_dir / f"{export.name}_chunk_*.parquet")
+            parquet_path.parent.mkdir(parents=True, exist_ok=True)
+            combine_t0 = time.perf_counter()
+            con = _fresh_con()
+            try:
+                con.execute(
+                    f"COPY ("
+                    f"  SELECT * FROM read_parquet("
+                    f"    '{glob_pattern}', union_by_name=true"
+                    f"  )"
+                    f") TO '{parquet_path}' "
+                    f"(FORMAT PARQUET, COMPRESSION 'zstd', "
+                    f"ROW_GROUP_SIZE {self._duckdb_row_group_size})"
+                )
+                count = con.execute(
+                    f"SELECT COUNT(*) FROM '{parquet_path}'"
+                ).fetchone()[0]  # type: ignore[index]
+            finally:
+                con.close()
+            if self._verbose:
+                display.console.print(
+                    f"  [magenta]combined {num_chunks} chunk(s)[/magenta] "
+                    f"({time.perf_counter()-combine_t0:.1f}s)"
+                )
+            if ui is not None and ui.enabled:
+                ui.composite_step("combine")
+        finally:
+            if ui is not None and ui.enabled:
+                ui.end_composite()
+
+        # ---- Cleanup ----
+        # Intermediates and chunk Parquets are internal scratch for this
+        # composition, not user-facing outputs — always remove once the
+        # final Parquet is on disk. ``--keep-base`` governs raw
+        # values_* / links_* retention, not these.
+        if parquet_path.exists():
+            for p in chunk_paths:
+                if p.exists():
+                    p.unlink()
+            if intermediates_dir.exists():
+                for f in intermediates_dir.iterdir():
+                    if f.is_file():
+                        f.unlink()
+                try:
+                    intermediates_dir.rmdir()
+                except OSError:
+                    pass
 
         pq_mb = parquet_path.stat().st_size / 1e6
         if self._verbose:

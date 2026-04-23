@@ -245,7 +245,7 @@ def _europeana_agg_step(*, chunk_filter: bool = False) -> ComposeStep:
     return ComposeStep(name="europeana_agg", sql=sql)
 
 
-def _primary_wr_step(*, chunk_filter: bool = False) -> ComposeStep:
+def _primary_wr_step() -> ComposeStep:
     """Web-resource scalars for each CHO's primary WR.
 
     Reads from the already-1:1 ``provider_agg`` temp table so the join
@@ -264,9 +264,8 @@ def _primary_wr_step(*, chunk_filter: bool = False) -> ComposeStep:
         "v_schema_digitalSourceType",
     ]
     select_cols = ",\n       ".join(f"wr.{c} AS {c}" for c in wr_cols)
-    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
     sql = (
-        f"{create} primary_wr AS\n"
+        "CREATE TEMP TABLE primary_wr AS\n"
         f"SELECT DISTINCT ON (pa.k_iri)\n"
         f"       pa.k_iri AS k_iri,\n"
         f"       {select_cols},\n"
@@ -364,12 +363,14 @@ def _europeana_proxy_scalars_step(*, chunk_filter: bool = False) -> ComposeStep:
     return ComposeStep(name="europeana_proxy_scalars", sql=sql)
 
 
-def _merged_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
-    """Build the final assembly step for merged_items.
+def _merged_items_select_parts() -> list[str]:
+    """Ordered SELECT column expressions for the merged_items assembly SQL.
 
-    When ``chunk_filter`` is True, the CHO base is narrowed via a
-    ``SEMI JOIN chunk_chos`` so the step emits only rows for the current
-    chunk.
+    Column aliases reference JOIN aliases used consistently by both the
+    one-shot temp-table path and the range-chunked intermediates path:
+    ``cho``, ``agg``, ``eagg``, ``primary_wr``, ``provider_proxy_scalars``,
+    ``europeana_proxy_scalars``, ``labels_org_dp``, ``labels_org_prov``,
+    and one ``agg_{col}`` per multi-valued rule.
     """
     agg_columns = [merged_col for merged_col, _, _, _, _ in _AGG_RULES]
 
@@ -401,10 +402,8 @@ def _merged_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
 
     select_parts: list[str] = []
 
-    # k_iri
     select_parts.append("cho.k_iri AS k_iri")
 
-    # Web-resource scalars (alphabetical order within v_ebucore_* and v_edm_*)
     wr_scalars = [
         "v_ebucore_audioChannelNumber", "v_ebucore_bitRate", "v_ebucore_duration",
         "v_ebucore_fileByteSize", "v_ebucore_frameRate", "v_ebucore_hasMimeType",
@@ -415,166 +414,380 @@ def _merged_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
     for c in wr_scalars:
         select_parts.append(f"primary_wr.{c} AS {c}")
 
-    # v_edm_completeness, v_edm_country  (EuropeanaAggregation)
     select_parts.append("eagg.v_edm_completeness AS v_edm_completeness")
     select_parts.append("eagg.v_edm_country AS v_edm_country")
-
-    # v_edm_currentLocation (provider proxy)
     select_parts.append(
         "provider_proxy_scalars.v_edm_currentLocation AS v_edm_currentLocation"
     )
-
-    # v_edm_dataProvider (Aggregation)
     select_parts.append("agg.v_edm_dataProvider AS v_edm_dataProvider")
-
-    # v_edm_datasetName (EuropeanaAggregation)
     select_parts.append("eagg.v_edm_datasetName AS v_edm_datasetName")
-
-    # v_edm_hasColorSpace (WebResource)
     select_parts.append("primary_wr.v_edm_hasColorSpace AS v_edm_hasColorSpace")
-
-    # v_edm_isShownAt, v_edm_isShownBy (Aggregation)
     select_parts.append("agg.v_edm_isShownAt AS v_edm_isShownAt")
     select_parts.append("agg.v_edm_isShownBy AS v_edm_isShownBy")
-
-    # v_edm_landingPage (EuropeanaAggregation)
     select_parts.append("eagg.v_edm_landingPage AS v_edm_landingPage")
-
-    # v_edm_object (Aggregation)
     select_parts.append("agg.v_edm_object AS v_edm_object")
-
-    # v_edm_pointCount (WebResource)
     select_parts.append("primary_wr.v_edm_pointCount AS v_edm_pointCount")
     select_parts.append("primary_wr.v_edm_polygonCount AS v_edm_polygonCount")
-
-    # v_edm_preview (EuropeanaAggregation)
     select_parts.append("eagg.v_edm_preview AS v_edm_preview")
-
-    # v_edm_provider, v_edm_rights (Aggregation)
     select_parts.append("agg.v_edm_provider AS v_edm_provider")
     select_parts.append("agg.v_edm_rights AS v_edm_rights")
-
-    # v_edm_spatialResolution (WebResource)
     select_parts.append("primary_wr.v_edm_spatialResolution AS v_edm_spatialResolution")
-
-    # v_edm_type (Europeana proxy)
     select_parts.append("europeana_proxy_scalars.v_edm_type AS v_edm_type")
-
-    # v_edm_vertexCount (WebResource)
     select_parts.append("primary_wr.v_edm_vertexCount AS v_edm_vertexCount")
-
-    # v_schema_digitalSourceType (WebResource)
     select_parts.append("primary_wr.v_schema_digitalSourceType AS v_schema_digitalSourceType")
 
-    # --- x_ columns, alphabetical ---
     select_parts.append("labels_org_dp.label AS x_dataProvider_name")
 
-    # All x_dc_* + x_dcterms_* + x_edm_* list columns from agg tables
     for col in agg_columns:
-        if col in ("x_dc_title", "x_dc_description"):
-            select_parts.append(f"agg_{col}.{col} AS {col}")
-        else:
-            select_parts.append(f"agg_{col}.{col} AS {col}")
+        select_parts.append(f"agg_{col}.{col} AS {col}")
 
-    # x_description + x_description_lang (derived from x_dc_description)
     select_parts.append(desc_expr)
     select_parts.append(desc_lang_expr)
-
-    # x_has_iiif
     select_parts.append("COALESCE(primary_wr.x_has_iiif, false) AS x_has_iiif")
-
-    # x_megapixels
     select_parts.append(
         "CASE WHEN primary_wr.v_ebucore_width IS NOT NULL "
         "AND primary_wr.v_ebucore_height IS NOT NULL "
         "THEN primary_wr.v_ebucore_width * primary_wr.v_ebucore_height / 1000000.0 END "
         "AS x_megapixels"
     )
-
-    # x_provider_name
     select_parts.append("labels_org_prov.label AS x_provider_name")
-
-    # x_reuse_level
     select_parts.append(f"{reuse_level_sql('agg.v_edm_rights')} AS x_reuse_level")
-
-    # x_title / x_title_lang (derived from x_dc_title)
     select_parts.append(title_expr)
     select_parts.append(title_lang_expr)
 
-    # Sort select parts alphabetically by the final column name (after ``AS``).
     def _col_name(line: str) -> str:
         if " AS " in line:
             return line.rsplit(" AS ", 1)[1].strip()
         return line
 
     select_parts.sort(key=_col_name)
+    return select_parts
 
-    select_str = ",\n  ".join(select_parts)
 
-    chunk_join = (
-        "SEMI JOIN chunk_chos cc ON cho.k_iri = cc.k_iri\n"
-        if chunk_filter else ""
-    )
+def _merged_items_joins(source) -> str:
+    """LEFT JOIN clauses for merged_items, using a source resolver.
 
+    ``source(name)`` returns the SQL fragment for a logical table —
+    either a bare temp-table name (one-shot path) or a
+    ``read_parquet('{intermediates_dir}/X.parquet')`` expression
+    (range-chunked path).
+    """
+    agg_columns = [merged_col for merged_col, _, _, _, _ in _AGG_RULES]
+    lines = [
+        f"LEFT JOIN {source('provider_agg')} agg ON agg.k_iri = cho.k_iri",
+        f"LEFT JOIN {source('europeana_agg')} eagg ON eagg.k_iri = cho.k_iri",
+        f"LEFT JOIN {source('primary_wr')} primary_wr ON primary_wr.k_iri = cho.k_iri",
+        f"LEFT JOIN {source('provider_proxy_scalars')} provider_proxy_scalars "
+        f"ON provider_proxy_scalars.k_iri = cho.k_iri",
+        f"LEFT JOIN {source('europeana_proxy_scalars')} europeana_proxy_scalars "
+        f"ON europeana_proxy_scalars.k_iri = cho.k_iri",
+        f"LEFT JOIN {source('labels_org')} labels_org_dp "
+        f"ON labels_org_dp.k_iri = agg.v_edm_dataProvider",
+        f"LEFT JOIN {source('labels_org')} labels_org_prov "
+        f"ON labels_org_prov.k_iri = agg.v_edm_provider",
+    ]
+    for col in agg_columns:
+        lines.append(
+            f"LEFT JOIN {source('agg_' + col)} agg_{col} "
+            f"ON agg_{col}.k_iri = cho.k_iri"
+        )
+    return "\n".join(lines)
+
+
+def _merged_items_final_step() -> ComposeStep:
+    """Final assembly step for the one-shot (temp-table) merged_items path."""
+    select_str = ",\n  ".join(_merged_items_select_parts())
+    joins = _merged_items_joins(lambda name: name)  # logical name == temp table
     final_sql = (
         f"SELECT\n  {select_str}\n"
         "FROM read_parquet('{exports_dir}/values_edm_ProvidedCHO.parquet') cho\n"
-        f"{chunk_join}"
-        "LEFT JOIN provider_agg agg ON agg.k_iri = cho.k_iri\n"
-        "LEFT JOIN europeana_agg eagg ON eagg.k_iri = cho.k_iri\n"
-        "LEFT JOIN primary_wr ON primary_wr.k_iri = cho.k_iri\n"
-        "LEFT JOIN provider_proxy_scalars ON provider_proxy_scalars.k_iri = cho.k_iri\n"
-        "LEFT JOIN europeana_proxy_scalars ON europeana_proxy_scalars.k_iri = cho.k_iri\n"
-        "LEFT JOIN labels_org labels_org_dp ON labels_org_dp.k_iri = agg.v_edm_dataProvider\n"
-        "LEFT JOIN labels_org labels_org_prov ON labels_org_prov.k_iri = agg.v_edm_provider\n"
-        + "\n".join(
-            f"LEFT JOIN agg_{col} ON agg_{col}.k_iri = cho.k_iri"
-            for col in agg_columns
-        )
+        f"{joins}"
     )
-
     return ComposeStep(name="merged_items_final", sql=final_sql, is_final=True)
 
 
-def merged_items_shared_steps() -> list[ComposeStep]:
-    """Steps that do not depend on the current chunk.
+# ---------------------------------------------------------------------------
+# merged_items — range-chunked composition via on-disk intermediates
+# ---------------------------------------------------------------------------
 
-    Built once per chunked run; reused across all chunks. Besides the
-    label maps and the ``cho_numbered`` row-index helper, this also
-    includes the scalar entity rollups ``provider_agg``,
-    ``europeana_agg`` and ``primary_wr`` — they read the raw values_*
-    Parquets (Aggregation / EuropeanaAggregation / WebResource) which
-    don't depend on ``chunk_chos``, so materializing them once avoids
-    N redundant full-file scans. The per-chunk final SELECT narrows to
-    the current chunk via ``SEMI JOIN chunk_chos cc ON cho.k_iri = cc.k_iri``.
+
+@dataclass
+class MergedItemsPrepareSpec:
+    """One Phase-A intermediate for range-chunked merged_items composition.
+
+    ``sql`` is a standalone SELECT body (no CREATE/COPY wrapper). The
+    runner wraps it in ``COPY (...) TO '{intermediates_dir}/{filename}'``
+    and executes in its own DuckDB connection so memory is released
+    between steps. SQL may reference ``{exports_dir}`` (raw values_* /
+    links_* reads) and ``{intermediates_dir}`` (previously-written
+    intermediates).
     """
-    return [
-        _entity_label_step("labels_agent",   "values_edm_Agent"),
-        _entity_label_step("labels_concept", "values_skos_Concept"),
-        _entity_label_step("labels_place",   "values_edm_Place"),
-        _entity_label_step("labels_org",     "values_foaf_Organization"),
-        _cho_numbered_step(),
-        _provider_agg_step(),
-        _europeana_agg_step(),
-        _primary_wr_step(),
-    ]
+
+    name: str
+    filename: str
+    sql: str
 
 
-def merged_items_chunk_steps() -> list[ComposeStep]:
-    """Steps rebuilt per chunk via ``CREATE OR REPLACE TEMP TABLE``.
+def _prepare_label_sql(
+    source_parquet: str, label_col: str = "v_skos_prefLabel"
+) -> str:
+    return (
+        "SELECT k_iri,\n"
+        f"       COALESCE(\n"
+        f"           MAX({label_col}) FILTER (WHERE x_prefLabel_lang = 'en'),\n"
+        f"           MAX({label_col})\n"
+        "       ) AS label\n"
+        f"FROM read_parquet('{{exports_dir}}/{source_parquet}.parquet')\n"
+        "GROUP BY k_iri"
+    )
 
-    The first step builds ``chunk_chos`` from ``cho_numbered`` using
-    ``{chunk_start}`` / ``{chunk_end}`` placeholders substituted by the
-    execution layer. Each agg_* step narrows to the chunk transitively
-    through the already-filtered ``proxy_cho``.
+
+def _prepare_proxy_cho_sql() -> str:
+    return (
+        "SELECT k_iri, k_iri_cho,\n"
+        "       CASE WHEN v_edm_europeanaProxy = 'true' "
+        "THEN 'europeana' ELSE 'provider' END AS proxy_type\n"
+        "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet')"
+    )
+
+
+def _prepare_provider_agg_sql() -> str:
+    cols = ",\n       ".join(f"a.{c} AS {c}" for c in _PROVIDER_AGG_COLS)
+    return (
+        "SELECT DISTINCT ON (a.k_iri_cho)\n"
+        "       a.k_iri_cho AS k_iri,\n"
+        f"       {cols}\n"
+        "FROM read_parquet('{exports_dir}/values_ore_Aggregation.parquet') a\n"
+        "ORDER BY a.k_iri_cho, a.k_iri"
+    )
+
+
+def _prepare_europeana_agg_sql() -> str:
+    cols = ",\n       ".join(f"e.{c} AS {c}" for c in _EUROPEANA_AGG_COLS)
+    return (
+        "SELECT DISTINCT ON (e.k_iri_cho)\n"
+        "       e.k_iri_cho AS k_iri,\n"
+        f"       {cols}\n"
+        "FROM read_parquet('{exports_dir}/values_edm_EuropeanaAggregation.parquet') e\n"
+        "ORDER BY e.k_iri_cho, e.k_iri"
+    )
+
+
+_WR_SCALAR_COLS = [
+    "v_ebucore_audioChannelNumber", "v_ebucore_bitRate", "v_ebucore_duration",
+    "v_ebucore_fileByteSize", "v_ebucore_frameRate", "v_ebucore_hasMimeType",
+    "v_ebucore_height", "v_ebucore_orientation", "v_ebucore_sampleRate",
+    "v_ebucore_sampleSize", "v_ebucore_width",
+    "v_edm_codecName", "v_edm_hasColorSpace",
+    "v_edm_pointCount", "v_edm_polygonCount", "v_edm_spatialResolution",
+    "v_edm_vertexCount",
+    "v_schema_digitalSourceType",
+]
+
+
+def _prepare_primary_wr_sql() -> str:
+    select_cols = ",\n       ".join(f"wr.{c} AS {c}" for c in _WR_SCALAR_COLS)
+    return (
+        "SELECT DISTINCT ON (pa.k_iri)\n"
+        "       pa.k_iri AS k_iri,\n"
+        f"       {select_cols},\n"
+        "       (svc.k_iri_webresource IS NOT NULL) AS x_has_iiif\n"
+        "FROM read_parquet('{intermediates_dir}/provider_agg.parquet') pa\n"
+        "JOIN read_parquet('{exports_dir}/values_edm_WebResource.parquet') wr\n"
+        "     ON pa.v_edm_isShownBy = wr.k_iri\n"
+        "LEFT JOIN (\n"
+        "    SELECT DISTINCT k_iri_webresource\n"
+        "    FROM read_parquet('{exports_dir}/values_svcs_Service.parquet')\n"
+        ") svc ON wr.k_iri = svc.k_iri_webresource\n"
+        "ORDER BY pa.k_iri, wr.k_iri"
+    )
+
+
+def _prepare_provider_proxy_scalars_sql() -> str:
+    return (
+        "SELECT k_iri_cho AS k_iri,\n"
+        "       MAX(v_edm_currentLocation) AS v_edm_currentLocation\n"
+        "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet')\n"
+        "WHERE v_edm_europeanaProxy IS NULL OR v_edm_europeanaProxy != 'true'\n"
+        "GROUP BY k_iri_cho\n"
+        "ORDER BY k_iri"
+    )
+
+
+def _prepare_europeana_proxy_scalars_sql() -> str:
+    return (
+        "SELECT k_iri_cho AS k_iri,\n"
+        "       MAX(v_edm_type) AS v_edm_type\n"
+        "FROM read_parquet('{exports_dir}/values_ore_Proxy.parquet')\n"
+        "WHERE v_edm_europeanaProxy = 'true'\n"
+        "GROUP BY k_iri_cho\n"
+        "ORDER BY k_iri"
+    )
+
+
+def _prepare_agg_sql(
+    merged_col: str,
+    source_property: str,
+    proxy_type: str,
+    struct_kind: str,
+    label_table: str | None,
+) -> str:
+    """Phase-A multi-valued aggregation over a single links_ore_Proxy x_property."""
+    proxy_filter = f"pc.proxy_type = '{proxy_type}'"
+
+    if struct_kind == "lang":
+        agg_expr = (
+            "LIST({x_value: l.x_value, x_value_lang: l.x_value_lang}) "
+            f"AS {merged_col}"
+        )
+        join_label = ""
+    elif struct_kind == "labeled":
+        assert label_table
+        agg_expr = (
+            "LIST({"
+            "x_value: l.x_value, "
+            "x_label: COALESCE(lab.label, l.x_value), "
+            "x_value_is_iri: l.x_value_is_iri"
+            "}) "
+            f"AS {merged_col}"
+        )
+        join_label = (
+            f"LEFT JOIN read_parquet('{{intermediates_dir}}/{label_table}.parquet') lab "
+            f"ON l.x_value_is_iri AND l.x_value = lab.k_iri"
+        )
+    elif struct_kind == "named":
+        assert label_table
+        agg_expr = (
+            "LIST({"
+            "x_value: l.x_value, "
+            "x_name: COALESCE(lab.label, l.x_value), "
+            "x_value_is_iri: l.x_value_is_iri"
+            "}) "
+            f"AS {merged_col}"
+        )
+        join_label = (
+            f"LEFT JOIN read_parquet('{{intermediates_dir}}/{label_table}.parquet') lab "
+            f"ON l.x_value_is_iri AND l.x_value = lab.k_iri"
+        )
+    elif struct_kind == "simple":
+        agg_expr = f"LIST(l.x_value) AS {merged_col}"
+        join_label = ""
+    else:
+        raise ValueError(f"Unknown struct kind: {struct_kind!r}")
+
+    return (
+        "SELECT pc.k_iri_cho AS k_iri,\n"
+        f"       {agg_expr}\n"
+        f"FROM {_links_read('links_ore_Proxy')} l\n"
+        f"JOIN read_parquet('{{intermediates_dir}}/proxy_cho.parquet') pc "
+        f"ON l.k_iri = pc.k_iri\n"
+        f"{join_label}\n"
+        f"WHERE l.x_property = '{source_property}' AND {proxy_filter}\n"
+        "GROUP BY pc.k_iri_cho\n"
+        "ORDER BY k_iri"
+    )
+
+
+def merged_items_prepare_specs() -> list[MergedItemsPrepareSpec]:
+    """Ordered prepare specs for merged_items Phase A.
+
+    Each spec produces one sorted-by-k_iri Parquet in the intermediates
+    directory, consumed by subsequent specs and by the Phase-B chunk
+    SELECT. Order matters: ``primary_wr`` depends on
+    ``provider_agg.parquet``; every ``agg_x_*`` step depends on
+    ``proxy_cho.parquet`` and, for labeled/named kinds, on the
+    corresponding ``labels_*.parquet``.
+
+    Sort order rationale: scalar rollups and multi-valued aggregations
+    are sorted by ``k_iri`` (= ``k_iri_cho``) so Phase B range-filter
+    predicates (``cho.k_iri BETWEEN ...``) propagate to Parquet row-
+    group pruning for all per-CHO sources. Label maps and ``proxy_cho``
+    are not filtered by CHO range in Phase B, so they are left
+    unsorted.
     """
-    steps: list[ComposeStep] = [_chunk_chos_step(), _proxy_cho_step(chunk_filter=True)]
+    specs: list[MergedItemsPrepareSpec] = []
+
+    for temp_name, source_parquet in [
+        ("labels_agent",   "values_edm_Agent"),
+        ("labels_concept", "values_skos_Concept"),
+        ("labels_place",   "values_edm_Place"),
+        ("labels_org",     "values_foaf_Organization"),
+    ]:
+        specs.append(MergedItemsPrepareSpec(
+            name=temp_name,
+            filename=f"{temp_name}.parquet",
+            sql=_prepare_label_sql(source_parquet),
+        ))
+
+    specs.append(MergedItemsPrepareSpec(
+        name="proxy_cho",
+        filename="proxy_cho.parquet",
+        sql=_prepare_proxy_cho_sql(),
+    ))
+    specs.append(MergedItemsPrepareSpec(
+        name="provider_agg",
+        filename="provider_agg.parquet",
+        sql=_prepare_provider_agg_sql(),
+    ))
+    specs.append(MergedItemsPrepareSpec(
+        name="europeana_agg",
+        filename="europeana_agg.parquet",
+        sql=_prepare_europeana_agg_sql(),
+    ))
+    specs.append(MergedItemsPrepareSpec(
+        name="primary_wr",
+        filename="primary_wr.parquet",
+        sql=_prepare_primary_wr_sql(),
+    ))
+    specs.append(MergedItemsPrepareSpec(
+        name="provider_proxy_scalars",
+        filename="provider_proxy_scalars.parquet",
+        sql=_prepare_provider_proxy_scalars_sql(),
+    ))
+    specs.append(MergedItemsPrepareSpec(
+        name="europeana_proxy_scalars",
+        filename="europeana_proxy_scalars.parquet",
+        sql=_prepare_europeana_proxy_scalars_sql(),
+    ))
+
     for rule in _AGG_RULES:
-        steps.append(_agg_step(*rule, chunk_filter=True))
-    steps.append(_provider_proxy_scalars_step(chunk_filter=True))
-    steps.append(_europeana_proxy_scalars_step(chunk_filter=True))
-    steps.append(_merged_items_final_step(chunk_filter=True))
-    return steps
+        merged_col, source_property, proxy_type, struct_kind, label_table = rule
+        specs.append(MergedItemsPrepareSpec(
+            name=f"agg_{merged_col}",
+            filename=f"agg_{merged_col}.parquet",
+            sql=_prepare_agg_sql(
+                merged_col, source_property, proxy_type, struct_kind, label_table,
+            ),
+        ))
+
+    return specs
+
+
+def merged_items_chunk_sql() -> str:
+    """SELECT template for one range-chunked merged_items assembly.
+
+    Placeholders (substituted by the runner):
+      - ``{exports_dir}`` — absolute path of the exports directory
+      - ``{intermediates_dir}`` — absolute path of the intermediates dir
+      - ``{range_predicate}`` — ``cho.k_iri >= '...' AND cho.k_iri < '...'``
+        (or ``cho.k_iri >= '...'`` for the final chunk).
+
+    The filter on ``cho.k_iri`` propagates to every sorted
+    per-CHO-keyed intermediate via DuckDB's equi-join filter inference,
+    pruning Parquet row groups. ``labels_org`` is joined on a different
+    column and is read in full (tiny).
+    """
+    select_str = ",\n  ".join(_merged_items_select_parts())
+    joins = _merged_items_joins(
+        lambda name: f"read_parquet('{{intermediates_dir}}/{name}.parquet')"
+    )
+    return (
+        f"SELECT\n  {select_str}\n"
+        "FROM read_parquet('{exports_dir}/values_edm_ProvidedCHO.parquet') cho\n"
+        f"{joins}\n"
+        "WHERE {range_predicate}\n"
+        "ORDER BY cho.k_iri"
+    )
 
 
 def merged_items_steps() -> list[ComposeStep]:
@@ -894,9 +1107,12 @@ def chunked_compose_steps_for(
     Shared steps are built once per run and reused across chunks;
     per-chunk steps are rebuilt with ``CREATE OR REPLACE TEMP TABLE``
     for each ``chunk_chos`` slice.
+
+    Note: ``merged_items`` uses its own range-chunked path with on-disk
+    intermediates instead (see :func:`merged_items_prepare_specs` and
+    :func:`merged_items_chunk_sql`), dispatched directly from
+    ``ExportPipeline`` — it does not appear here.
     """
-    if table_name == "merged_items":
-        return merged_items_shared_steps(), merged_items_chunk_steps()
     if table_name == "group_items":
         return group_items_shared_steps(), group_items_chunk_steps()
     return None
