@@ -539,9 +539,14 @@ def _merged_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
 def merged_items_shared_steps() -> list[ComposeStep]:
     """Steps that do not depend on the current chunk.
 
-    Built once per chunked run; reused across all chunks. The
-    ``cho_numbered`` temp table powers cheap per-chunk ``chunk_chos``
-    slicing without rescanning the CHO Parquet.
+    Built once per chunked run; reused across all chunks. Besides the
+    label maps and the ``cho_numbered`` row-index helper, this also
+    includes the scalar entity rollups ``provider_agg``,
+    ``europeana_agg`` and ``primary_wr`` — they read the raw values_*
+    Parquets (Aggregation / EuropeanaAggregation / WebResource) which
+    don't depend on ``chunk_chos``, so materializing them once avoids
+    N redundant full-file scans. The per-chunk final SELECT narrows to
+    the current chunk via ``SEMI JOIN chunk_chos cc ON cho.k_iri = cc.k_iri``.
     """
     return [
         _entity_label_step("labels_agent",   "values_edm_Agent"),
@@ -549,6 +554,9 @@ def merged_items_shared_steps() -> list[ComposeStep]:
         _entity_label_step("labels_place",   "values_edm_Place"),
         _entity_label_step("labels_org",     "values_foaf_Organization"),
         _cho_numbered_step(),
+        _provider_agg_step(),
+        _europeana_agg_step(),
+        _primary_wr_step(),
     ]
 
 
@@ -557,18 +565,12 @@ def merged_items_chunk_steps() -> list[ComposeStep]:
 
     The first step builds ``chunk_chos`` from ``cho_numbered`` using
     ``{chunk_start}`` / ``{chunk_end}`` placeholders substituted by the
-    execution layer. All subsequent steps narrow their output to that
-    slice (either via a direct ``SEMI JOIN chunk_chos`` or transitively
-    through the already-filtered ``proxy_cho``).
+    execution layer. Each agg_* step narrows to the chunk transitively
+    through the already-filtered ``proxy_cho``.
     """
     steps: list[ComposeStep] = [_chunk_chos_step(), _proxy_cho_step(chunk_filter=True)]
     for rule in _AGG_RULES:
         steps.append(_agg_step(*rule, chunk_filter=True))
-    # provider_agg / europeana_agg collapse 1:N Aggregation fan-outs to 1:1
-    # per CHO; primary_wr reads from provider_agg so it must come after.
-    steps.append(_provider_agg_step(chunk_filter=True))
-    steps.append(_europeana_agg_step(chunk_filter=True))
-    steps.append(_primary_wr_step(chunk_filter=True))
     steps.append(_provider_proxy_scalars_step(chunk_filter=True))
     steps.append(_europeana_proxy_scalars_step(chunk_filter=True))
     steps.append(_merged_items_final_step(chunk_filter=True))
@@ -703,20 +705,29 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
 
 
 def group_items_shared_steps() -> list[ComposeStep]:
-    """CHO-independent steps for group_items chunked runs."""
-    return [_cho_numbered_step()]
+    """CHO-independent steps for group_items chunked runs.
+
+    ``provider_agg`` / ``europeana_agg`` / ``primary_wr`` read the raw
+    Aggregation / EuropeanaAggregation / WebResource Parquets which
+    don't depend on ``chunk_chos``; materializing them once avoids N
+    redundant full-file scans across the chunk loop.
+    """
+    return [
+        _cho_numbered_step(),
+        _provider_agg_step(),
+        _europeana_agg_step(),
+        _primary_wr_step(),
+    ]
 
 
 def group_items_chunk_steps() -> list[ComposeStep]:
-    """Per-chunk steps for group_items: every temp table is rebuilt
-    narrowed to ``chunk_chos``.
+    """Per-chunk steps for group_items: only the temp tables that
+    actually depend on the chunk slice are rebuilt via
+    ``CREATE OR REPLACE TEMP TABLE``.
     """
     return [
         _chunk_chos_step(),
         _proxy_cho_step(chunk_filter=True),
-        _provider_agg_step(chunk_filter=True),
-        _europeana_agg_step(chunk_filter=True),
-        _primary_wr_step(chunk_filter=True),
         _provider_proxy_properties_step(chunk_filter=True),
         _primary_language_step(chunk_filter=True),
         _europeana_proxy_scalars_step(chunk_filter=True),
