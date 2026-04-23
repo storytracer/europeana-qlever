@@ -59,9 +59,8 @@ from .constants import (
 )
 from .compose import (
     ComposeStep,
+    chunked_compose_steps_for,
     compose_steps_for,
-    merged_items_chunk_steps,
-    merged_items_shared_steps,
 )
 from .schema_loader import (
     depends_on as _deps_for,
@@ -1158,9 +1157,10 @@ class ExportPipeline:
         if not export.compose_steps:
             return self._summarize_links_directory(export, parquet_path)
 
-        # merged_items gets the chunked path when chunking is enabled —
-        # CHO-wide aggregations otherwise OOM above ~60M rows.
-        if export.name == "merged_items" and self._chunk_size:
+        # Chunkable composites (merged_items, group_items) use a per-chunk
+        # loop when chunking is enabled — their CHO-wide aggregations over
+        # links_ore_Proxy otherwise OOM above ~60M rows.
+        if self._chunk_size and chunked_compose_steps_for(export.name) is not None:
             return self._run_composite_chunked(export, parquet_path)
 
         ui = self._ui
@@ -1233,25 +1233,30 @@ class ExportPipeline:
     def _run_composite_chunked(
         self, export: CompositeExport, parquet_path: Path
     ) -> tuple[int, float]:
-        """Chunked composition for merged_items.
+        """Chunked composition for chunkable composites (merged_items,
+        group_items).
 
-        Runs the shared label/cho_numbered steps once, then loops over
-        CHO slices of ``self._chunk_size`` rows. Each chunk rebuilds
-        every per-chunk temp table narrowed to its slice and writes
-        ``merged_items_chunk_NN.parquet``. After all chunks exist, they
-        are unioned into ``merged_items.parquet`` and the chunk files
-        removed. A chunk whose Parquet already exists is skipped, making
+        Runs the shared steps once, then loops over CHO slices of
+        ``self._chunk_size`` rows. Each chunk rebuilds every per-chunk
+        temp table narrowed to its slice and writes
+        ``<name>_chunk_NN.parquet``. After all chunks exist, they are
+        unioned into ``<name>.parquet`` and the chunk files removed. A
+        chunk whose Parquet already exists is skipped, making
         interrupted runs resumable.
         """
         ui = self._ui
         chunk_size = self._chunk_size
         assert chunk_size is not None and chunk_size > 0
 
+        step_lists = chunked_compose_steps_for(export.name)
+        assert step_lists is not None, (
+            f"_run_composite_chunked called for {export.name!r} which "
+            "does not support chunking"
+        )
+        shared, per_chunk = step_lists
+
         duckdb_tmp = self._temp_directory or (self._output_dir / ".duckdb_tmp")
         dir_str = str(self._output_dir)
-
-        shared = merged_items_shared_steps()
-        per_chunk = merged_items_chunk_steps()
 
         if self._verbose:
             threads_info = (
@@ -1307,7 +1312,7 @@ class ExportPipeline:
             chunk_paths: list[Path] = []
             for idx in range(num_chunks):
                 nn = str(idx).zfill(pad)
-                chunk_path = self._output_dir / f"merged_items_chunk_{nn}.parquet"
+                chunk_path = self._output_dir / f"{export.name}_chunk_{nn}.parquet"
                 chunk_paths.append(chunk_path)
 
                 if chunk_path.exists():
@@ -1360,7 +1365,7 @@ class ExportPipeline:
 
             # Combine: idempotent union into the final Parquet.
             combine_t0 = time.perf_counter()
-            glob_pattern = str(self._output_dir / "merged_items_chunk_*.parquet")
+            glob_pattern = str(self._output_dir / f"{export.name}_chunk_*.parquet")
             parquet_path.parent.mkdir(parents=True, exist_ok=True)
             con.execute(f"""
                 COPY (
