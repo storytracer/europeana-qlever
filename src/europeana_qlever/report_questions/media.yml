@@ -1,0 +1,116 @@
+name: Media and Content Quality
+description: Image resolution distribution, file size, MIME families, IIIF coverage, and 3D spatial resolution.
+
+questions:
+  - id: image_resolution_buckets
+    question: "Image resolution distribution by megapixel buckets (IMAGE only)"
+    backend: parquet
+    query: |
+      WITH buckets AS (
+          SELECT CASE
+                     WHEN x_megapixels IS NULL THEN 'unknown'
+                     WHEN x_megapixels < 0.1 THEN '< 0.1 MP'
+                     WHEN x_megapixels < 0.5 THEN '0.1-0.5 MP'
+                     WHEN x_megapixels < 1 THEN '0.5-1 MP'
+                     WHEN x_megapixels < 4 THEN '1-4 MP'
+                     WHEN x_megapixels < 16 THEN '4-16 MP'
+                     ELSE '>= 16 MP'
+                 END AS resolution_bucket
+          FROM merged_items
+          WHERE v_edm_type = 'IMAGE'
+      )
+      SELECT resolution_bucket,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY resolution_bucket
+      ORDER BY CASE resolution_bucket
+                   WHEN 'unknown' THEN 0
+                   WHEN '< 0.1 MP' THEN 1
+                   WHEN '0.1-0.5 MP' THEN 2
+                   WHEN '0.5-1 MP' THEN 3
+                   WHEN '1-4 MP' THEN 4
+                   WHEN '4-16 MP' THEN 5
+                   WHEN '>= 16 MP' THEN 6
+               END
+
+  - id: file_size_buckets
+    question: "File-size distribution by bucket (items with a recorded byte size)"
+    backend: parquet
+    query: |
+      WITH buckets AS (
+          SELECT CASE
+                     WHEN v_ebucore_fileByteSize < 100 * 1024 THEN '< 100 KB'
+                     WHEN v_ebucore_fileByteSize < 1024 * 1024 THEN '100 KB - 1 MB'
+                     WHEN v_ebucore_fileByteSize < 10 * 1024 * 1024 THEN '1 MB - 10 MB'
+                     WHEN v_ebucore_fileByteSize < 100 * 1024 * 1024 THEN '10 MB - 100 MB'
+                     WHEN v_ebucore_fileByteSize < 1024 * 1024 * 1024 THEN '100 MB - 1 GB'
+                     ELSE '>= 1 GB'
+                 END AS size_bucket
+          FROM merged_items
+          WHERE v_ebucore_fileByteSize IS NOT NULL
+      )
+      SELECT size_bucket,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY size_bucket
+      ORDER BY CASE size_bucket
+                   WHEN '< 100 KB' THEN 1
+                   WHEN '100 KB - 1 MB' THEN 2
+                   WHEN '1 MB - 10 MB' THEN 3
+                   WHEN '10 MB - 100 MB' THEN 4
+                   WHEN '100 MB - 1 GB' THEN 5
+                   WHEN '>= 1 GB' THEN 6
+               END
+
+  - id: mime_family_breakdown
+    question: "MIME family breakdown (image/*, text/*, video/*, audio/*, model/*, application/*)"
+    backend: parquet
+    query: |
+      WITH families AS (
+          SELECT CASE
+                     WHEN v_ebucore_hasMimeType IS NULL THEN 'unknown'
+                     WHEN position('/' IN v_ebucore_hasMimeType) = 0 THEN 'malformed'
+                     ELSE split_part(v_ebucore_hasMimeType, '/', 1)
+                 END AS mime_family
+          FROM merged_items
+      )
+      SELECT mime_family,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM families
+      GROUP BY mime_family
+      ORDER BY items DESC
+
+  - id: iiif_by_mime_family
+    question: "IIIF adoption by MIME family (items with both MIME and IIIF info)"
+    backend: parquet
+    query: |
+      WITH families AS (
+          SELECT split_part(v_ebucore_hasMimeType, '/', 1) AS mime_family,
+                 x_has_iiif
+          FROM merged_items
+          WHERE v_ebucore_hasMimeType IS NOT NULL
+            AND position('/' IN v_ebucore_hasMimeType) > 0
+      )
+      SELECT mime_family,
+             count(*) AS items,
+             count(*) FILTER (WHERE x_has_iiif) AS iiif_items,
+             round(count(*) FILTER (WHERE x_has_iiif) * 100.0 / count(*), 2) AS pct_iiif
+      FROM families
+      GROUP BY mime_family
+      ORDER BY items DESC
+
+  - id: spatial_resolution_3d
+    question: "3D spatial-resolution coverage and stats"
+    backend: parquet
+    query: |
+      SELECT count(*) AS total_3d_items,
+             count(*) FILTER (WHERE v_edm_spatialResolution IS NOT NULL) AS with_resolution,
+             round(count(*) FILTER (WHERE v_edm_spatialResolution IS NOT NULL) * 100.0 / NULLIF(count(*), 0), 2) AS pct_with_resolution,
+             round(avg(v_edm_spatialResolution), 2) AS avg_resolution,
+             quantile_cont(v_edm_spatialResolution, 0.5) AS median_resolution,
+             quantile_cont(v_edm_spatialResolution, 0.9) AS p90_resolution
+      FROM merged_items
+      WHERE v_edm_type = '3D'

@@ -1,5 +1,5 @@
 name: Volume and Composition
-description: Overall dataset size, type distribution, and top providers.
+description: Overall dataset size, type distribution, and leading institutions and aggregators.
 
 questions:
   - id: total_items
@@ -9,7 +9,7 @@ questions:
       SELECT count(*) AS total_items FROM group_items
 
   - id: by_type
-    question: "Distribution of items by edm:type"
+    question: "Item distribution by edm:type"
     backend: parquet
     query: |
       SELECT v_edm_type AS type,
@@ -54,39 +54,5 @@ questions:
       FROM group_items g
       LEFT JOIN orgs o ON g.v_edm_provider = o.k_iri
       GROUP BY 1
-      ORDER BY count DESC
-      LIMIT 20
-
-  - id: distinct_datasets
-    question: "How many distinct dataset names are there?"
-    backend: parquet
-    query: |
-      SELECT count(DISTINCT v_edm_datasetName) AS distinct_datasets
-      FROM merged_items
-      WHERE v_edm_datasetName IS NOT NULL
-
-  - id: top_dc_types
-    question: "Top 20 dc:type labels by item count"
-    backend: parquet
-    query: |
-      SELECT d.x_label AS dc_type,
-             count(*) AS count,
-             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM (SELECT UNNEST(x_dc_type) AS d FROM merged_items)
-      WHERE d.x_label IS NOT NULL
-      GROUP BY d.x_label
-      ORDER BY count DESC
-      LIMIT 20
-
-  - id: top_formats
-    question: "Top 20 dc:format labels by item count"
-    backend: parquet
-    query: |
-      SELECT f.x_label AS format,
-             count(*) AS count,
-             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM (SELECT UNNEST(x_dc_format) AS f FROM merged_items)
-      WHERE f.x_label IS NOT NULL
-      GROUP BY f.x_label
       ORDER BY count DESC
       LIMIT 20

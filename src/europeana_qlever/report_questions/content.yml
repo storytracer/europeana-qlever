@@ -1,9 +1,9 @@
 name: Content Accessibility
-description: Availability of direct content URLs, IIIF services, and MIME types.
+description: Availability of content URLs and IIIF services, and the MIME and classification labels most used.
 
 questions:
   - id: content_availability
-    question: "Content availability counts and percentages"
+    question: "Availability of content URLs, thumbnails, IIIF, and MIME metadata"
     backend: parquet
     query: |
       SELECT count(*) AS total,
@@ -19,14 +19,41 @@ questions:
              round(count(*) FILTER (WHERE v_ebucore_hasMimeType IS NOT NULL) * 100.0 / count(*), 2) AS has_mime_type_pct
       FROM merged_items
 
-  - id: mime_distribution
+  - id: top_mime_types
     question: "Top 15 MIME types by item count"
     backend: parquet
     query: |
       SELECT v_ebucore_hasMimeType AS mime_type,
-             count(*) AS count
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
       FROM merged_items
       WHERE v_ebucore_hasMimeType IS NOT NULL
       GROUP BY v_ebucore_hasMimeType
       ORDER BY count DESC
       LIMIT 15
+
+  - id: top_dc_types
+    question: "Top 20 dc:type labels by item count"
+    backend: parquet
+    query: |
+      SELECT d.x_label AS dc_type,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM (SELECT UNNEST(x_dc_type) AS d FROM merged_items)
+      WHERE d.x_label IS NOT NULL
+      GROUP BY d.x_label
+      ORDER BY count DESC
+      LIMIT 20
+
+  - id: top_formats
+    question: "Top 20 dc:format labels by item count"
+    backend: parquet
+    query: |
+      SELECT f.x_label AS format,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM (SELECT UNNEST(x_dc_format) AS f FROM merged_items)
+      WHERE f.x_label IS NOT NULL
+      GROUP BY f.x_label
+      ORDER BY count DESC
+      LIMIT 20

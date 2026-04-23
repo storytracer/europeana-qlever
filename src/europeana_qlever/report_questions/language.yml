@@ -1,5 +1,5 @@
 name: Language Coverage
-description: Language distribution and multilingual metadata coverage.
+description: Language distribution of items and multilingual metadata coverage.
 
 questions:
   - id: top_languages
@@ -15,16 +15,51 @@ questions:
       LIMIT 30
 
   - id: title_description_coverage
-    question: "Title and description coverage and language variant averages"
+    question: "Title and description coverage and average language-variant counts"
     backend: parquet
     query: |
       SELECT count(*) AS total_items,
              count(*) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0) AS with_title,
-             round(count(*) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0)
-                   * 100.0 / count(*), 2) AS pct_with_title,
+             round(count(*) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0) * 100.0 / count(*), 2) AS pct_with_title,
              count(*) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0) AS with_description,
-             round(count(*) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0)
-                   * 100.0 / count(*), 2) AS pct_with_description,
+             round(count(*) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0) * 100.0 / count(*), 2) AS pct_with_description,
              round(avg(len(x_dc_title)) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0), 2) AS avg_title_variants,
              round(avg(len(x_dc_description)) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0), 2) AS avg_description_variants
       FROM merged_items
+
+  - id: multilingual_titles
+    question: "Item share with titles in 2, 3, or 5+ languages"
+    backend: parquet
+    query: |
+      WITH title_langs AS (
+          SELECT k_iri,
+                 count(DISTINCT t.x_value_lang) AS lang_count
+          FROM (SELECT k_iri, UNNEST(x_dc_title) AS t FROM merged_items
+                WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0)
+          WHERE t.x_value_lang IS NOT NULL AND t.x_value_lang != ''
+          GROUP BY k_iri
+      )
+      SELECT (SELECT count(*) FROM merged_items) AS total_items,
+             count(*) FILTER (WHERE lang_count >= 2) AS items_2plus_langs,
+             round(count(*) FILTER (WHERE lang_count >= 2) * 100.0 / (SELECT count(*) FROM merged_items), 2) AS pct_2plus,
+             count(*) FILTER (WHERE lang_count >= 3) AS items_3plus_langs,
+             round(count(*) FILTER (WHERE lang_count >= 3) * 100.0 / (SELECT count(*) FROM merged_items), 2) AS pct_3plus,
+             count(*) FILTER (WHERE lang_count >= 5) AS items_5plus_langs,
+             round(count(*) FILTER (WHERE lang_count >= 5) * 100.0 / (SELECT count(*) FROM merged_items), 2) AS pct_5plus
+      FROM title_langs
+
+  - id: multi_language_items
+    question: "Item share declaring 2 or more dc:language values"
+    backend: parquet
+    query: |
+      WITH lang_counts AS (
+          SELECT k_iri, len(x_dc_language) AS n_langs
+          FROM merged_items
+          WHERE x_dc_language IS NOT NULL AND len(x_dc_language) > 0
+      )
+      SELECT count(*) AS items_with_language,
+             count(*) FILTER (WHERE n_langs >= 2) AS items_with_2plus,
+             round(count(*) FILTER (WHERE n_langs >= 2) * 100.0 / count(*), 2) AS pct_2plus,
+             count(*) FILTER (WHERE n_langs >= 3) AS items_with_3plus,
+             round(count(*) FILTER (WHERE n_langs >= 3) * 100.0 / count(*), 2) AS pct_3plus
+      FROM lang_counts

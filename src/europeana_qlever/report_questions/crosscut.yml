@@ -1,0 +1,83 @@
+name: Cross-cutting Matrices
+description: Multi-dimensional views showing how reuse, type, country, IIIF, and completeness interact.
+
+questions:
+  - id: reuse_by_country
+    question: "Reuse-level mix in the top 20 countries"
+    backend: parquet
+    query: |
+      WITH top_countries AS (
+          SELECT v_edm_country, count(*) AS total
+          FROM group_items
+          WHERE v_edm_country IS NOT NULL
+          GROUP BY v_edm_country
+          ORDER BY total DESC
+          LIMIT 20
+      )
+      SELECT g.v_edm_country AS country,
+             t.total AS items,
+             count(*) FILTER (WHERE g.x_reuse_level = 'open') AS open_items,
+             round(count(*) FILTER (WHERE g.x_reuse_level = 'open') * 100.0 / t.total, 2) AS pct_open,
+             count(*) FILTER (WHERE g.x_reuse_level = 'restricted') AS restricted_items,
+             round(count(*) FILTER (WHERE g.x_reuse_level = 'restricted') * 100.0 / t.total, 2) AS pct_restricted,
+             count(*) FILTER (WHERE g.x_reuse_level = 'prohibited') AS prohibited_items,
+             round(count(*) FILTER (WHERE g.x_reuse_level = 'prohibited') * 100.0 / t.total, 2) AS pct_prohibited
+      FROM group_items g
+      JOIN top_countries t ON g.v_edm_country = t.v_edm_country
+      GROUP BY g.v_edm_country, t.total
+      ORDER BY t.total DESC
+
+  - id: reuse_by_type
+    question: "Reuse-level mix by edm:type"
+    backend: parquet
+    query: |
+      SELECT v_edm_type AS type,
+             count(*) AS items,
+             count(*) FILTER (WHERE x_reuse_level = 'open') AS open_items,
+             round(count(*) FILTER (WHERE x_reuse_level = 'open') * 100.0 / count(*), 2) AS pct_open,
+             count(*) FILTER (WHERE x_reuse_level = 'restricted') AS restricted_items,
+             round(count(*) FILTER (WHERE x_reuse_level = 'restricted') * 100.0 / count(*), 2) AS pct_restricted,
+             count(*) FILTER (WHERE x_reuse_level = 'prohibited') AS prohibited_items,
+             round(count(*) FILTER (WHERE x_reuse_level = 'prohibited') * 100.0 / count(*), 2) AS pct_prohibited
+      FROM group_items
+      GROUP BY v_edm_type
+      ORDER BY items DESC
+
+  - id: iiif_by_type
+    question: "IIIF adoption by edm:type"
+    backend: parquet
+    query: |
+      SELECT v_edm_type AS type,
+             count(*) AS items,
+             count(*) FILTER (WHERE x_has_iiif) AS iiif_items,
+             round(count(*) FILTER (WHERE x_has_iiif) * 100.0 / count(*), 2) AS pct_iiif
+      FROM group_items
+      GROUP BY v_edm_type
+      ORDER BY items DESC
+
+  - id: completeness_by_reuse
+    question: "Completeness score stats across reuse levels"
+    backend: parquet
+    query: |
+      SELECT x_reuse_level AS reuse_level,
+             count(*) AS items,
+             round(avg(v_edm_completeness), 2) AS avg_completeness,
+             quantile_cont(v_edm_completeness, 0.5) AS median_score,
+             quantile_cont(v_edm_completeness, 0.9) AS p90_score,
+             round(count(*) FILTER (WHERE v_edm_completeness >= 7) * 100.0 / count(*), 2) AS pct_score_7plus
+      FROM group_items
+      WHERE v_edm_completeness IS NOT NULL
+      GROUP BY x_reuse_level
+      ORDER BY avg_completeness DESC
+
+  - id: rights_family_by_type
+    question: "Rights-family mix by edm:type"
+    backend: parquet
+    query: |
+      SELECT v_edm_type AS type,
+             x_rights_family AS rights_family,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (PARTITION BY v_edm_type), 2) AS pct_within_type
+      FROM group_items
+      GROUP BY v_edm_type, x_rights_family
+      ORDER BY v_edm_type, items DESC

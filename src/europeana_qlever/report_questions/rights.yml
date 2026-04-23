@@ -1,12 +1,12 @@
 name: Rights Distribution
-description: Distribution of rights statements and reuse levels.
+description: Rights statements, reuse levels, and the geography of openly reusable content.
 
 questions:
   - id: by_reuse_level
     question: "Distribution by reuse level"
     backend: parquet
     query: |
-      SELECT x_reuse_level,
+      SELECT x_reuse_level AS reuse_level,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
       FROM group_items
@@ -17,7 +17,7 @@ questions:
     question: "Distribution by rights family"
     backend: parquet
     query: |
-      SELECT x_rights_family,
+      SELECT x_rights_family AS rights_family,
              count(*) AS count,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
       FROM group_items
@@ -38,3 +38,28 @@ questions:
       GROUP BY g.v_edm_rights, m.x_label
       ORDER BY count DESC
       LIMIT 10
+
+  - id: open_items_by_country
+    question: "Top 20 countries by absolute count of openly reusable items"
+    backend: parquet
+    query: |
+      SELECT v_edm_country AS country,
+             count(*) AS open_items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct_of_all_open
+      FROM group_items
+      WHERE x_reuse_level = 'open'
+      GROUP BY v_edm_country
+      ORDER BY open_items DESC
+      LIMIT 20
+
+  - id: open_items_by_type
+    question: "Open items by edm:type"
+    backend: parquet
+    query: |
+      SELECT v_edm_type AS type,
+             count(*) FILTER (WHERE x_reuse_level = 'open') AS open_items,
+             count(*) AS total_items,
+             round(count(*) FILTER (WHERE x_reuse_level = 'open') * 100.0 / count(*), 2) AS pct_open
+      FROM group_items
+      GROUP BY v_edm_type
+      ORDER BY total_items DESC

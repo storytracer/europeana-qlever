@@ -1,5 +1,5 @@
 name: Metadata Completeness
-description: Completeness score distribution and per-field coverage.
+description: Completeness score distribution, per-field coverage, and how completeness relates to type and openness.
 
 questions:
   - id: completeness_distribution
@@ -14,7 +14,7 @@ questions:
       ORDER BY v_edm_completeness
 
   - id: field_coverage
-    question: "Per-field coverage percentages (provider-proxy)"
+    question: "Per-field coverage percentages"
     backend: parquet
     query: |
       SELECT count(*) AS total_items,
@@ -30,7 +30,34 @@ questions:
              round(count(*) FILTER (WHERE x_edm_year IS NOT NULL AND len(x_edm_year) > 0) * 100.0 / count(*), 2) AS has_year,
              round(count(*) FILTER (WHERE x_dc_language IS NOT NULL AND len(x_dc_language) > 0) * 100.0 / count(*), 2) AS has_language,
              round(count(*) FILTER (WHERE x_dc_identifier IS NOT NULL AND len(x_dc_identifier) > 0) * 100.0 / count(*), 2) AS has_identifier,
-             round(count(*) FILTER (WHERE x_dc_rights IS NOT NULL AND len(x_dc_rights) > 0) * 100.0 / count(*), 2) AS has_dc_rights,
              round(count(*) FILTER (WHERE v_edm_isShownBy IS NOT NULL) * 100.0 / count(*), 2) AS has_content_url,
              round(count(*) FILTER (WHERE x_has_iiif) * 100.0 / count(*), 2) AS has_iiif
       FROM merged_items
+
+  - id: completeness_by_type
+    question: "Average completeness score by edm:type"
+    backend: parquet
+    query: |
+      SELECT v_edm_type AS type,
+             count(*) AS items,
+             round(avg(v_edm_completeness), 2) AS avg_completeness,
+             min(v_edm_completeness) AS min_score,
+             max(v_edm_completeness) AS max_score
+      FROM group_items
+      WHERE v_edm_completeness IS NOT NULL
+      GROUP BY v_edm_type
+      ORDER BY avg_completeness DESC
+
+  - id: completeness_by_reuse_level
+    question: "Average completeness score by reuse level"
+    backend: parquet
+    query: |
+      SELECT x_reuse_level AS reuse_level,
+             count(*) AS items,
+             round(avg(v_edm_completeness), 2) AS avg_completeness,
+             quantile_cont(v_edm_completeness, 0.5) AS median_score,
+             quantile_cont(v_edm_completeness, 0.9) AS p90_score
+      FROM group_items
+      WHERE v_edm_completeness IS NOT NULL
+      GROUP BY x_reuse_level
+      ORDER BY avg_completeness DESC

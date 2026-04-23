@@ -1,0 +1,97 @@
+name: Entity Enrichment Quality
+description: Authority-link diversity, multilingual concept coverage, agent biographical data, and entity density per item.
+
+questions:
+  - id: same_as_by_authority
+    question: "owl:sameAs link distribution by authority and entity class"
+    backend: parquet
+    query: |
+      SELECT x_entity_class AS entity_class,
+             x_authority AS authority,
+             count(*) AS links,
+             round(count(*) * 100.0 / sum(count(*)) OVER (PARTITION BY x_entity_class), 2) AS pct_within_class
+      FROM map_sameAs
+      GROUP BY x_entity_class, x_authority
+      ORDER BY x_entity_class, links DESC
+
+  - id: concept_multilinguality
+    question: "Multilingual prefLabel depth of concepts"
+    backend: parquet
+    query: |
+      WITH concept_langs AS (
+          SELECT k_iri,
+                 count(DISTINCT x_prefLabel_lang) FILTER (WHERE x_prefLabel_lang IS NOT NULL AND x_prefLabel_lang != '') AS n_langs
+          FROM values_skos_Concept
+          GROUP BY k_iri
+      )
+      SELECT (SELECT count(*) FROM concept_langs) AS total_concepts,
+             count(*) FILTER (WHERE n_langs >= 1) AS langs_1plus,
+             count(*) FILTER (WHERE n_langs >= 3) AS langs_3plus,
+             count(*) FILTER (WHERE n_langs >= 10) AS langs_10plus,
+             count(*) FILTER (WHERE n_langs >= 20) AS langs_20plus,
+             round(count(*) FILTER (WHERE n_langs >= 3) * 100.0 / count(*), 2) AS pct_3plus,
+             round(count(*) FILTER (WHERE n_langs >= 10) * 100.0 / count(*), 2) AS pct_10plus
+      FROM concept_langs
+
+  - id: agent_dates_coverage
+    question: "Agent biographical-date coverage"
+    backend: parquet
+    query: |
+      WITH agents AS (
+          SELECT k_iri,
+                 MAX(v_rdaGr2_dateOfBirth IS NOT NULL) AS has_birth,
+                 MAX(v_rdaGr2_dateOfDeath IS NOT NULL) AS has_death,
+                 MAX(v_rdaGr2_dateOfEstablishment IS NOT NULL) AS has_establishment,
+                 MAX(v_rdaGr2_dateOfTermination IS NOT NULL) AS has_termination,
+                 MAX(v_rdaGr2_gender IS NOT NULL) AS has_gender
+          FROM values_edm_Agent
+          GROUP BY k_iri
+      )
+      SELECT count(*) AS total_agents,
+             count(*) FILTER (WHERE has_birth) AS with_birth,
+             round(count(*) FILTER (WHERE has_birth) * 100.0 / count(*), 2) AS pct_with_birth,
+             count(*) FILTER (WHERE has_death) AS with_death,
+             round(count(*) FILTER (WHERE has_death) * 100.0 / count(*), 2) AS pct_with_death,
+             count(*) FILTER (WHERE has_birth AND has_death) AS with_birth_and_death,
+             round(count(*) FILTER (WHERE has_birth AND has_death) * 100.0 / count(*), 2) AS pct_with_both,
+             count(*) FILTER (WHERE has_gender) AS with_gender,
+             round(count(*) FILTER (WHERE has_gender) * 100.0 / count(*), 2) AS pct_with_gender
+      FROM agents
+
+  - id: entity_density_per_item
+    question: "Contextual entity density per item (distinct entities referenced per CHO)"
+    backend: parquet
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho,
+                 count(DISTINCT k_iri_entity) AS n_entities,
+                 count(DISTINCT k_iri_entity) FILTER (WHERE x_entity_class = 'edm_Agent') AS n_agents,
+                 count(DISTINCT k_iri_entity) FILTER (WHERE x_entity_class = 'edm_Place') AS n_places,
+                 count(DISTINCT k_iri_entity) FILTER (WHERE x_entity_class = 'skos_Concept') AS n_concepts,
+                 count(DISTINCT k_iri_entity) FILTER (WHERE x_entity_class = 'edm_TimeSpan') AS n_timespans
+          FROM map_cho_entities
+          GROUP BY k_iri_cho
+      )
+      SELECT count(*) AS cho_with_entities,
+             round(avg(n_entities), 2) AS avg_entities_per_cho,
+             quantile_cont(n_entities, 0.5) AS median_entities,
+             quantile_cont(n_entities, 0.9) AS p90_entities,
+             round(avg(n_agents), 2) AS avg_agents,
+             round(avg(n_places), 2) AS avg_places,
+             round(avg(n_concepts), 2) AS avg_concepts,
+             round(avg(n_timespans), 2) AS avg_timespans
+      FROM per_cho
+
+  - id: orphan_items
+    question: "Items with no contextual entity links at all"
+    backend: parquet
+    query: |
+      WITH linked AS (
+          SELECT DISTINCT k_iri_cho FROM map_cho_entities
+      )
+      SELECT count(*) AS total_items,
+             count(*) - (SELECT count(*) FROM linked) AS items_without_entities,
+             round((count(*) - (SELECT count(*) FROM linked)) * 100.0 / count(*), 2) AS pct_without_entities,
+             (SELECT count(*) FROM linked) AS items_with_entities,
+             round((SELECT count(*) FROM linked) * 100.0 / count(*), 2) AS pct_with_entities
+      FROM group_items

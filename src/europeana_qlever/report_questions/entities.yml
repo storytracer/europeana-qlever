@@ -1,5 +1,5 @@
 name: Entity Enrichment
-description: Entity counts, label coverage, and authority linking for agents, places, concepts, and timespans.
+description: Entity counts, label coverage, authority linking, and the most-referenced subject concepts.
 
 questions:
   - id: entity_counts
@@ -52,17 +52,6 @@ questions:
       LEFT JOIN linked l ON t.entity_type = l.entity_type
       ORDER BY t.entity_type
 
-  - id: same_as_by_authority
-    question: "owl:sameAs link distribution by authority"
-    backend: parquet
-    query: |
-      SELECT x_entity_class,
-             x_authority,
-             count(*) AS links
-      FROM map_sameAs
-      GROUP BY x_entity_class, x_authority
-      ORDER BY x_entity_class, links DESC
-
   - id: alt_label_coverage
     question: "altLabel coverage per entity type"
     backend: parquet
@@ -101,7 +90,7 @@ questions:
     question: "Concept hierarchy coverage (exactMatch, broader, narrower)"
     backend: parquet
     query: |
-      SELECT x_property,
+      SELECT x_property AS property,
              count(DISTINCT k_iri) AS concepts_with_property,
              round(count(DISTINCT k_iri) * 100.0 / (
                  SELECT count(DISTINCT k_iri) FROM values_skos_Concept
@@ -109,9 +98,10 @@ questions:
       FROM links_skos_Concept
       WHERE x_property IN ('v_skos_exactMatch', 'v_skos_broader', 'v_skos_narrower')
       GROUP BY x_property
+      ORDER BY concepts_with_property DESC
 
   - id: top_subjects
-    question: "Top 20 subject labels used across items"
+    question: "Top 20 subject concepts used across items"
     backend: parquet
     query: |
       SELECT c.v_skos_prefLabel AS subject,
