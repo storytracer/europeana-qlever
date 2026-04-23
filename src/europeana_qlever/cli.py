@@ -2257,3 +2257,91 @@ def grasp_stop(ctx: click.Context):
             pass
 
     display.console.print("[green]GRASP server stopped[/green]")
+
+
+# ---------------------------------------------------------------------------
+# explore
+# ---------------------------------------------------------------------------
+
+@cli.command()
+@click.option(
+    "--port", default=1378, show_default=True, type=int,
+    help="Local port (tries the next 20 if busy).",
+)
+@click.option(
+    "--no-open", is_flag=True, default=False,
+    help="Don't auto-open the browser.",
+)
+@click.option(
+    "--data-url", default=None,
+    help="Override Parquet source (e.g. a HuggingFace URL). "
+         "If omitted, the local {work_dir}/exports/group_items.parquet is served.",
+)
+@click.pass_context
+def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
+    """Launch a local DuckDB-WASM browser explorer over group_items.parquet.
+
+    Starts a tiny threaded HTTP server that serves the bundled single-page
+    app plus the exports directory (with CORS + HTTP Range support, which
+    DuckDB-WASM's ``httpfs`` extension needs). Runs until Ctrl+C.
+    """
+    import urllib.parse
+    import webbrowser
+    from threading import Thread
+
+    from .explorer import static_dir
+    from .explorer.server import find_free_port, serve
+
+    exports_dir: Path = ctx.obj["exports_dir"]
+    static_root = static_dir()
+
+    if data_url:
+        frontend_url = data_url
+        data_banner = f"remote: {data_url}"
+    else:
+        parquet_path = exports_dir / "group_items.parquet"
+        if not parquet_path.exists():
+            display.console.print(
+                f"[red]group_items.parquet not found at {parquet_path}[/red]\n"
+                "Run [cyan]europeana-qlever export group_items[/cyan] first, "
+                "or pass [cyan]--data-url[/cyan]."
+            )
+            raise SystemExit(1)
+        # The frontend loads '/data/group_items.parquet' served by this process.
+        frontend_url = "/data/group_items.parquet"
+        data_banner = f"local: {parquet_path}"
+
+    try:
+        bound_port = find_free_port(port, attempts=20)
+    except OSError as e:
+        display.console.print(f"[red]{e}[/red]")
+        raise SystemExit(1)
+
+    server = serve(static_root, exports_dir, bound_port)
+    base = f"http://localhost:{bound_port}/"
+    url = base + "?data=" + urllib.parse.quote(frontend_url, safe=":/")
+
+    display.console.print(f"[bold]Europeana Data Explorer[/bold]")
+    display.console.print(f"  static : {display.short_path(static_root)}")
+    display.console.print(f"  data   : {data_banner}")
+    display.console.print(f"  url    : [cyan]{url}[/cyan]")
+    display.console.print("  [dim](Ctrl+C to stop)[/dim]")
+
+    # Run serve_forever on a background thread so KeyboardInterrupt in the
+    # main thread unblocks cleanly on all platforms.
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    if not no_open:
+        try:
+            webbrowser.open(url)
+        except Exception as e:
+            display.console.print(f"[yellow]Couldn't open browser: {e}[/yellow]")
+
+    try:
+        thread.join()
+    except KeyboardInterrupt:
+        display.console.print("\n[yellow]Stopping explorer…[/yellow]")
+        server.shutdown()
+        server.server_close()
+        raise SystemExit(130)
