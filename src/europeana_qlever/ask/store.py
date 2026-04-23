@@ -2,8 +2,8 @@
 
 Provides a :class:`ParquetStore` that registers every ``*.parquet`` file
 under the exports directory as a DuckDB view, applies
-:class:`ReportFilters` to ``merged_items``, and creates convenience
-views (``items``, ``orgs``) used by reports and the NL agent.
+:class:`ReportFilters` to ``group_items``, and creates a convenience
+``orgs`` view used by reports and the NL agent.
 """
 
 from __future__ import annotations
@@ -20,11 +20,12 @@ class ParquetStore:
 
     On construction, discovers all ``*.parquet`` files in *exports_dir*,
     registers each as a DuckDB view named after its stem, and optionally
-    applies a :class:`ReportFilters` WHERE clause to ``merged_items``.
+    applies a :class:`ReportFilters` WHERE clause to ``group_items``
+    (the scalar-only dimensional table whose columns drive the
+    :class:`ReportFilters` schema).
 
     Convenience views:
 
-    - ``items`` — alias for ``merged_items`` (back-compat for reports)
     - ``orgs`` — English-preferred organisation names from
       ``values_foaf_Organization`` (one row per organisation URI)
     """
@@ -54,7 +55,7 @@ class ParquetStore:
             path_str = str(pq_file)
 
             if (
-                name == "merged_items"
+                name == "group_items"
                 and self._filters
                 and not self._filters.is_empty()
             ):
@@ -87,12 +88,6 @@ class ParquetStore:
                 f"'{links_dir}/**/*.parquet', hive_partitioning=true)"
             )
             self._tables[name] = links_dir
-
-        # Back-compat alias for reports / agent: items → merged_items.
-        if "merged_items" in self._tables:
-            self._con.execute(
-                "CREATE VIEW items AS SELECT * FROM merged_items"
-            )
 
         # Organisation names — English-preferred.
         if "values_foaf_Organization" in self._tables:

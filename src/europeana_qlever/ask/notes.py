@@ -10,9 +10,8 @@ patterns.
   ``europeana-notes.json``.
 - :func:`export_grasp_notes` writes the JSON file directly.
 
-All DuckDB column references target the new table architecture:
+All DuckDB column references target:
 
-- ``merged_items``       — one row per CHO (denormalized)
 - ``group_items``        — one row per CHO, scalar columns only (fast GROUP BY)
 - ``values_*`` / ``links_*`` — raw tables preserving EDM class boundaries
 - ``map_rights`` / ``map_sameAs`` / ``map_cho_entities`` — lookup tables
@@ -66,26 +65,30 @@ EDM_NOTES: list[EdmNote] = [
     EdmNote(
         topic="table_architecture",
         edm_knowledge="""\
-The export has three tiers of tables:
-  merged_items   — one row per CHO. Joins proxies, aggregations, primary
-                   web resource. Has resolved entity labels and list/struct
-                   columns. Best for detailed per-item questions.
-  group_items    — one row per CHO, but only scalar categorical/boolean/
-                   integer columns. Use for fast GROUP BY analytics
-                   (counts by country × type × reuse level, etc.).
-  values_* / links_* — raw EDM tables. values_* have scalar columns;
-                   links_* are long-format (k_iri, x_property, x_value,
-                   x_value_is_iri, x_value_lang).
-Map tables (map_rights, map_sameAs, map_cho_entities) are lookups.""",
+The export has three kinds of tables:
+  group_items    — one row per CHO, scalar categorical / boolean /
+                   integer columns only (v_edm_country, v_edm_type,
+                   x_reuse_level, x_has_iiif, x_primary_language, …).
+                   Use for fast GROUP BY analytics.
+  values_* / links_* — raw EDM tables. values_* have scalar columns
+                   (one row per entity); links_* are long-format (one
+                   row per value, columns k_iri, x_property, x_value,
+                   x_value_is_iri, x_value_lang). Most multi-valued
+                   descriptive metadata lives in links_ore_Proxy.
+  map_*          — lookup / navigation: map_rights (rights URI →
+                   family/label/reuse_level), map_sameAs (entity
+                   sameAs links), map_cho_entities (pre-joined CHO →
+                   contextual entity references).""",
         duckdb_pattern="""\
 CHOOSING A TABLE:
-- Counts / distributions across merged_items fields → group_items
-  (no UNNEST, no struct access, scans are 30-100x faster)
-- Per-item titles/subjects/creators → merged_items
-- Rights family/label lookup → JOIN merged_items.v_edm_rights = map_rights.k_iri
-- All items referencing a specific Agent/Place/Concept IRI →
-  map_cho_entities (avoid UNNEST on x_dc_subject for this)
-- Entity deep-dive (prefLabels, sameAs, broader/narrower) → values_* / links_*""",
+- Counts / distributions by country, type, reuse level, language → group_items
+- All items referencing a specific Agent/Place/Concept IRI → map_cho_entities
+- Rights family/label lookup → JOIN group_items.v_edm_rights = map_rights.k_iri
+- Per-item titles / subjects / creators / dates → links_ore_Proxy filtered
+  by x_property (e.g. 'v_dc_title'), joined to values_ore_Proxy to reach the
+  CHO URI
+- Entity deep-dive (prefLabels, sameAs, broader/narrower) → values_* / links_*
+  for the entity class""",
     ),
 
     # -- Column-prefix convention --
@@ -93,85 +96,43 @@ CHOOSING A TABLE:
         topic="column_prefixes",
         edm_knowledge="""\
 Column names carry a prefix that signals their role:
-  k_  key / foreign key (e.g. k_iri, k_iri_cho)
+  k_  key / foreign key (e.g. k_iri, k_iri_cho, k_iri_entity)
   v_  scalar EDM property, directly from the RDF (e.g. v_dc_title,
       v_edm_country, v_ebucore_fileByteSize)
   x_  extracted / computed / resolved / aggregated (e.g. x_reuse_level,
-      x_dc_subject as list<struct>, x_title)
+      x_rights_family, x_label)
 Column names mechanically derive from the EDM CURIE: dc:subject →
 v_dc_subject, ebucore:fileByteSize → v_ebucore_fileByteSize.""",
-        duckdb_pattern="""\
-In merged_items, the list / struct-list columns are x_ prefixed because
-they are aggregated from the links_ore_Proxy table (which stores raw
-multi-valued properties in long format).""",
     ),
 
-    # -- Struct access (DuckDB only) --
+    # -- Proxy → CHO navigation --
     EdmNote(
-        topic="struct_list_access",
-        edm_knowledge="Multi-valued properties in merged_items are nested lists with struct fields.",
+        topic="proxy_cho_join",
+        edm_knowledge="""\
+Descriptive metadata (titles, creators, subjects, dates, etc.) is NOT
+stored on edm:ProvidedCHO directly. It lives on ore:Proxy. Each CHO has
+two proxies: a provider proxy (original metadata, in links_ore_Proxy
+with proxy_type filtered via values_ore_Proxy) and a Europeana proxy
+(normalised/enriched, e.g. edm:type, edm:year).
+
+To pull provider-side descriptive properties for CHOs, join through
+values_ore_Proxy.k_iri_cho.""",
         duckdb_pattern="""\
-STRUCT LIST ACCESS PATTERNS in merged_items:
+PROVIDER-PROXY TITLES PER CHO:
+    SELECT p.k_iri_cho AS cho, l.x_value AS title, l.x_value_lang AS lang
+    FROM links_ore_Proxy l
+    JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+    WHERE l.x_property = 'v_dc_title'
+      AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
 
-  x_dc_title, x_dc_description — LIST<STRUCT<x_value, x_value_lang>>:
-    SELECT t.x_value, t.x_value_lang
-    FROM (SELECT UNNEST(x_dc_title) AS t FROM merged_items)
-    WHERE t.x_value IS NOT NULL
+EUROPEANA-PROXY edm:year (one row per value):
+    SELECT p.k_iri_cho AS cho, l.x_value AS year
+    FROM links_ore_Proxy l
+    JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+    WHERE l.x_property = 'v_edm_year' AND p.v_edm_europeanaProxy = 'true'
 
-  x_dc_subject, x_dc_type, x_dc_format, x_edm_hasType, x_dcterms_spatial
-    — LIST<STRUCT<x_value, x_label, x_value_is_iri>>:
-    SELECT s.x_label, s.x_value
-    FROM (SELECT UNNEST(x_dc_subject) AS s FROM merged_items)
-    WHERE s.x_label IS NOT NULL
-
-  x_dc_creator, x_dc_contributor, x_dc_publisher
-    — LIST<STRUCT<x_value, x_name, x_value_is_iri>>:
-    SELECT c.x_name, c.x_value
-    FROM (SELECT UNNEST(x_dc_creator) AS c FROM merged_items)
-    WHERE c.x_name IS NOT NULL
-
-  x_dc_date, x_dc_identifier, x_dc_language, x_dc_rights, x_edm_year
-    — LIST<VARCHAR>:
-    SELECT y FROM (SELECT UNNEST(x_edm_year) AS y FROM merged_items)
-
-KEEP k_iri ALONGSIDE UNNEST when you need to count items:
-    SELECT COUNT(DISTINCT k_iri)
-    FROM (SELECT k_iri, UNNEST(x_dc_subject) AS s FROM merged_items)
-    WHERE s.x_label = 'Painting'
-
-UNNEST WITH OTHER COLUMNS — put the UNNEST and every scalar column you
-need in the SAME inner SELECT; do NOT reference merged_items again on the
-outside:
-    SELECT s.x_label, v_ebucore_fileByteSize, v_ebucore_width, v_ebucore_height
-    FROM (
-      SELECT UNNEST(x_dc_type) AS s,
-             v_ebucore_fileByteSize, v_ebucore_width, v_ebucore_height
-      FROM merged_items
-      WHERE v_ebucore_fileByteSize IS NOT NULL
-    )
-    WHERE s.x_label IS NOT NULL
-
-DO NOT write any of these — they are cartesian joins / invalid syntax:
-    FROM merged_items, (SELECT UNNEST(x_dc_type) AS s FROM merged_items) t  -- cross join
-    FROM merged_items, LATERAL (SELECT * FROM UNNEST(x_dc_type)) AS d(x_label, x_value)  -- wrong syntax
-    FROM merged_items, UNNEST(x_dc_type) AS d  -- struct fields unreachable
-
-FILTER within a list (lambda access works here):
-    list_filter(x_dc_title,    x -> x.x_value_lang = 'en')
-    list_filter(x_dc_subject,  x -> x.x_label IS NOT NULL)
-    list_filter(x_dc_creator,  x -> x.x_name IS NOT NULL)
-
-CHECK list containment (no UNNEST needed):
-    list_has_any(list_transform(x_dc_type, x -> x.x_value),
-                 ['http://vocab.getty.edu/aat/300046300'])
-    list_has_any(list_transform(x_dc_subject, x -> LOWER(x.x_label)),
-                 ['painting'])
-
-Count list length: LEN(x_dc_subject)
-Non-empty check:  LEN(x_dc_title) > 0
-
-NEVER use EXISTS with UNNEST — DuckDB cannot resolve the UNNEST alias
-inside EXISTS. Use list_has_any instead.""",
+Tip: filter l.x_property BEFORE joining — the Hive partition prunes the
+scan to a single file.""",
     ),
 
     # -- Reuse levels --
@@ -183,11 +144,12 @@ Open: CC0, PDM, CC-BY, CC-BY-SA.
 Restricted: CC licenses with -nc or -nd, plus NoC-NC, NoC-OKLR, InC-EDU.
 Prohibited: InC, CNE, InC-OW-EU, NKC, UND, and unknown URIs.""",
         duckdb_pattern="""\
-x_reuse_level column in merged_items and group_items has values
-'open' / 'restricted' / 'prohibited'.
+group_items.x_reuse_level is the pre-computed classification
+('open' / 'restricted' / 'prohibited'). The specific rights URI is in
+group_items.v_edm_rights.
 
-Specific rights URIs live in v_edm_rights. For the family (cc0, cc-by,
-rs-inc, etc.) and a human-readable label, JOIN with map_rights:
+For the rights family (cc0, cc-by, rs-inc, …) and a human label, JOIN
+with map_rights:
     SELECT m.x_family, COUNT(*) AS n
     FROM group_items g JOIN map_rights m ON g.v_edm_rights = m.k_iri
     WHERE g.v_edm_type = 'IMAGE'
@@ -207,9 +169,10 @@ edm:type is a controlled enum with 5 uppercase values: IMAGE, TEXT, SOUND,
 VIDEO, 3D.  dc:type is free-text from providers with millions of values
 like 'photograph', 'Preserved Specimen'.  Never confuse them.""",
         duckdb_pattern="""\
-v_edm_type (VARCHAR) in merged_items / group_items is edm:type.
-x_dc_type (LIST<STRUCT<x_value, x_label, x_value_is_iri>>) in merged_items
-is dc:type (resolved).""",
+v_edm_type (VARCHAR) in group_items is edm:type (the enum).
+dc:type values live in links_ore_Proxy with x_property = 'v_dc_type' — one
+row per value, potentially an IRI (x_value_is_iri=true) or a free-text
+literal. Resolve IRIs to human labels via values_skos_Concept.""",
         sparql_pattern="""\
 edm:type is on the Europeana proxy with exactly 5 uppercase values.
 dc:type is on the provider proxy with free-text values.
@@ -220,13 +183,19 @@ dc:type is on the provider proxy with free-text values.
     EdmNote(
         topic="content_availability",
         edm_knowledge="""\
-v_edm_isShownBy = direct content URL (downloadable digital object).
-v_edm_isShownAt = landing page at provider website.
-x_has_iiif = whether the primary web resource exposes a IIIF service.
-v_ebucore_width / v_ebucore_height = pixel dimensions (NULL if unknown).""",
+edm:isShownBy is the direct content URL (downloadable digital object).
+edm:isShownAt is the landing page at the provider website.
+Both live on ore:Aggregation.
+WebResource rows carry technical metadata (dimensions, MIME type,
+file size). IIIF service presence is flagged by group_items.x_has_iiif.""",
         duckdb_pattern="""\
-An item "has content" if v_edm_isShownBy IS NOT NULL (or use
-x_has_content_url = true in group_items, which is exactly this check).""",
+"Has content" is x_has_content_url = true in group_items (equivalent to
+v_edm_isShownBy IS NOT NULL on the aggregation).
+
+WebResource scalars keyed by content URL:
+    SELECT k_iri AS content_url, v_ebucore_hasMimeType, v_ebucore_width,
+           v_ebucore_height, v_ebucore_fileByteSize
+    FROM values_edm_WebResource""",
         sparql_pattern="""\
 edm:isShownBy and edm:isShownAt are on ore:Aggregation.
 ?agg edm:aggregatedCHO ?item . ?agg edm:isShownBy ?url .""",
@@ -237,19 +206,21 @@ edm:isShownBy and edm:isShownAt are on ore:Aggregation.
         topic="country_institution",
         edm_knowledge="""\
 v_edm_country = providing country (string like 'Netherlands', 'France').
-v_edm_dataProvider = data provider organisation URI (in merged_items and
-group_items). x_dataProvider_name is the resolved English-preferred name.
-v_edm_provider = aggregator URI; x_provider_name is the resolved name.
+v_edm_dataProvider = data provider organisation URI (in group_items).
+v_edm_provider = aggregator URI.
 edm:country is ONLY on edm:EuropeanaAggregation, not on ore:Aggregation.""",
         duckdb_pattern="""\
-For human-readable institution names, use x_dataProvider_name directly
-from merged_items. Or query values_foaf_Organization directly:
-    SELECT COALESCE(MAX(v_skos_prefLabel)
-                    FILTER (WHERE x_prefLabel_lang = 'en'),
+For human-readable institution names, query values_foaf_Organization:
+    SELECT k_iri,
+           COALESCE(MAX(v_skos_prefLabel) FILTER (WHERE x_prefLabel_lang = 'en'),
                     MAX(v_skos_prefLabel)) AS name
     FROM values_foaf_Organization
     WHERE k_iri = '<some-org-uri>'
-    GROUP BY k_iri""",
+    GROUP BY k_iri
+
+Items per country × provider:
+    SELECT v_edm_country, v_edm_dataProvider, COUNT(*) AS n
+    FROM group_items GROUP BY 1, 2 ORDER BY n DESC""",
         sparql_pattern="""\
 ?eAgg edm:aggregatedCHO ?item . ?eAgg a edm:EuropeanaAggregation . ?eAgg edm:country ?country .
 edm:dataProvider is a literal on ore:Aggregation: ?agg edm:dataProvider ?dp .""",
@@ -260,11 +231,18 @@ edm:dataProvider is a literal on ore:Aggregation: ?agg edm:dataProvider ?dp ."""
         topic="specimen_exclusion",
         edm_knowledge="""\
 Natural-history specimens dominate open images (~10.8M items).
-Exclude via dc:type labels containing 'Preserved Specimen',
+Exclude via dc:type literals containing 'Preserved Specimen',
 'biological specimen', or 'herbarium'.""",
         duckdb_pattern="""\
-NOT list_has_any(list_transform(x_dc_type, x -> LOWER(x.x_label)),
-['preserved specimen', 'biological specimen', 'herbarium'])""",
+CHOs whose provider-proxy dc:type literal matches one of the
+specimen keywords (so you can anti-join):
+    SELECT DISTINCT p.k_iri_cho
+    FROM links_ore_Proxy l
+    JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+    WHERE l.x_property = 'v_dc_type'
+      AND NOT l.x_value_is_iri
+      AND regexp_matches(LOWER(l.x_value),
+          '(preserved specimen|biological specimen|herbarium)')""",
         sparql_pattern="""\
 FILTER NOT EXISTS {
   ?proxy dc:type ?dctype .
@@ -277,15 +255,15 @@ FILTER NOT EXISTS {
         topic="performance",
         edm_knowledge="The dataset has ~66M items / ~5B triples. Efficiency matters.",
         duckdb_pattern="""\
-- Prefer group_items over merged_items for GROUP BY questions: no UNNEST,
-  no struct access, no list columns. Scans run in seconds instead of
-  minutes.
-- Prefer map_cho_entities over UNNEST on x_dc_subject when finding all
-  items referencing a given entity IRI.
+- Prefer group_items for any question that fits its scalar columns —
+  scans run in seconds.
+- Prefer map_cho_entities over links_ore_Proxy when searching by a
+  specific entity IRI (agent/place/concept/timespan).
+- links_ore_Proxy is Hive-partitioned on x_property. Filter
+  l.x_property = 'v_dc_XXX' FIRST — DuckDB prunes to a single file.
 - Never SELECT *. Always specify columns.
-- Filter early (inside inner SELECT) before UNNEST explodes rows.
-- For counting items that satisfy some per-value predicate, prefer
-  list_has_any over UNNEST + COUNT(DISTINCT).""",
+- COUNT(DISTINCT p.k_iri_cho) when counting items through a proxy or
+  links join — proxies and entity links can fan out.""",
         sparql_pattern="""\
 For open-reuse filtering, ALWAYS use the open-items materialized view.
 Never use nested BIND/IF to classify 66M items.
@@ -296,29 +274,40 @@ Always COUNT(DISTINCT ?item) — items have multiple proxies and entity links.""
     EdmNote(
         topic="language_tags",
         edm_knowledge="""\
-x_dc_title and x_dc_description carry language tags in x_value_lang
-('en', 'de', 'fr', …). Empty string '' means no language tag was set.
-The x_dc_language list (dc:language) is distinct from title/description
-language tags.""",
+Title and description literals carry language tags via
+links_ore_Proxy.x_value_lang ('en', 'de', 'fr', …). Empty string ''
+means no language tag was set. The dc:language property (stored as
+x_property = 'v_dc_language' in links_ore_Proxy) is distinct from
+title/description language tags.""",
         duckdb_pattern="""\
-x_dc_title and x_dc_description have an x_value_lang field inside the
-struct. Empty string '' means untagged. NULL and '' are different.""",
+English-preferred titles per CHO:
+    SELECT p.k_iri_cho,
+           COALESCE(MAX(l.x_value) FILTER (WHERE l.x_value_lang = 'en'),
+                    MAX(l.x_value)) AS title
+    FROM links_ore_Proxy l
+    JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+    WHERE l.x_property = 'v_dc_title'
+      AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+    GROUP BY p.k_iri_cho""",
         sparql_pattern="""\
 LANG(?title) returns the tag. FILTER(LANG(?title) = "en") restricts to English.
 STR(?title) strips the tag for string comparison.
 FILTER(LANG(?label) = "en" || LANG(?label) = "") gets English or untagged.""",
     ),
 
-    # -- Century bucketing --
+    # -- edm:year bucketing --
     EdmNote(
-        topic="century_bucketing",
+        topic="year_bucketing",
         edm_knowledge="edm:year values are strings representing integer years.",
         duckdb_pattern="""\
-x_edm_year is LIST<VARCHAR> — cast individual values to INTEGER.
-    SELECT AVG(CAST(y AS INTEGER))
-    FROM (SELECT UNNEST(x_edm_year) AS y FROM merged_items)
-    WHERE y SIMILAR TO '[0-9]+'
-Bucket by century: CASE WHEN CAST(y AS INTEGER) < 1500 THEN 'before 1500' ... END""",
+edm:year lives on the Europeana proxy in links_ore_Proxy:
+    SELECT AVG(CAST(l.x_value AS INTEGER))
+    FROM links_ore_Proxy l
+    JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+    WHERE l.x_property = 'v_edm_year'
+      AND p.v_edm_europeanaProxy = 'true'
+      AND l.x_value SIMILAR TO '[0-9]+'
+Bucket by century: CASE WHEN CAST(x_value AS INTEGER) < 1500 THEN 'before 1500' ... END""",
         sparql_pattern="""\
 edm:year is a string on the Europeana proxy. Cast to integer:
 FILTER(xsd:integer(?year) >= 1800 && xsd:integer(?year) <= 1900)""",
@@ -340,8 +329,8 @@ Each has a paired links_* table (long format) with columns
 
 Proxy → CHO join: values_ore_Proxy.k_iri_cho is the FK to the CHO.
 Aggregation → CHO join: values_ore_Aggregation.k_iri_cho is the FK.
-WebResource → CHO join: values_edm_WebResource.k_iri_cho (filled in by
-    the aggregation link during export).
+WebResource → Aggregation: values_ore_Aggregation.v_edm_isShownBy =
+    values_edm_WebResource.k_iri (URL).
 Service → WebResource: values_svcs_Service.k_iri_webresource.""",
         duckdb_pattern="""\
 Entity prefLabel resolution (English preferred):
@@ -362,8 +351,8 @@ Agent owl:sameAs links (via long-format links table):
         edm_knowledge="""\
 map_cho_entities pre-joins CHOs to the contextual entities they
 reference via provider-proxy properties whose value is an IRI.
-Much faster than UNNEST-ing x_dc_subject / x_dc_creator etc. when
-searching by entity IRI.""",
+Much faster than filtering links_ore_Proxy by x_value when searching
+by entity IRI.""",
         duckdb_pattern="""\
 -- All CHOs referencing a specific Wikidata entity:
 SELECT COUNT(DISTINCT k_iri_cho)

@@ -14,25 +14,17 @@ questions:
       ORDER BY v_edm_completeness
 
   - id: field_coverage
-    question: "Per-field coverage percentages"
+    question: "Per-field coverage percentages (from group_items boolean flags)"
     backend: parquet
     query: |
       SELECT count(*) AS total_items,
-             round(count(*) FILTER (WHERE x_dc_title IS NOT NULL AND len(x_dc_title) > 0) * 100.0 / count(*), 2) AS has_title,
-             round(count(*) FILTER (WHERE x_dc_description IS NOT NULL AND len(x_dc_description) > 0) * 100.0 / count(*), 2) AS has_description,
-             round(count(*) FILTER (WHERE x_dc_creator IS NOT NULL AND len(x_dc_creator) > 0) * 100.0 / count(*), 2) AS has_creator,
-             round(count(*) FILTER (WHERE x_dc_contributor IS NOT NULL AND len(x_dc_contributor) > 0) * 100.0 / count(*), 2) AS has_contributor,
-             round(count(*) FILTER (WHERE x_dc_publisher IS NOT NULL AND len(x_dc_publisher) > 0) * 100.0 / count(*), 2) AS has_publisher,
-             round(count(*) FILTER (WHERE x_dc_subject IS NOT NULL AND len(x_dc_subject) > 0) * 100.0 / count(*), 2) AS has_subject,
-             round(count(*) FILTER (WHERE x_dc_type IS NOT NULL AND len(x_dc_type) > 0) * 100.0 / count(*), 2) AS has_dc_type,
-             round(count(*) FILTER (WHERE x_dc_format IS NOT NULL AND len(x_dc_format) > 0) * 100.0 / count(*), 2) AS has_format,
-             round(count(*) FILTER (WHERE x_dc_date IS NOT NULL AND len(x_dc_date) > 0) * 100.0 / count(*), 2) AS has_date,
-             round(count(*) FILTER (WHERE x_edm_year IS NOT NULL AND len(x_edm_year) > 0) * 100.0 / count(*), 2) AS has_year,
-             round(count(*) FILTER (WHERE x_dc_language IS NOT NULL AND len(x_dc_language) > 0) * 100.0 / count(*), 2) AS has_language,
-             round(count(*) FILTER (WHERE x_dc_identifier IS NOT NULL AND len(x_dc_identifier) > 0) * 100.0 / count(*), 2) AS has_identifier,
-             round(count(*) FILTER (WHERE v_edm_isShownBy IS NOT NULL) * 100.0 / count(*), 2) AS has_content_url,
+             round(count(*) FILTER (WHERE x_has_description) * 100.0 / count(*), 2) AS has_description,
+             round(count(*) FILTER (WHERE x_has_creator) * 100.0 / count(*), 2) AS has_creator,
+             round(count(*) FILTER (WHERE x_has_subject) * 100.0 / count(*), 2) AS has_subject,
+             round(count(*) FILTER (WHERE x_primary_language IS NOT NULL) * 100.0 / count(*), 2) AS has_language,
+             round(count(*) FILTER (WHERE x_has_content_url) * 100.0 / count(*), 2) AS has_content_url,
              round(count(*) FILTER (WHERE x_has_iiif) * 100.0 / count(*), 2) AS has_iiif
-      FROM merged_items
+      FROM group_items
 
   - id: completeness_by_type
     question: "Average completeness score by edm:type"

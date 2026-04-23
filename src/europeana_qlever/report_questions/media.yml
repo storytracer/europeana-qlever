@@ -1,26 +1,26 @@
 name: Media and Content Quality
-description: Image resolution distribution, file size, MIME families, IIIF coverage, and 3D spatial resolution.
+description: Image resolution, file size, MIME families, IIIF coverage, 3D spatial resolution — all over values_edm_WebResource.
 
 questions:
   - id: image_resolution_buckets
-    question: "Image resolution distribution by megapixel buckets (IMAGE only)"
+    question: "Image resolution distribution by megapixel buckets (web resources with image MIME type)"
     backend: parquet
     query: |
       WITH buckets AS (
           SELECT CASE
-                     WHEN x_megapixels IS NULL THEN 'unknown'
-                     WHEN x_megapixels < 0.1 THEN '< 0.1 MP'
-                     WHEN x_megapixels < 0.5 THEN '0.1-0.5 MP'
-                     WHEN x_megapixels < 1 THEN '0.5-1 MP'
-                     WHEN x_megapixels < 4 THEN '1-4 MP'
-                     WHEN x_megapixels < 16 THEN '4-16 MP'
+                     WHEN v_ebucore_width IS NULL OR v_ebucore_height IS NULL THEN 'unknown'
+                     WHEN v_ebucore_width * v_ebucore_height < 100000 THEN '< 0.1 MP'
+                     WHEN v_ebucore_width * v_ebucore_height < 500000 THEN '0.1-0.5 MP'
+                     WHEN v_ebucore_width * v_ebucore_height < 1000000 THEN '0.5-1 MP'
+                     WHEN v_ebucore_width * v_ebucore_height < 4000000 THEN '1-4 MP'
+                     WHEN v_ebucore_width * v_ebucore_height < 16000000 THEN '4-16 MP'
                      ELSE '>= 16 MP'
                  END AS resolution_bucket
-          FROM merged_items
-          WHERE v_edm_type = 'IMAGE'
+          FROM values_edm_WebResource
+          WHERE v_ebucore_hasMimeType LIKE 'image/%'
       )
       SELECT resolution_bucket,
-             count(*) AS items,
+             count(*) AS resources,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
       FROM buckets
       GROUP BY resolution_bucket
@@ -35,7 +35,7 @@ questions:
                END
 
   - id: file_size_buckets
-    question: "File-size distribution by bucket (items with a recorded byte size)"
+    question: "File-size distribution by bucket (web resources with a recorded byte size)"
     backend: parquet
     query: |
       WITH buckets AS (
@@ -47,11 +47,11 @@ questions:
                      WHEN v_ebucore_fileByteSize < 1024 * 1024 * 1024 THEN '100 MB - 1 GB'
                      ELSE '>= 1 GB'
                  END AS size_bucket
-          FROM merged_items
+          FROM values_edm_WebResource
           WHERE v_ebucore_fileByteSize IS NOT NULL
       )
       SELECT size_bucket,
-             count(*) AS items,
+             count(*) AS resources,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
       FROM buckets
       GROUP BY size_bucket
@@ -74,43 +74,46 @@ questions:
                      WHEN position('/' IN v_ebucore_hasMimeType) = 0 THEN 'malformed'
                      ELSE split_part(v_ebucore_hasMimeType, '/', 1)
                  END AS mime_family
-          FROM merged_items
+          FROM values_edm_WebResource
       )
       SELECT mime_family,
-             count(*) AS items,
+             count(*) AS resources,
              round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
       FROM families
       GROUP BY mime_family
-      ORDER BY items DESC
+      ORDER BY resources DESC
 
   - id: iiif_by_mime_family
-    question: "IIIF adoption by MIME family (items with both MIME and IIIF info)"
+    question: "IIIF adoption by MIME family (web resources with both MIME and IIIF service info)"
     backend: parquet
     query: |
-      WITH families AS (
-          SELECT split_part(v_ebucore_hasMimeType, '/', 1) AS mime_family,
-                 x_has_iiif
-          FROM merged_items
-          WHERE v_ebucore_hasMimeType IS NOT NULL
-            AND position('/' IN v_ebucore_hasMimeType) > 0
+      WITH iiif_wrs AS (
+          SELECT DISTINCT k_iri_webresource
+          FROM values_svcs_Service
+      ),
+      families AS (
+          SELECT split_part(wr.v_ebucore_hasMimeType, '/', 1) AS mime_family,
+                 (s.k_iri_webresource IS NOT NULL) AS x_has_iiif
+          FROM values_edm_WebResource wr
+          LEFT JOIN iiif_wrs s ON s.k_iri_webresource = wr.k_iri
+          WHERE wr.v_ebucore_hasMimeType IS NOT NULL
+            AND position('/' IN wr.v_ebucore_hasMimeType) > 0
       )
       SELECT mime_family,
-             count(*) AS items,
-             count(*) FILTER (WHERE x_has_iiif) AS iiif_items,
+             count(*) AS resources,
+             count(*) FILTER (WHERE x_has_iiif) AS iiif_resources,
              round(count(*) FILTER (WHERE x_has_iiif) * 100.0 / count(*), 2) AS pct_iiif
       FROM families
       GROUP BY mime_family
-      ORDER BY items DESC
+      ORDER BY resources DESC
 
   - id: spatial_resolution_3d
-    question: "3D spatial-resolution coverage and stats"
+    question: "3D spatial-resolution coverage and stats (web resources with v_edm_spatialResolution set)"
     backend: parquet
     query: |
-      SELECT count(*) AS total_3d_items,
-             count(*) FILTER (WHERE v_edm_spatialResolution IS NOT NULL) AS with_resolution,
-             round(count(*) FILTER (WHERE v_edm_spatialResolution IS NOT NULL) * 100.0 / NULLIF(count(*), 0), 2) AS pct_with_resolution,
+      SELECT count(*) AS resources_with_resolution,
              round(avg(v_edm_spatialResolution), 2) AS avg_resolution,
              quantile_cont(v_edm_spatialResolution, 0.5) AS median_resolution,
              quantile_cont(v_edm_spatialResolution, 0.9) AS p90_resolution
-      FROM merged_items
-      WHERE v_edm_type = '3D'
+      FROM values_edm_WebResource
+      WHERE v_edm_spatialResolution IS NOT NULL

@@ -13,7 +13,7 @@ Europeana FTP (15,000+ ZIPs)
   → SPARQL endpoint (localhost:7001)
   → create-views (QLever materialized views for fast analytics)
   → Parquet export (Phase 1: raw values_* / links_* scans → Parquet
-                    Phase 2: DuckDB composition → merged_items, group_items, map_*)
+                    Phase 2: DuckDB composition → group_items, map_*)
   → report (quality/coverage analytics over exported Parquets)
   → ask (NL querying over Parquet via DuckDB, or over SPARQL via GRASP)
 
@@ -227,14 +227,14 @@ Creates the `open-items` QLever materialized view — a precomputed index of ope
 Export runs SPARQL queries against the server and writes Parquet files (and Hive-partitioned directories for `links_*` tables) to `<work-dir>/exports/`:
 
 ```bash
-# Export all 30 pipeline exports
+# Export all pipeline exports
 uv run europeana-qlever -d /data/europeana export --all
 
 # Export only the raw layer (values_* + links_*)
 uv run europeana-qlever -d /data/europeana export --set raw
 
-# Export the flagship denormalized CHO table (dependencies auto-exported)
-uv run europeana-qlever -d /data/europeana export merged_items
+# Export the fast-analytics group_items table (dependencies auto-exported)
+uv run europeana-qlever -d /data/europeana export group_items
 
 # Re-run a single partition of a Hive-partitioned links table
 uv run europeana-qlever -d /data/europeana export links_ore_Proxy --property dc_subject
@@ -258,7 +258,7 @@ uv run europeana-qlever -d /data/europeana report --probe-urls
 uv run europeana-qlever -d /data/europeana report -f "country=NL type=IMAGE"
 ```
 
-Default sections cover volume, rights, language coverage, completeness, entities, enrichment quality, content accessibility, media quality, provider leaderboards, and cross-cutting matrices. Questions with a `query` field execute as static DuckDB SQL; questions without a query are answered by the ask agent. Requires `merged_items.parquet` + `group_items.parquet` at minimum.
+Default sections cover volume, rights, language coverage, completeness, entities, enrichment quality, content accessibility, media quality, provider leaderboards, and cross-cutting matrices. Questions with a `query` field execute as static DuckDB SQL; questions without a query are answered by the ask agent. Requires `group_items.parquet` + the raw `values_*` / `links_*` exports.
 
 #### 9. Stop the server
 
@@ -280,11 +280,11 @@ europeana-qlever -d WORK_DIR
 ├── start [--ui]               Start the QLever SPARQL server (and optionally the web UI)
 ├── stop                       Stop the QLever SPARQL server
 ├── create-views               Create QLever materialized views (open-items, sample-items)
-├── list-exports               List all 30 exports (use --all-partitions for per-property link scans)
+├── list-exports               List all exports (use --all-partitions for per-property link scans)
 ├── analyze
 │   ├── qlever                 Profile SPARQL exports against a running QLever server
 │   └── static                 Offline structural analysis via SPARQL algebra
-├── export                     Export data as Parquet files (values_*, links_*, merged_items, group_items, map_*)
+├── export                     Export data as Parquet files (values_*, links_*, group_items, map_*)
 ├── write-report-config        Copy default report question YAML files into <work-dir>/reports/questions/
 ├── report                     Quality/coverage report over exported Parquet files
 ├── ask QUESTION               NL query: --backend parquet (DuckDB, offline) or sparql (GRASP)
@@ -299,7 +299,7 @@ europeana-qlever -d WORK_DIR
 
 Exports follow a raw-then-composed architecture aligned with EDM class boundaries.
 
-**Table naming:** `values_` (wide, one row per EDM entity — scalar k_/v_ columns), `links_` (long, one row per value, Hive-partitioned by property), `merged_` (denormalized user-facing tables with list/struct columns), `group_` (scalar-only tables for fast analytics), `map_` (lookup / navigation tables).
+**Table naming:** `values_` (wide, one row per EDM entity — scalar k_/v_ columns), `links_` (long, one row per value, Hive-partitioned by property), `group_` (scalar-only per-CHO table for fast analytics), `map_` (lookup / navigation tables).
 
 **Column naming:** `k_` = identifier / foreign key, `v_` = scalar EDM property straight from the RDF, `x_` = extracted / computed / resolved / aggregated. Column names derive mechanically from EDM CURIEs, e.g. `dc:subject` → `v_dc_subject`.
 
@@ -307,13 +307,12 @@ Exports are organized into named, non-exclusive **export sets**:
 
 | Set | Count | Description |
 |-----|-------|-------------|
-| **pipeline** | 30 | All final exports: raw + merged + group + maps (the full pipeline output) |
+| **pipeline** | 29 | All final exports: raw + group + maps (the full pipeline output) |
 | **raw** | 25 | Raw `values_*` and `links_*` tables — one row per EDM entity (values) or one row per value (links, Hive-partitioned) |
-| **merged** | 1 | Flagship denormalized `merged_items` table |
 | **group** | 1 | Fast-analytics `group_items` table (categorical / boolean / integer columns only) |
 | **maps** | 3 | Static lookup tables: `map_rights`, `map_sameAs`, `map_cho_entities` |
 
-There are 30 final exports: 14 `values_*` tables (one per EDM class plus two for persistent identifiers), 11 `links_*` Hive-partitioned directories, and 5 composite exports (`merged_items`, `group_items`, `map_rights`, `map_sameAs`, `map_cho_entities`). Under the hood, the 11 `links_*` tables are made up of 129 per-property SPARQL scans, each writing to `<table>/x_property=<col>/data.parquet`.
+There are 29 final exports: 14 `values_*` tables (one per EDM class plus two for persistent identifiers), 11 `links_*` Hive-partitioned directories, and 4 composite exports (`group_items`, `map_rights`, `map_sameAs`, `map_cho_entities`). Under the hood, the 11 `links_*` tables are made up of 129 per-property SPARQL scans, each writing to `<table>/x_property=<col>/data.parquet`.
 
 List all exports:
 
@@ -327,20 +326,14 @@ uv run europeana-qlever -d /data/europeana list-exports --all-partitions
 
 ### Hybrid export architecture
 
-`merged_items`, `group_items`, and `map_*` are built in two phases:
+`group_items` and the `map_*` tables are built in two phases:
 
 - **Phase 1 (QLever):** `QueryExport` objects run simple, flat SPARQL scans (no GROUP BY, no GROUP_CONCAT, minimal OPTIONALs) — one per `values_*` table, plus one per link property per `links_*` table. QLever does what it's best at: index scans and triple pattern matching over billions of triples.
-- **Phase 2 (DuckDB):** `CompositeExport` joins the raw Parquets via `ComposeStep` sequences (24 steps for `merged_items`, 6 for `group_items`, 1–3 for the maps), resolving entity labels (English-preferred), aggregating multi-valued properties into native `LIST`/`STRUCT` Parquet types, and producing the final denormalized exports.
+- **Phase 2 (DuckDB):** `CompositeExport` joins the raw Parquets via `ComposeStep` sequences (8 steps for `group_items`, 1–3 for the maps), producing per-CHO scalar summaries and the navigation lookup tables.
 
-Multi-valued columns in `merged_items` use structured Parquet types:
-- `LIST<STRUCT<x_value, x_value_lang>>` for titles and descriptions
-- `LIST<STRUCT<x_value, x_label, x_value_is_iri>>` for subjects, dc_types, formats, hasType, spatial
-- `LIST<STRUCT<x_value, x_name, x_value_is_iri>>` for creators, contributors, publishers
-- `LIST<VARCHAR>` for dates, identifiers, languages, rights, years
+`group_items` is scalar-only: one row per CHO with categorical (v_edm_type, v_edm_country, v_edm_dataProvider, …), boolean (x_has_iiif, x_has_creator, …), and integer (v_edm_completeness) columns. A computed `x_reuse_level` column classifies `edm:rights` URIs into open/restricted/prohibited, and `x_rights_family` identifies the rights family. Multi-valued descriptive metadata (titles, subjects, creators, dates, …) is **not** denormalized into `group_items` — query `links_ore_Proxy` joined through `values_ore_Proxy.k_iri_cho` when you need those directly.
 
-A computed `x_reuse_level` column classifies `edm:rights` URIs into open/restricted/prohibited; web-resource metadata (MIME type, dimensions, file size, IIIF detection) is aggregated per item.
-
-Dependencies are resolved automatically — exporting `merged_items` transparently exports all required `values_*`, `links_*`, and `map_*` tables first.
+Dependencies are resolved automatically — exporting `group_items` transparently exports all required `values_*`, `links_*`, and `map_*` tables first.
 
 ### Export examples
 
@@ -348,8 +341,8 @@ Dependencies are resolved automatically — exporting `merged_items` transparent
 # All pipeline exports
 uv run europeana-qlever -d /data/europeana export --all
 
-# Flagship denormalized CHO table (dependencies auto-exported)
-uv run europeana-qlever -d /data/europeana export merged_items
+# Fast-analytics per-CHO scalar table (dependencies auto-exported)
+uv run europeana-qlever -d /data/europeana export group_items
 
 # Only the raw layer (values_* + links_*)
 uv run europeana-qlever -d /data/europeana export --set raw
@@ -361,7 +354,7 @@ uv run europeana-qlever -d /data/europeana export --set all
 uv run europeana-qlever -d /data/europeana export links_ore_Proxy --property dc_subject
 
 # Filtered export: openly-licensed images from the Netherlands
-uv run europeana-qlever -d /data/europeana export merged_items \
+uv run europeana-qlever -d /data/europeana export group_items \
   --country Netherlands --type IMAGE --reuse-level open
 
 # Coherent smoke test: sample 10,000 items via the sample-items view
@@ -506,7 +499,7 @@ Files in `src/europeana_qlever/grasp/`:
 |-----------|---------|
 | `src/europeana_qlever/` | Python CLI source code |
 | `src/europeana_qlever/schema/edm.yaml` | EDM base schema — primary source of truth for the EDM data model (12 classes, 242 fully-described attributes) |
-| `src/europeana_qlever/schema/edm_parquet.yaml` | Export schema — declares all 30 export tables (14 values_* + 11 links_* + merged_items + group_items + 3 map_*) as LinkML classes with SPARQL patterns and pipeline annotations |
+| `src/europeana_qlever/schema/edm_parquet.yaml` | Export schema — declares all 29 export tables (14 values_* + 11 links_* + group_items + 3 map_*) as LinkML classes with SPARQL patterns and pipeline annotations |
 | `src/europeana_qlever/ask/` | NL-to-SPARQL / NL-to-DuckDB agents, shared EDM domain notes, benchmark runner and question set |
 | `src/europeana_qlever/grasp/` | Bundled GRASP resource files (SPARQL templates, prefix mappings) used by `write-grasp-config` and `grasp-setup` |
 | `src/europeana_qlever/report_questions/` | Bundled default report question YAML files (copied to `<work-dir>/reports/questions/` by `write-report-config`) |

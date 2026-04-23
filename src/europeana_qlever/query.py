@@ -71,7 +71,7 @@ S = SparqlHelpers
 # ---------------------------------------------------------------------------
 # QueryFilters — LIMIT + OFFSET (full filter support was removed with the
 # summary-table restructuring; filters are now applied at the DuckDB layer
-# on merged_items / group_items).
+# on group_items).
 # ---------------------------------------------------------------------------
 
 
@@ -80,10 +80,10 @@ class QueryFilters:
     """Parameters for limiting SPARQL query results.
 
     The new pipeline applies most filtering (country, type, rights,
-    institution, …) at the DuckDB layer on ``merged_items`` / ``group_items``
-    rather than at SPARQL-export time.  These fields are accepted for
-    CLI back-compat but currently only ``limit`` / ``offset`` are
-    respected in the generated SPARQL.
+    institution, …) at the DuckDB layer on ``group_items`` rather than
+    at SPARQL-export time.  These fields are accepted for CLI back-compat
+    but currently only ``limit`` / ``offset`` are respected in the
+    generated SPARQL.
     """
 
     limit: int | None = None

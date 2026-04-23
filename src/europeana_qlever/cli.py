@@ -858,10 +858,10 @@ def list_exports_cmd(
 ):
     """List all available exports.
 
-    By default shows only the 30 logical exports (values_*, links_*,
-    merged_items, group_items, map_*).  Pass ``--all-partitions`` to
-    also see the per-property SPARQL scans that populate each Hive-
-    partitioned links_* directory.
+    By default shows only the logical exports (values_*, links_*,
+    group_items, map_*).  Pass ``--all-partitions`` to also see the
+    per-property SPARQL scans that populate each Hive-partitioned
+    links_* directory.
     """
     from rich.table import Table
 
@@ -1288,8 +1288,8 @@ def analyze_static(
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget (e.g. '4GB' or 'auto').")
 @click.option("--chunk-size", type=int, default=5_000_000, show_default=True,
-              help="Rows per chunk for merged_items composition. 0 disables "
-                   "chunking (one-shot aggregation; uses substantially more RAM).")
+              help="Rows per chunk for group_items composition. 0 disables "
+                   "chunking (one-shot aggregation; uses more RAM).")
 @click.option("--keep-base/--no-keep-base", default=True, show_default=True,
               help="Keep intermediate base table Parquet files after composition. "
                    "Use --no-keep-base to clean them up.")
@@ -1338,7 +1338,7 @@ def export(
     pipeline, or --set for a named export set.  Filter options
     (--country, --type, etc.) apply to SPARQL-based exports.
 
-    Composite exports (like merged_items) automatically export their
+    Composite exports (group_items, map_*) automatically export their
     dependencies first, then compose the final Parquet via DuckDB.
 
     links_* tables are Hive-partitioned directories; each property
@@ -1427,8 +1427,8 @@ def export(
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget for export (e.g. '4GB' or 'auto').")
 @click.option("--compose-chunk-size", type=int, default=5_000_000, show_default=True,
-              help="Rows per chunk for merged_items composition. 0 disables "
-                   "chunking (one-shot aggregation; uses substantially more RAM).")
+              help="Rows per chunk for group_items composition. 0 disables "
+                   "chunking (one-shot aggregation; uses more RAM).")
 @click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
               help="Per-query timeout in seconds for export.")
 @click.option("--skip-merge", is_flag=True, help="Skip merge if chunks already exist.")
@@ -1846,7 +1846,7 @@ def report(
 @click.option("--backend", type=click.Choice(["parquet", "sparql"]), default="parquet",
               help="Query backend: parquet (DuckDB, offline) or sparql (GRASP, requires servers).")
 @click.option("--filters", "-f", "filter_string", default=None,
-              help='Pre-filter merged_items, e.g. "country=NL type=IMAGE reuse_level=open"')
+              help='Pre-filter group_items, e.g. "country=NL type=IMAGE reuse_level=open"')
 @click.option("--model", default=None, show_default=True,
               help="Override the LLM model (default: gpt-4.1-mini).")
 @click.option("--max-steps", default=None, type=int, show_default=True,

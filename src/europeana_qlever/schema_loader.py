@@ -139,18 +139,9 @@ def class_attributes(cls_name: str) -> dict[str, AttributeInfo]:
     return result
 
 
-def merged_fields() -> dict[str, AttributeInfo]:
-    """All MergedItems class attributes (the ``merged_items`` schema)."""
-    return class_attributes("MergedItems")
-
-
 def group_fields() -> dict[str, AttributeInfo]:
     """All GroupItems class attributes (the ``group_items`` schema)."""
     return class_attributes("GroupItems")
-
-
-# Back-compat alias — some older code may still reference item_fields().
-item_fields = merged_fields
 
 
 # ---------------------------------------------------------------------------
@@ -374,13 +365,13 @@ def authority_sql(value_column: str = "x_value") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Filterable fields — derived from MergedItems
+# Filterable fields — derived from GroupItems
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class FilterFieldInfo:
-    """Metadata for a single filterable MergedItems field."""
+    """Metadata for a single filterable GroupItems field."""
 
     name: str
     column: str
@@ -391,27 +382,19 @@ class FilterFieldInfo:
     struct_field: str | None = None
 
 
-# Struct types whose searchable key is inside the struct.
-_STRUCT_LABEL_FIELD: dict[str, str] = {
-    "LabeledEntityX": "x_label",
-    "NamedEntityX": "x_name",
-    "LangValueX": "x_value",
-}
-
-
 @functools.cache
 def filterable_fields() -> dict[str, FilterFieldInfo]:
-    """Return all non-identifier MergedItems fields with inferred filter styles."""
+    """Return all non-identifier GroupItems fields with inferred filter styles.
+
+    group_items is scalar-only (no list or struct columns), so every
+    filterable field resolves to ``bool`` / ``range`` / ``eq`` /
+    ``in_list`` depending on the LinkML range.
+    """
     result: dict[str, FilterFieldInfo] = {}
-    for name, attr in merged_fields().items():
+    for name, attr in group_fields().items():
         if attr.identifier:
             continue
-        if attr.multivalued:
-            if attr.range in _STRUCT_LABEL_FIELD:
-                style = "list_struct"
-            else:
-                style = "list_contains"
-        elif attr.range == "boolean":
+        if attr.range == "boolean":
             style = "bool"
         elif attr.range == "integer":
             style = "range"
@@ -426,7 +409,7 @@ def filterable_fields() -> dict[str, FilterFieldInfo]:
             data_type=attr.range or "string",
             multivalued=attr.multivalued,
             required=attr.required,
-            struct_field=_STRUCT_LABEL_FIELD.get(attr.range or ""),
+            struct_field=None,
         )
     return result
 
@@ -455,23 +438,6 @@ def _pa_type(range_name: str | None, multivalued: bool):
 
     rng = range_name or "string"
     if multivalued:
-        if rng == "LangValueX":
-            return pa.list_(pa.struct([
-                ("x_value", pa.string()),
-                ("x_value_lang", pa.string()),
-            ]))
-        if rng == "LabeledEntityX":
-            return pa.list_(pa.struct([
-                ("x_value", pa.string()),
-                ("x_label", pa.string()),
-                ("x_value_is_iri", pa.bool_()),
-            ]))
-        if rng == "NamedEntityX":
-            return pa.list_(pa.struct([
-                ("x_value", pa.string()),
-                ("x_name", pa.string()),
-                ("x_value_is_iri", pa.bool_()),
-            ]))
         return pa.list_(pa.string())
     type_name = _PA_SCALAR.get(rng, "string")
     if type_name == "timestamp_ms_utc":
@@ -545,9 +511,6 @@ _DUCKDB_TYPE: dict[str, str] = {
 }
 
 _DUCKDB_LIST_TYPE: dict[str, str] = {
-    "LangValueX": "LIST<STRUCT<x_value VARCHAR, x_value_lang VARCHAR>>",
-    "LabeledEntityX": "LIST<STRUCT<x_value VARCHAR, x_label VARCHAR, x_value_is_iri BOOLEAN>>",
-    "NamedEntityX": "LIST<STRUCT<x_value VARCHAR, x_name VARCHAR, x_value_is_iri BOOLEAN>>",
     "string": "LIST<VARCHAR>",
     "integer": "LIST<INTEGER>",
 }
@@ -568,22 +531,6 @@ def _duckdb_type_str(range_name: str | None, multivalued: bool) -> str:
 def parquet_schema_description() -> str:
     """Auto-generate an LLM-friendly description of the exported Parquet tables."""
     lines: list[str] = []
-
-    # --- merged_items ---
-    lines.append("## Table: merged_items")
-    lines.append(
-        "One row per cultural heritage item (~66M rows). Joins proxies, "
-        "aggregations, primary web resource; resolves entity labels; "
-        "aggregates multi-valued properties. This is the main table for "
-        "most analytical questions."
-    )
-    lines.append("")
-    lines.append("Columns (alphabetical):")
-    for name, attr in _sorted_attributes(merged_fields()):
-        type_str = _duckdb_type_str(attr.range, attr.multivalued)
-        desc = f" — {attr.description}" if attr.description else ""
-        lines.append(f"  {name} ({type_str}){desc}")
-    lines.append("")
 
     # --- group_items ---
     lines.append("## Table: group_items")
@@ -674,18 +621,3 @@ def edm_class_properties(cls_name: str) -> dict[str, AttributeInfo]:
     return result
 
 
-# ---------------------------------------------------------------------------
-# Parquet file validation
-# ---------------------------------------------------------------------------
-
-
-def validate_against_parquet(parquet_path: Path) -> tuple[set[str], set[str]]:
-    """Compare the MergedItems schema against an actual Parquet file."""
-    import pyarrow.parquet as pq
-
-    schema_cols = set(merged_fields().keys())
-    pq_schema = pq.read_schema(parquet_path)
-    parquet_cols = set(pq_schema.names)
-    missing = schema_cols - parquet_cols
-    extra = parquet_cols - schema_cols
-    return missing, extra

@@ -10,10 +10,9 @@ description: >-
 
   Column and table naming conventions:
 
-  - Tables start with one of five prefixes:
+  - Tables start with one of four prefixes:
     * values_   raw scalar EDM properties (wide, one row per entity)
     * links_    raw multi-valued EDM properties (long, one row per value)
-    * merged_   pre-joined, enriched, user-facing (with list / struct list cols)
     * group_    pre-computed dimensions for fast analytics (wide, all scalar)
     * map_      static lookup and navigation tables
 
@@ -105,46 +104,6 @@ enums:
       other: {}
 
 classes:
-
-  # =================================================================
-  # Structured types used in merged_items list columns
-  # =================================================================
-
-  LangValueX:
-    description: >-
-      Text value with a language tag. Used for titles, descriptions.
-      Maps to STRUCT<x_value VARCHAR, x_value_lang VARCHAR>.
-    attributes:
-      x_value:
-        range: string
-      x_value_lang:
-        range: string
-
-  LabeledEntityX:
-    description: >-
-      Entity reference with resolved label and IRI flag. Used for subjects,
-      dc_types, formats, places, hasType.
-      Maps to STRUCT<x_value VARCHAR, x_label VARCHAR, x_value_is_iri BOOLEAN>.
-    attributes:
-      x_value:
-        range: string
-      x_label:
-        range: string
-      x_value_is_iri:
-        range: boolean
-
-  NamedEntityX:
-    description: >-
-      Agent reference with resolved display name and IRI flag. Used for
-      creators, contributors, publishers.
-      Maps to STRUCT<x_value VARCHAR, x_name VARCHAR, x_value_is_iri BOOLEAN>.
-    attributes:
-      x_value:
-        range: string
-      x_name:
-        range: string
-      x_value_is_iri:
-        range: boolean
 
   # =================================================================
   # values_edm_ProvidedCHO — minimal CHO anchor
@@ -1173,194 +1132,15 @@ classes:
       x_value_lang: { range: string }
 
   # =================================================================
-  # merged_items — user-facing denormalized CHO export
-  # =================================================================
-
-  MergedItems:
-    description: >-
-      Fully denormalized one-row-per-CHO export. Joins provider/Europeana
-      proxies, aggregation, Europeana aggregation, and the primary web
-      resource. Resolves entity labels. Aggregates multi-valued properties
-      into list and struct list columns. Computes derived columns
-      (x_title, x_description, x_reuse_level, x_has_iiif, x_megapixels).
-    class_uri: edm:ProvidedCHO
-    annotations:
-      table_name: merged_items
-      export_type: merged
-      export_sets: "pipeline,merged"
-      depends_on: >-
-        values_edm_ProvidedCHO, values_ore_Proxy, values_ore_Aggregation,
-        values_edm_EuropeanaAggregation, values_edm_WebResource,
-        values_svcs_Service, links_ore_Proxy,
-        values_edm_Agent, values_edm_Place, values_skos_Concept,
-        values_foaf_Organization
-    attributes:
-      k_iri:
-        range: uri
-        required: true
-        identifier: true
-        description: CHO URI.
-      v_ebucore_audioChannelNumber:
-        range: integer
-        description: Audio channels — primary web resource.
-      v_ebucore_bitRate:
-        range: integer
-      v_ebucore_duration:
-        range: string
-      v_ebucore_fileByteSize:
-        range: integer
-      v_ebucore_frameRate:
-        range: float
-      v_ebucore_hasMimeType:
-        range: string
-      v_ebucore_height:
-        range: integer
-      v_ebucore_orientation:
-        range: string
-      v_ebucore_sampleRate:
-        range: integer
-      v_ebucore_sampleSize:
-        range: integer
-      v_ebucore_width:
-        range: integer
-      v_edm_codecName:
-        range: string
-      v_edm_completeness:
-        range: integer
-        description: Metadata completeness score (EuropeanaAggregation).
-      v_edm_country:
-        range: string
-        description: Country (EuropeanaAggregation).
-      v_edm_currentLocation:
-        range: string
-        description: edm:currentLocation from the provider proxy.
-      v_edm_dataProvider:
-        range: string
-        description: Data provider URI (from Aggregation).
-      v_edm_datasetName:
-        range: string
-      v_edm_hasColorSpace:
-        range: string
-      v_edm_isShownAt:
-        range: uri
-      v_edm_isShownBy:
-        range: uri
-        description: Primary content URL.
-      v_edm_landingPage:
-        range: uri
-      v_edm_object:
-        range: uri
-      v_edm_pointCount:
-        range: integer
-      v_edm_polygonCount:
-        range: integer
-      v_edm_preview:
-        range: uri
-        description: Thumbnail (EuropeanaAggregation).
-      v_edm_provider:
-        range: string
-        description: Aggregator URI (from Aggregation).
-      v_edm_rights:
-        range: uri
-        description: edm:rights URI (from Aggregation).
-      v_edm_spatialResolution:
-        range: integer
-      v_edm_type:
-        range: string
-        description: edm:type enum from the Europeana proxy.
-      v_edm_vertexCount:
-        range: integer
-      v_schema_digitalSourceType:
-        range: string
-      x_dataProvider_name:
-        range: string
-        description: Resolved English-preferred dataProvider name.
-      x_dc_contributor:
-        range: NamedEntityX
-        multivalued: true
-        description: dc:contributor (provider proxy) — agent-resolved.
-      x_dc_creator:
-        range: NamedEntityX
-        multivalued: true
-        description: dc:creator (provider proxy) — agent-resolved.
-      x_dc_date:
-        range: string
-        multivalued: true
-        description: dc:date values (provider proxy).
-      x_dc_description:
-        range: LangValueX
-        multivalued: true
-      x_dc_format:
-        range: LabeledEntityX
-        multivalued: true
-        description: dc:format — concept-resolved.
-      x_dc_identifier:
-        range: string
-        multivalued: true
-      x_dc_language:
-        range: string
-        multivalued: true
-      x_dc_publisher:
-        range: NamedEntityX
-        multivalued: true
-        description: dc:publisher — agent-resolved.
-      x_dc_rights:
-        range: string
-        multivalued: true
-      x_dc_subject:
-        range: LabeledEntityX
-        multivalued: true
-        description: dc:subject — concept-resolved.
-      x_dc_title:
-        range: LangValueX
-        multivalued: true
-      x_dc_type:
-        range: LabeledEntityX
-        multivalued: true
-        description: dc:type — concept-resolved (not edm:type).
-      x_dcterms_spatial:
-        range: LabeledEntityX
-        multivalued: true
-        description: dcterms:spatial — place-resolved.
-      x_description:
-        range: string
-        description: First dc:description (English preferred).
-      x_description_lang:
-        range: string
-      x_edm_hasType:
-        range: LabeledEntityX
-        multivalued: true
-        description: edm:hasType — concept-resolved.
-      x_edm_year:
-        range: string
-        multivalued: true
-        description: edm:year values (Europeana proxy).
-      x_has_iiif:
-        range: boolean
-      x_megapixels:
-        range: float
-        description: width * height / 1e6.
-      x_provider_name:
-        range: string
-        description: Resolved English-preferred aggregator name.
-      x_reuse_level:
-        range: ReuseLevel
-        description: open / restricted / prohibited.
-      x_title:
-        range: string
-        description: First dc:title (English preferred).
-      x_title_lang:
-        range: string
-
-  # =================================================================
   # group_items — categorical dimensions for fast analytics
   # =================================================================
 
   GroupItems:
     description: >-
       One row per CHO. Only categorical / boolean / integer columns — no
-      list or struct types. Designed for instant GROUP BY analytics that
-      would otherwise scan merged_items.
+      list or struct types. Designed for instant GROUP BY analytics over
+      scalar dimensions without joining the raw values_* / links_*
+      tables.
     class_uri: edm:ProvidedCHO
     annotations:
       table_name: group_items

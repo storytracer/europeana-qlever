@@ -38,25 +38,6 @@ _CROISSANT_DTYPE: dict[str, mlc.DataType] = {
 }
 
 
-# Struct-type sub-field definitions (for merged_items list-of-struct columns).
-_STRUCT_SUBFIELDS: dict[str, list[tuple[str, str, mlc.DataType]]] = {
-    "LangValueX": [
-        ("x_value", "Text value.", mlc.DataType.TEXT),
-        ("x_value_lang", "Language tag (e.g. 'en', 'de'; null for untagged).", mlc.DataType.TEXT),
-    ],
-    "LabeledEntityX": [
-        ("x_value", "Raw value (IRI or literal string).", mlc.DataType.TEXT),
-        ("x_label", "Resolved entity label (falls back to x_value).", mlc.DataType.TEXT),
-        ("x_value_is_iri", "Whether x_value is an IRI.", mlc.DataType.BOOL),
-    ],
-    "NamedEntityX": [
-        ("x_value", "Raw value (IRI or literal string).", mlc.DataType.TEXT),
-        ("x_name", "Resolved display name (falls back to x_value).", mlc.DataType.TEXT),
-        ("x_value_is_iri", "Whether x_value is an IRI.", mlc.DataType.BOOL),
-    ],
-}
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -94,39 +75,8 @@ def _build_fields_from_schema(
     for col_name in sorted(attrs.keys()):
         attr = attrs[col_name]
         field_id = f"{record_id}/{col_name}"
-        struct_defs = _STRUCT_SUBFIELDS.get(attr.range or "")
 
-        if attr.multivalued and struct_defs:
-            sub_fields = [
-                mlc.Field(
-                    ctx=ctx,
-                    id=f"{field_id}/{sf_name}",
-                    name=sf_name,
-                    description=sf_desc,
-                    data_types=[sf_dtype],
-                    source=mlc.Source(
-                        ctx=ctx,
-                        file_object=file_object_id,
-                        extract=mlc.Extract(column=f"{col_name}/{sf_name}"),
-                    ),
-                )
-                for sf_name, sf_desc, sf_dtype in struct_defs
-            ]
-            fields.append(mlc.Field(
-                ctx=ctx,
-                id=field_id,
-                name=col_name,
-                description=attr.description or col_name,
-                data_types=[mlc.DataType.TEXT],
-                repeated=True,
-                source=mlc.Source(
-                    ctx=ctx,
-                    file_object=file_object_id,
-                    extract=mlc.Extract(column=col_name),
-                ),
-                sub_fields=sub_fields,
-            ))
-        elif attr.multivalued:
+        if attr.multivalued:
             fields.append(mlc.Field(
                 ctx=ctx,
                 id=field_id,
@@ -292,12 +242,12 @@ def generate_croissant(exports_dir: Path) -> Path:
             "Europeana EDM cultural heritage metadata (~66M items) "
             "exported as Parquet files from the QLever SPARQL engine. "
             "Covers the full Europeana Data Model with class boundaries "
-            "preserved in raw values_*/links_* tables, and a denormalized "
-            "merged_items table for user-friendly analysis. "
-            "links_* tables are Hive-partitioned directories "
-            "(x_property=<col>/data.parquet); readers that understand "
-            "Hive partitioning (DuckDB, HuggingFace datasets) transparently "
-            "prune partitions when filtering on x_property."
+            "preserved in raw values_*/links_* tables, plus a scalar "
+            "group_items table for fast GROUP BY analytics and map_* "
+            "lookup/navigation tables. links_* tables are Hive-partitioned "
+            "directories (x_property=<col>/data.parquet); readers that "
+            "understand Hive partitioning (DuckDB, HuggingFace datasets) "
+            "transparently prune partitions when filtering on x_property."
         ),
         url="https://github.com/storytracer/europeana-qlever",
         license="https://creativecommons.org/publicdomain/zero/1.0/",

@@ -195,7 +195,7 @@ class ReportFilters:
 
         Syntax (space-separated tokens)::
 
-            country=NL,FR           # in_list / eq / list_contains / list_struct
+            country=NL,FR           # in_list / eq
             reuse_level=open        # eq
             has_iiif                # boolean flag
             completeness>=5         # range (min)
@@ -264,15 +264,6 @@ class ReportFilters:
             elif spec.filter_style == "in_list":
                 vals = ", ".join(f"'{v}'" for v in values)
                 clauses.append(f"{col} IN ({vals})")
-            elif spec.filter_style == "list_contains":
-                vals = ", ".join(f"'{v}'" for v in values)
-                clauses.append(f"list_has_any({col}, [{vals}])")
-            elif spec.filter_style == "list_struct":
-                vals = ", ".join(f"'{v}'" for v in values)
-                sf = spec.struct_field
-                clauses.append(
-                    f"len(list_filter({col}, x -> x.{sf} IN ({vals}))) > 0"
-                )
 
         for field_name, flag in self._booleans.items():
             spec = specs.get(field_name)
