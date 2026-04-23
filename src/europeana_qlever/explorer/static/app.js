@@ -353,7 +353,12 @@ function FacetSidebar({ schema, filters, setFilters, labels, requestLabels }) {
 // Chart
 // ---------------------------------------------------------------------------
 
-function ChartView({ summary, groupBy, labels, onBarClick }) {
+const DOUGHNUT_COLORS = [
+  "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
+  "#06b6d4", "#ec4899", "#84cc16", "#f97316", "#6366f1",
+];
+
+function ChartView({ summary, groupBy, lowCardinality, labels, onBarClick }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
   const onClickRef = useRef(onBarClick);
@@ -363,59 +368,127 @@ function ChartView({ summary, groupBy, labels, onBarClick }) {
     onClickRef.current = onBarClick;
   }, [onBarClick]);
 
-  // Create / destroy on groupBy change.
+  // Create / destroy when groupBy or chart-type flag changes.
   useEffect(() => {
     if (!canvasRef.current || !groupBy) return;
     const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const grid = isDark ? "#1f2937" : "#e5e7eb";
     const fg = isDark ? "#e5e7eb" : "#111418";
-    const bar = isDark ? "#60a5fa" : "#3b82f6";
-    chartRef.current = new Chart(canvasRef.current.getContext("2d"), {
-      type: "bar",
-      data: {
-        labels: [],
-        datasets: [
-          {
-            label: `count by ${groupBy}`,
-            data: [],
-            backgroundColor: bar,
-            borderWidth: 0,
+    const ctx = canvasRef.current.getContext("2d");
+
+    const config = lowCardinality
+      ? {
+          type: "doughnut",
+          data: {
+            labels: [],
+            datasets: [
+              { data: [], backgroundColor: DOUGHNUT_COLORS, borderWidth: 0 },
+            ],
           },
-        ],
-      },
-      options: {
-        indexAxis: "y",
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => ` ${fmt.format(ctx.parsed.x)} items`,
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "55%",
+            plugins: {
+              legend: {
+                position: "right",
+                labels: {
+                  color: fg,
+                  boxWidth: 12,
+                  padding: 8,
+                  font: { size: 12 },
+                  generateLabels: (chart) => {
+                    const ds = chart.data.datasets[0];
+                    const total = ds.data.reduce(
+                      (a, b) => a + (Number(b) || 0),
+                      0
+                    );
+                    return chart.data.labels.map((label, i) => {
+                      const value = Number(ds.data[i]) || 0;
+                      const pct =
+                        total > 0
+                          ? ((value / total) * 100).toFixed(1)
+                          : "0.0";
+                      return {
+                        text: `${label} — ${pct}% (${fmt.format(value)})`,
+                        fillStyle:
+                          DOUGHNUT_COLORS[i % DOUGHNUT_COLORS.length],
+                        strokeStyle:
+                          DOUGHNUT_COLORS[i % DOUGHNUT_COLORS.length],
+                        index: i,
+                      };
+                    });
+                  },
+                },
+              },
+              tooltip: {
+                callbacks: {
+                  label: (c) => {
+                    const total = c.dataset.data.reduce(
+                      (a, b) => a + (Number(b) || 0),
+                      0
+                    );
+                    const pct =
+                      total > 0
+                        ? ((c.parsed / total) * 100).toFixed(1)
+                        : "0.0";
+                    return ` ${fmt.format(c.parsed)} (${pct}%)`;
+                  },
+                },
+              },
+            },
+            onClick: (_evt, els) => {
+              if (els.length) onClickRef.current(els[0].index);
             },
           },
-        },
-        scales: {
-          x: {
-            ticks: { color: fg, callback: (v) => fmt.format(v) },
-            grid: { color: grid },
+        }
+      : {
+          type: "bar",
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: `count by ${groupBy}`,
+                data: [],
+                backgroundColor: isDark ? "#60a5fa" : "#3b82f6",
+                borderWidth: 0,
+              },
+            ],
           },
-          y: {
-            ticks: { color: fg, autoSkip: false },
-            grid: { display: false },
+          options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (c) => ` ${fmt.format(c.parsed.x)} items`,
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: { color: fg, callback: (v) => fmt.format(v) },
+                grid: { color: grid },
+              },
+              y: {
+                ticks: { color: fg, autoSkip: false },
+                grid: { display: false },
+              },
+            },
+            onClick: (_evt, els) => {
+              if (els.length) onClickRef.current(els[0].index);
+            },
           },
-        },
-        onClick: (_evt, els) => {
-          if (!els.length) return;
-          onClickRef.current(els[0].index);
-        },
-      },
-    });
+        };
+
+    chartRef.current = new Chart(ctx, config);
     return () => {
       chartRef.current?.destroy();
       chartRef.current = null;
     };
-  }, [groupBy]);
+  }, [groupBy, lowCardinality]);
 
   // Push new data when summary or labels change.
   useEffect(() => {
@@ -537,6 +610,11 @@ function View({
     [schema]
   );
 
+  const groupByCol = useMemo(
+    () => schema.columns.find((c) => c.name === groupBy) || null,
+    [schema, groupBy]
+  );
+
   const onBarClick = useCallback(
     (idx) => {
       if (!summary || !summary.chart[idx]) return;
@@ -578,6 +656,7 @@ function View({
       <${ChartView}
         summary=${summary}
         groupBy=${groupBy}
+        lowCardinality=${!!groupByCol?.low_cardinality}
         labels=${labels}
         onBarClick=${onBarClick}
       />

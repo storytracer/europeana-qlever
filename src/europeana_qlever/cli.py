@@ -1714,9 +1714,9 @@ def pipeline(
 def write_report_config(ctx: click.Context, force: bool):
     """Generate default report question files in <work-dir>/reports/questions/.
 
-    Copies bundled YAML question files that cover volume, rights, language,
-    completeness, entity enrichment, and content accessibility.  Customise
-    the generated files to add, remove, or modify report questions.
+    Copies the bundled overview question file — a quick scan of volume,
+    reuse levels, top providers, content coverage, and completeness.  Add
+    more YAML files alongside it to extend the report.
     """
     import shutil
 

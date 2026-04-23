@@ -39,6 +39,11 @@ _MAX_BODY_BYTES = 1_000_000
 _CHART_LIMIT = 30
 _MAX_LABEL_LOOKUP = 1_000
 
+# A column qualifies for percentage / doughnut treatment if it has at most
+# 10 distinct non-null values across the whole dataset (the constant is the
+# strict cutoff used with LIMIT, so set to 11).
+_LOW_CARDINALITY_THRESHOLD = 11
+
 
 # ---------------------------------------------------------------------------
 # IRI label resolution
@@ -161,6 +166,7 @@ class ExplorerEngine:
         )
 
         self._load_numeric_ranges()
+        self._load_low_cardinality_flags()
 
         self.iri_sources: list[_IRISource] = []
         if exports_dir is not None:
@@ -196,6 +202,22 @@ class ExplorerEngine:
             ))
 
     # -- startup ---------------------------------------------------------
+
+    def _load_low_cardinality_flags(self) -> None:
+        # Probe each categorical/boolean column for its distinct count, capped
+        # at the threshold via LIMIT so DuckDB stops scanning early.
+        for c in self.columns:
+            if c["category"] not in ("categorical", "boolean"):
+                continue
+            q = f'"{c["name"]}"'
+            distinct = int(self.con.execute(
+                f"SELECT COUNT(*) FROM ("
+                f"SELECT DISTINCT {q} FROM items "
+                f"WHERE {q} IS NOT NULL "
+                f"LIMIT {_LOW_CARDINALITY_THRESHOLD}"
+                ") AS d"
+            ).fetchone()[0])
+            c["low_cardinality"] = distinct < _LOW_CARDINALITY_THRESHOLD
 
     def _load_numeric_ranges(self) -> None:
         numerics = [c for c in self.columns if c["category"] == "numeric"]
