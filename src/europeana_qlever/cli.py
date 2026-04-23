@@ -397,11 +397,11 @@ def _write_ui_config(index_dir: Path, port: int) -> Path:
     from .export import ExportRegistry, QueryExport
 
     registry = ExportRegistry()
-    ui_exports: dict[str, QueryExport] = {}
-    for set_name in ("summary", "entities", "rights"):
-        for name, e in registry.for_set(set_name).items():
-            if isinstance(e, QueryExport) and name not in ui_exports:
-                ui_exports[name] = e
+    ui_exports: dict[str, QueryExport] = {
+        name: e
+        for name, e in registry.exports.items()
+        if isinstance(e, QueryExport) and e.partition_of is None
+    }
     examples = sorted(ui_exports.items(), key=lambda e: e[0])
 
     hostname = socket.gethostname()
