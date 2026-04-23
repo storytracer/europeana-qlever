@@ -1,199 +1,412 @@
-"""Minimal threaded HTTP server for the DuckDB-WASM explorer.
+"""Threaded HTTP server for the DuckDB-backed explorer.
 
-Serves two roots on a single port:
+Serves the bundled single-page app at ``/`` and exposes four JSON POST
+endpoints that a :class:`ExplorerEngine` answers directly against a local
+DuckDB connection:
 
-- ``/``       → bundled static SPA (``explorer/static/``)
-- ``/data/``  → the user's local exports directory, so DuckDB-WASM can fetch
-                Parquet files over HTTP with Range requests.
+- ``POST /api/schema``     → column list + total-row count + numeric ranges
+- ``POST /api/summary``    → filtered count, chart bars, distinct-count cards
+- ``POST /api/top-values`` → facet values for a column
+- ``POST /api/sample``     → N random rows matching filters
 
-All responses carry permissive CORS headers and ``Accept-Ranges: bytes``.
-The stdlib :class:`http.server.SimpleHTTPRequestHandler` does **not** honour
-``Range`` requests out of the box — it always sends the full file with a 200
-response — so we re-implement ``send_head`` to emit ``206 Partial Content``
-and override ``copyfile`` to stop after the byte count requested.
+All user-supplied values are bound as DuckDB parameters. Column identifiers
+are whitelisted against the schema before being spliced into SQL.
 """
 
 from __future__ import annotations
 
 import http.server
-import os
-import re
+import json
 import socket
 import socketserver
+import threading
+import traceback
 import urllib.parse
 from http import HTTPStatus
 from pathlib import Path
+from typing import Any
+
+import duckdb
 
 
-_DATA_PREFIX = "/data/"
-_RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+# ---------------------------------------------------------------------------
+# DuckDB engine
+# ---------------------------------------------------------------------------
+
+_MAX_BODY_BYTES = 1_000_000
+_CHART_LIMIT = 30
+
+
+class ExplorerEngine:
+    """Holds the long-lived DuckDB connection and answers API requests."""
+
+    def __init__(
+        self,
+        parquet: str,
+        *,
+        memory_limit: str = "4GB",
+        threads: int = 2,
+    ) -> None:
+        self.lock = threading.Lock()
+        self.con = duckdb.connect()
+        self.con.execute(f"SET memory_limit = '{memory_limit}'")
+        self.con.execute(f"SET threads = {int(threads)}")
+        # DuckDB doesn't accept parameters in DDL — escape quotes manually.
+        # The source string is either a resolved local path or a --data-url
+        # supplied by the CLI user; neither is untrusted in the usual sense.
+        escaped = parquet.replace("'", "''")
+        self.con.execute(
+            f"CREATE VIEW items AS SELECT * FROM read_parquet('{escaped}')"
+        )
+
+        schema_rows = self.con.execute(
+            "DESCRIBE SELECT * FROM items LIMIT 0"
+        ).fetchall()
+        self.columns: list[dict[str, Any]] = []
+        for row in schema_rows:
+            name, ctype = row[0], str(row[1]).upper()
+            self.columns.append({
+                "name": name,
+                "type": ctype,
+                "category": _categorize(name, ctype),
+            })
+        self.column_set = {c["name"]: c for c in self.columns}
+
+        self.total_count = int(
+            self.con.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+        )
+
+        self._load_numeric_ranges()
+
+    # -- startup ---------------------------------------------------------
+
+    def _load_numeric_ranges(self) -> None:
+        numerics = [c for c in self.columns if c["category"] == "numeric"]
+        if not numerics:
+            return
+        selects = []
+        for i, c in enumerate(numerics):
+            q = f'"{c["name"]}"'
+            selects.append(f"MIN({q}) AS mn{i}")
+            selects.append(f"MAX({q}) AS mx{i}")
+        row = self.con.execute(
+            f"SELECT {', '.join(selects)} FROM items"
+        ).fetchone()
+        for i, c in enumerate(numerics):
+            c["min"] = _to_num(row[i * 2])
+            c["max"] = _to_num(row[i * 2 + 1])
+
+    # -- filter → SQL -----------------------------------------------------
+
+    def _build_where(self, filters: dict | None) -> tuple[str, list]:
+        parts: list[str] = []
+        params: list = []
+        for col, f in (filters or {}).items():
+            if col not in self.column_set or not isinstance(f, dict):
+                continue  # silently drop unknown / malformed filters
+            q = f'"{col}"'
+            kind = f.get("kind")
+            if kind == "in":
+                values = f.get("values") or []
+                if not isinstance(values, list) or not values:
+                    continue
+                parts.append(f"{q} IN ({', '.join(['?'] * len(values))})")
+                params.extend(values)
+            elif kind == "bool":
+                parts.append(f"{q} = ?")
+                params.append(bool(f.get("value")))
+            elif kind == "range":
+                mn, mx = f.get("min"), f.get("max")
+                if mn is not None:
+                    parts.append(f"{q} >= ?")
+                    params.append(mn)
+                if mx is not None:
+                    parts.append(f"{q} <= ?")
+                    params.append(mx)
+        where = ("WHERE " + " AND ".join(parts)) if parts else ""
+        return where, params
+
+    # -- endpoints -------------------------------------------------------
+
+    def schema_payload(self) -> dict:
+        return {"total": self.total_count, "columns": self.columns}
+
+    def summary(self, filters: dict, group_by: str) -> dict:
+        if group_by not in self.column_set:
+            raise ValueError(f"unknown group_by column: {group_by}")
+        where, params = self._build_where(filters)
+        gb = f'"{group_by}"'
+
+        country_col = (
+            "v_edm_country" if "v_edm_country" in self.column_set else None
+        )
+        provider_col = (
+            "v_edm_dataProvider"
+            if "v_edm_dataProvider" in self.column_set
+            else None
+        )
+
+        summary_selects = ["COUNT(*) AS filtered"]
+        if country_col:
+            summary_selects.append(
+                f'approx_count_distinct("{country_col}") AS countries'
+            )
+        if provider_col:
+            summary_selects.append(
+                f'approx_count_distinct("{provider_col}") AS providers'
+            )
+
+        with self.lock:
+            summary_row = self.con.execute(
+                f"SELECT {', '.join(summary_selects)} FROM items {where}",
+                params,
+            ).fetchone()
+            chart_rows = self.con.execute(
+                f"SELECT {gb} AS v, COUNT(*) AS n "
+                f"FROM items {where} "
+                f"GROUP BY 1 ORDER BY 2 DESC LIMIT {_CHART_LIMIT}",
+                params,
+            ).fetchall()
+
+        filtered = int(summary_row[0])
+        idx = 1
+        countries = int(summary_row[idx]) if country_col else None
+        if country_col:
+            idx += 1
+        providers = int(summary_row[idx]) if provider_col else None
+
+        return {
+            "filtered": filtered,
+            "chart": [
+                {"value": _json_scalar(v), "count": int(n)}
+                for v, n in chart_rows
+            ],
+            "countries": countries,
+            "providers": providers,
+        }
+
+    def top_values(
+        self, col: str, filters: dict, limit: int = 200
+    ) -> dict:
+        if col not in self.column_set:
+            raise ValueError(f"unknown column: {col}")
+        limit = max(1, min(int(limit), 1000))
+        where, params = self._build_where(filters)
+        q = f'"{col}"'
+        predicate = f"{q} IS NOT NULL"
+        if where:
+            full_where = f"{where} AND {predicate}"
+        else:
+            full_where = f"WHERE {predicate}"
+
+        with self.lock:
+            rows = self.con.execute(
+                f"SELECT {q} AS v, COUNT(*) AS n "
+                f"FROM items {full_where} "
+                f"GROUP BY 1 ORDER BY 2 DESC LIMIT ?",
+                params + [limit + 1],  # +1 to detect truncation
+            ).fetchall()
+
+        truncated = len(rows) > limit
+        rows = rows[:limit]
+        return {
+            "values": [
+                {"value": _json_scalar(v), "count": int(n)} for v, n in rows
+            ],
+            "truncated": truncated,
+        }
+
+    def sample(self, filters: dict, n: int = 10) -> dict:
+        n = max(1, min(int(n), 1000))
+        where, params = self._build_where(filters)
+        # USING SAMPLE applied to `items` directly samples BEFORE the WHERE,
+        # so a selective filter would yield an empty result. Wrap in a
+        # subquery so the reservoir samples from the filtered stream.
+        sql = (
+            f"SELECT * FROM (SELECT * FROM items {where}) "
+            f"USING SAMPLE {n} ROWS"
+        )
+        with self.lock:
+            cur = self.con.execute(sql, params)
+            rows = cur.fetchall()
+            col_names = [d[0] for d in cur.description]
+        return {
+            "rows": [
+                {c: _json_scalar(v) for c, v in zip(col_names, row)}
+                for row in rows
+            ]
+        }
+
+    def close(self) -> None:
+        with self.lock:
+            self.con.close()
+
+
+def _categorize(name: str, ctype: str) -> str:
+    if name.startswith("k_"):
+        return "skip"
+    if ctype == "BOOLEAN":
+        return "boolean"
+    if any(tok in ctype for tok in ("INT", "DOUBLE", "FLOAT", "REAL", "DECIMAL")):
+        return "numeric"
+    if ctype.startswith("VARCHAR") or ctype in ("STRING", "TEXT"):
+        return "categorical"
+    return "skip"
+
+
+def _json_scalar(v):
+    if v is None or isinstance(v, (str, int, float, bool)):
+        return v
+    return str(v)
+
+
+def _to_num(v):
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, int):
+        return int(v)
+    return float(v)
+
+
+# ---------------------------------------------------------------------------
+# HTTP handler
+# ---------------------------------------------------------------------------
 
 
 class ExplorerHandler(http.server.SimpleHTTPRequestHandler):
-    """Dispatches ``/`` to the static SPA and ``/data/`` to the exports dir,
-    with CORS + full HTTP Range support."""
+    """Serves static assets for ``/`` and JSON for ``/api/*`` POSTs."""
 
-    # Class attributes populated by make_handler()
+    # Bound per-server by make_handler().
     static_root: Path = Path(".")
-    data_root: Path = Path(".")
+    engine: ExplorerEngine | None = None
 
-    # --- CORS + range advertisement ---------------------------------------
+    # --- CORS -------------------------------------------------------------
 
     def end_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Range, Content-Type")
-        self.send_header(
-            "Access-Control-Expose-Headers",
-            "Accept-Ranges, Content-Range, Content-Length",
-        )
-        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         super().end_headers()
 
-    def do_OPTIONS(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler style)
-        self.send_response(204)
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        self.send_response(HTTPStatus.NO_CONTENT)
         self.end_headers()
 
-    # --- routing ----------------------------------------------------------
+    # --- static routing ---------------------------------------------------
 
     def translate_path(self, path: str) -> str:
         trimmed = path.split("?", 1)[0].split("#", 1)[0]
         trimmed = urllib.parse.unquote(trimmed)
-
-        if trimmed.startswith(_DATA_PREFIX):
-            rel = trimmed[len(_DATA_PREFIX):]
-            return str(_safe_join(self.data_root, rel))
-
         rel = trimmed.lstrip("/")
         if rel in ("", "/"):
             rel = "index.html"
         return str(_safe_join(self.static_root, rel))
 
-    # --- Range-aware send_head --------------------------------------------
-    #
-    # Structure mirrors the stdlib SimpleHTTPRequestHandler.send_head but
-    # parses the Range header and emits a 206 with Content-Range when the
-    # client asks for a slice. self._range_length is consumed by copyfile()
-    # below to cap the bytes actually written to the socket.
+    # --- API dispatch -----------------------------------------------------
 
-    def send_head(self):
-        path = self.translate_path(self.path)
-        if os.path.isdir(path):
-            # Redirect to trailing-slash form, then serve index.html like the
-            # stdlib does.
-            parts = urllib.parse.urlsplit(self.path)
-            if not parts.path.endswith("/"):
-                self.send_response(HTTPStatus.MOVED_PERMANENTLY)
-                new_parts = (parts[0], parts[1], parts[2] + "/", parts[3], parts[4])
-                self.send_header("Location", urllib.parse.urlunsplit(new_parts))
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-                return None
-            for candidate in ("index.html", "index.htm"):
-                p = os.path.join(path, candidate)
-                if os.path.exists(p):
-                    path = p
-                    break
-            else:
-                # Intentionally 404 on directory listings — the explorer
-                # doesn't want browsable indexes into the exports dir.
-                self.send_error(HTTPStatus.NOT_FOUND, "Not found")
-                return None
-
-        try:
-            f = open(path, "rb")
-        except OSError:
-            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
-            return None
-
-        try:
-            fs = os.fstat(f.fileno())
-            size = fs.st_size
-            ctype = self.guess_type(path)
-
-            range_hdr = self.headers.get("Range")
-            start, end, status = 0, size - 1, HTTPStatus.OK
-
-            if range_hdr and size > 0:
-                m = _RANGE_RE.match(range_hdr.strip())
-                if not m:
-                    self._send_range_not_satisfiable(f, size)
-                    return None
-                s_str, e_str = m.group(1), m.group(2)
-                if s_str == "" and e_str == "":
-                    self._send_range_not_satisfiable(f, size)
-                    return None
-                if s_str == "":
-                    # Suffix form: bytes=-N → last N bytes.
-                    n = int(e_str)
-                    if n == 0:
-                        self._send_range_not_satisfiable(f, size)
-                        return None
-                    start = max(0, size - n)
-                    end = size - 1
-                else:
-                    start = int(s_str)
-                    end = int(e_str) if e_str else size - 1
-                end = min(end, size - 1)
-                if start >= size or start > end:
-                    self._send_range_not_satisfiable(f, size)
-                    return None
-                status = HTTPStatus.PARTIAL_CONTENT
-
-            length = end - start + 1
-            self.send_response(status)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(length))
-            self.send_header(
-                "Last-Modified", self.date_time_string(int(fs.st_mtime))
-            )
-            if status == HTTPStatus.PARTIAL_CONTENT:
-                self.send_header(
-                    "Content-Range", f"bytes {start}-{end}/{size}"
-                )
-            self.end_headers()
-
-            if start > 0:
-                f.seek(start)
-            # Consumed by copyfile() below.
-            self._range_length = length
-            return f
-        except BaseException:
-            f.close()
-            raise
-
-    def _send_range_not_satisfiable(self, f, size: int) -> None:
-        f.close()
-        self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-        self.send_header("Content-Range", f"bytes */{size}")
-        self.send_header("Content-Length", "0")
-        self.end_headers()
-
-    def copyfile(self, source, outputfile) -> None:  # type: ignore[override]
-        # HEAD responses never call copyfile (stdlib does_HEAD discards the
-        # file). For GET, copy at most self._range_length bytes.
-        limit = getattr(self, "_range_length", None)
-        if limit is None:
-            super().copyfile(source, outputfile)
+    def do_POST(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        handler = _API.get(path)
+        if handler is None:
+            self.send_error(HTTPStatus.NOT_FOUND, f"Unknown endpoint: {path}")
             return
-        remaining = limit
-        chunk_size = 64 * 1024
-        while remaining > 0:
-            buf = source.read(min(chunk_size, remaining))
-            if not buf:
-                break
-            outputfile.write(buf)
-            remaining -= len(buf)
+
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > _MAX_BODY_BYTES:
+            self.send_error(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Body too large"
+            )
+            return
+
+        try:
+            raw = self.rfile.read(length) if length else b""
+            body = json.loads(raw) if raw else {}
+            if not isinstance(body, dict):
+                raise ValueError("body must be a JSON object")
+            if self.engine is None:
+                raise RuntimeError("engine not initialised")
+            result = handler(self.engine, body)
+            payload = json.dumps(result, default=_json_scalar).encode("utf-8")
+        except json.JSONDecodeError:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+            return
+        except ValueError as e:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(e))
+            return
+        except Exception as e:
+            traceback.print_exc()
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
+            return
+
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     # --- quieter logs -----------------------------------------------------
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         import sys
-        sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
+        sys.stderr.write(
+            "%s - %s\n" % (self.address_string(), format % args)
+        )
+
+
+# ---------------------------------------------------------------------------
+# API handlers
+# ---------------------------------------------------------------------------
+
+
+def _schema(engine: ExplorerEngine, body: dict) -> dict:
+    return engine.schema_payload()
+
+
+def _summary(engine: ExplorerEngine, body: dict) -> dict:
+    group_by = body.get("group_by")
+    if not group_by or not isinstance(group_by, str):
+        raise ValueError("missing group_by")
+    filters = body.get("filters") or {}
+    if not isinstance(filters, dict):
+        raise ValueError("filters must be an object")
+    return engine.summary(filters, group_by)
+
+
+def _top_values(engine: ExplorerEngine, body: dict) -> dict:
+    col = body.get("col")
+    if not col or not isinstance(col, str):
+        raise ValueError("missing col")
+    filters = body.get("filters") or {}
+    if not isinstance(filters, dict):
+        raise ValueError("filters must be an object")
+    limit = body.get("limit") or 200
+    return engine.top_values(col, filters, int(limit))
+
+
+def _sample(engine: ExplorerEngine, body: dict) -> dict:
+    filters = body.get("filters") or {}
+    if not isinstance(filters, dict):
+        raise ValueError("filters must be an object")
+    n = body.get("n") or 10
+    return engine.sample(filters, int(n))
+
+
+_API = {
+    "/api/schema": _schema,
+    "/api/summary": _summary,
+    "/api/top-values": _top_values,
+    "/api/sample": _sample,
+}
+
+
+# ---------------------------------------------------------------------------
+# Path safety + server wiring
+# ---------------------------------------------------------------------------
 
 
 def _safe_join(root: Path, rel: str) -> Path:
-    """Resolve ``rel`` under ``root`` and refuse paths that escape ``root``."""
     candidate = (root / rel).resolve()
     root_resolved = root.resolve()
     try:
@@ -203,26 +416,23 @@ def _safe_join(root: Path, rel: str) -> Path:
     return candidate
 
 
-def make_handler(static_root: Path, data_root: Path) -> type[ExplorerHandler]:
-    """Build an :class:`ExplorerHandler` subclass bound to the given roots."""
-
+def make_handler(
+    static_root: Path, engine: ExplorerEngine
+) -> type[ExplorerHandler]:
     class _Bound(ExplorerHandler):
         pass
 
     _Bound.static_root = static_root
-    _Bound.data_root = data_root
+    _Bound.engine = engine
     return _Bound
 
 
 class ThreadedServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    """Threaded so range requests for a big Parquet don't block the SPA."""
-
     daemon_threads = True
     allow_reuse_address = True
 
 
 def find_free_port(start: int, attempts: int = 20) -> int:
-    """Return the first free port in [start, start+attempts)."""
     for port in range(start, start + attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
@@ -230,16 +440,13 @@ def find_free_port(start: int, attempts: int = 20) -> int:
             except OSError:
                 continue
             return port
-    raise OSError(
-        f"No free port in range {start}..{start + attempts - 1}"
-    )
+    raise OSError(f"No free port in range {start}..{start + attempts - 1}")
 
 
 def serve(
     static_root: Path,
-    data_root: Path,
+    engine: ExplorerEngine,
     port: int,
 ) -> ThreadedServer:
-    """Create (but do not block on) a server. Caller runs ``serve_forever``."""
-    handler = make_handler(static_root, data_root)
+    handler = make_handler(static_root, engine)
     return ThreadedServer(("127.0.0.1", port), handler)

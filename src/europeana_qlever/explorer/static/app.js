@@ -1,19 +1,10 @@
-// Europeana Data Explorer — DuckDB-WASM single-page app.
+// Europeana Data Explorer — server-backed edition.
 //
-// Loads DuckDB-WASM from jsDelivr, registers a Parquet file via httpfs
-// (HTTP range requests), auto-discovers the schema, and renders a
-// faceted bar-chart explorer over the rows.
+// All queries run server-side in Python DuckDB. The browser just sends JSON
+// filter specs over fetch() and renders results with Chart.js.
 
-import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm";
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
-const DEFAULT_DATA_PATH = "/data/group_items.parquet";
 const TOP_VALUES_PER_FACET = 200;
-const BARS_IN_CHART = 30;
-const DEBOUNCE_MS = 200;
+const DEBOUNCE_MS = 150;
 const EUROPEANA_PORTAL = "https://www.europeana.eu/";
 const EUROPEANA_DATA = "http://data.europeana.eu/";
 
@@ -24,11 +15,6 @@ const EUROPEANA_DATA = "http://data.europeana.eu/";
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat();
 const fmtN = (n) => (n == null ? "—" : fmt.format(Number(n)));
-
-function escapeSQL(v) {
-  if (v === null || v === undefined) return "NULL";
-  return `'${String(v).replace(/'/g, "''")}'`;
-}
 
 function debounce(fn, ms) {
   let t = null;
@@ -52,186 +38,36 @@ function showError(message) {
   console.error(message);
 }
 
-// Convert a DuckDB Arrow result into an array of plain objects.
-function rowsOf(result) {
-  const out = [];
-  for (const row of result) out.push(row.toJSON());
-  return out;
-}
-
-function parquetUrl() {
-  const params = new URLSearchParams(location.search);
-  const raw = params.get("data") || DEFAULT_DATA_PATH;
-  // Allow absolute URLs (e.g. HuggingFace) to pass through unchanged; resolve
-  // relative paths against the current origin so the worker has a full URL.
-  try { return new URL(raw).href; }
-  catch { return new URL(raw, window.location.href).href; }
-}
-
-// ---------------------------------------------------------------------------
-// DuckDB-WASM bootstrap
-// ---------------------------------------------------------------------------
-
-let db;          // AsyncDuckDB
-let conn;        // AsyncDuckDBConnection
-let columns;     // [{name, type, cardinality, category}]
-let totalCount = 0;
-let chart = null;
-
-async function initDuckDB() {
-  const bundles = duckdb.getJsDelivrBundles();
-  const bundle = await duckdb.selectBundle(bundles);
-  const workerUrl = URL.createObjectURL(
-    new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" })
-  );
-  const worker = new Worker(workerUrl);
-  const logger = new duckdb.ConsoleLogger();
-  db = new duckdb.AsyncDuckDB(logger, worker);
-  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-  URL.revokeObjectURL(workerUrl);
-  conn = await db.connect();
-}
-
-async function registerParquet(url) {
-  // DuckDB-WASM has a built-in HTTP VFS that handles Range requests natively,
-  // so we skip the httpfs extension (which isn't bundled in the +esm build).
-  // registerFileURL maps a virtual file name to the real URL; queries then
-  // reference the virtual name and DuckDB fetches the bytes it needs.
-  await db.registerFileURL(
-    "items.parquet",
-    url,
-    duckdb.DuckDBDataProtocol.HTTP,
-    false,
-  );
-  await conn.query(`CREATE VIEW items AS SELECT * FROM 'items.parquet'`);
-}
-
-// ---------------------------------------------------------------------------
-// Schema discovery
-// ---------------------------------------------------------------------------
-
-async function describeSchema() {
-  const res = await conn.query(`DESCRIBE SELECT * FROM items LIMIT 0`);
-  // DuckDB returns columns: column_name, column_type, null, key, default, extra
-  return rowsOf(res).map((r) => ({
-    name: r.column_name,
-    type: String(r.column_type).toUpperCase(),
-  }));
-}
-
-function categoryFor(col) {
-  // Classification is by type + prefix only. We deliberately avoid probing
-  // distinct counts at boot: each probe is a full-table scan and DuckDB-WASM
-  // runs them serially on its worker, which adds tens of seconds over HTTP.
-  // Instead, top-value loaders decide whether to show a search box based on
-  // whether the limit is hit.
-  const t = col.type;
-  if (col.name.startsWith("k_")) return "skip";
-  if (t === "BOOLEAN") return "boolean";
-  if (t.includes("INT") || t === "DOUBLE" || t === "FLOAT" || t === "REAL" || t.startsWith("DECIMAL")) {
-    return "numeric";
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`${path}: ${res.status} ${text}`);
   }
-  if (t.startsWith("VARCHAR") || t === "STRING" || t === "TEXT") {
-    return "categorical";
-  }
-  return "skip";
-}
-
-async function probeRanges(cols) {
-  // Batch MIN/MAX for every numeric column into one scan.
-  const numerics = cols.filter((c) => c.category === "numeric");
-  if (numerics.length === 0) return;
-  const selects = numerics.flatMap((c, i) => [
-    `MIN("${c.name}") AS mn${i}`,
-    `MAX("${c.name}") AS mx${i}`,
-  ]).join(", ");
-  try {
-    const res = await conn.query(`SELECT ${selects} FROM items`);
-    const row = rowsOf(res)[0];
-    numerics.forEach((c, i) => {
-      c.min = row[`mn${i}`] != null ? Number(row[`mn${i}`]) : null;
-      c.max = row[`mx${i}`] != null ? Number(row[`mx${i}`]) : null;
-    });
-  } catch (e) {
-    console.warn("range probe failed:", e);
-  }
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
+let columns = [];          // [{name, type, category, min?, max?}]
+let columnByName = new Map();
+let totalCount = 0;
+let chart = null;
+let queryId = 0;
+
 const state = {
-  filters: {}, // { colName: { kind: 'in'|'bool'|'range', values: [...] | bool | {min,max} } }
+  filters: {},              // { col: {kind, ...} }
   groupBy: null,
 };
 
-let queryId = 0;
-
-function buildWhere() {
-  const parts = [];
-  for (const [name, f] of Object.entries(state.filters)) {
-    if (f.kind === "in" && f.values.length > 0) {
-      const list = f.values.map(escapeSQL).join(", ");
-      parts.push(`"${name}" IN (${list})`);
-    } else if (f.kind === "bool") {
-      parts.push(`"${name}" = ${f.value ? "TRUE" : "FALSE"}`);
-    } else if (f.kind === "range") {
-      if (f.min != null) parts.push(`"${name}" >= ${Number(f.min)}`);
-      if (f.max != null) parts.push(`"${name}" <= ${Number(f.max)}`);
-    }
-  }
-  return parts.length ? `WHERE ${parts.join(" AND ")}` : "";
-}
-
 // ---------------------------------------------------------------------------
-// Queries
-// ---------------------------------------------------------------------------
-
-async function countTotal() {
-  const res = await conn.query(`SELECT COUNT(*) AS n FROM items`);
-  return Number(rowsOf(res)[0].n);
-}
-
-async function countFiltered(where) {
-  const res = await conn.query(`SELECT COUNT(*) AS n FROM items ${where}`);
-  return Number(rowsOf(res)[0].n);
-}
-
-async function topValues(colName, where, limit = TOP_VALUES_PER_FACET) {
-  const res = await conn.query(`
-    SELECT "${colName}" AS v, COUNT(*) AS n
-    FROM items ${where}
-    WHERE "${colName}" IS NOT NULL
-    GROUP BY 1 ORDER BY 2 DESC LIMIT ${limit}
-  `.replace(/\s+/g, " "));
-  return rowsOf(res).map((r) => ({ value: r.v, count: Number(r.n) }));
-}
-
-async function groupByQuery(colName, where) {
-  const res = await conn.query(`
-    SELECT "${colName}" AS v, COUNT(*) AS n
-    FROM items ${where}
-    GROUP BY 1 ORDER BY 2 DESC LIMIT ${BARS_IN_CHART}
-  `.replace(/\s+/g, " "));
-  return rowsOf(res).map((r) => ({
-    value: r.v == null ? "(null)" : String(r.v),
-    count: Number(r.n),
-    rawValue: r.v,
-  }));
-}
-
-async function randomSample(where, n = 10) {
-  // USING SAMPLE over the filtered set. With WHERE DuckDB applies SAMPLE
-  // after the filter, which is what we want.
-  const res = await conn.query(
-    `SELECT * FROM items ${where} USING SAMPLE ${n} ROWS`
-  );
-  return rowsOf(res);
-}
-
-// ---------------------------------------------------------------------------
-// Rendering: facets
+// Facets
 // ---------------------------------------------------------------------------
 
 function renderFacets() {
@@ -253,7 +89,6 @@ function renderFacets() {
     list.appendChild(el);
     buildFacetBody(c, el.querySelector(".facet-body"));
 
-    // Populate group-by select for categorical/boolean.
     if (c.category === "categorical" || c.category === "boolean") {
       const opt = document.createElement("option");
       opt.value = c.name;
@@ -264,17 +99,20 @@ function renderFacets() {
 
   if (!state.groupBy && groupBySelect.options.length) {
     state.groupBy = groupBySelect.options[0].value;
-    groupBySelect.value = state.groupBy;
   }
+  if (state.groupBy) groupBySelect.value = state.groupBy;
 }
 
 function buildFacetBody(col, body) {
   if (col.category === "boolean") {
+    const active = state.filters[col.name];
+    const mark = (v) => (active && active.kind === "bool" && active.value === v) ? "active" : "";
+    const anyMark = !active ? "active" : "";
     body.innerHTML = `
       <div class="toggle">
-        <button data-v="any" class="active">Any</button>
-        <button data-v="true">True</button>
-        <button data-v="false">False</button>
+        <button data-v="any" class="${anyMark}">Any</button>
+        <button data-v="true" class="${mark(true)}">True</button>
+        <button data-v="false" class="${mark(false)}">False</button>
       </div>
     `;
     body.querySelectorAll("button").forEach((b) => {
@@ -288,8 +126,9 @@ function buildFacetBody(col, body) {
       });
     });
   } else if (col.category === "numeric") {
-    const lo = col.min ?? 0;
-    const hi = col.max ?? 0;
+    const active = state.filters[col.name];
+    const lo = active?.min ?? col.min ?? 0;
+    const hi = active?.max ?? col.max ?? 0;
     body.innerHTML = `
       <div class="range">
         <span class="muted">min</span>
@@ -297,7 +136,7 @@ function buildFacetBody(col, body) {
         <span class="muted">max</span>
         <input type="number" class="max" value="${hi}" />
       </div>
-      <div class="muted" style="margin-top:4px">Range ${fmtN(lo)}–${fmtN(hi)}</div>
+      <div class="muted" style="margin-top:4px">Data range ${fmtN(col.min)}–${fmtN(col.max)}</div>
     `;
     const commit = () => {
       const min = body.querySelector(".min").value;
@@ -311,7 +150,6 @@ function buildFacetBody(col, body) {
     body.querySelector(".min").addEventListener("change", commit);
     body.querySelector(".max").addEventListener("change", commit);
   } else {
-    // categorical — skeleton only; values are loaded in a later pass.
     body.innerHTML = `
       <div class="facet-search-slot"></div>
       <div class="facet-values muted">Waiting…</div>
@@ -327,33 +165,33 @@ async function loadFacetValues(col) {
   const searchSlot = body.querySelector(".facet-search-slot");
   const countEl = facet.querySelector("h4 .count");
 
-  let rows = col._allValues;
-  if (!rows) {
+  let cache = col._cache;
+  if (!cache) {
     container.classList.add("muted");
     container.textContent = "Loading top values…";
     try {
-      rows = await topValues(col.name, "");
-      col._allValues = rows;
+      const res = await api("/api/top-values", { col: col.name, limit: TOP_VALUES_PER_FACET });
+      cache = { rows: res.values, truncated: !!res.truncated };
+      col._cache = cache;
     } catch (e) {
-      container.innerHTML = `<span class="muted">Failed to load: ${e.message}</span>`;
+      container.innerHTML = `<span class="muted">Failed: ${e.message}</span>`;
       return;
     }
   }
 
   if (countEl) {
-    countEl.textContent = rows.length >= TOP_VALUES_PER_FACET
-      ? `${fmt.format(rows.length)}+ values`
-      : `${fmt.format(rows.length)} values`;
+    countEl.textContent = cache.truncated
+      ? `${fmt.format(cache.rows.length)}+ values`
+      : `${fmt.format(cache.rows.length)} values`;
   }
-  renderFacetValueList(col, container, rows);
+  renderFacetValueList(col, container, cache.rows);
 
-  // Only show a search box if we saturated the top-N (more values exist).
-  if (rows.length >= TOP_VALUES_PER_FACET) {
+  if (cache.truncated) {
     searchSlot.innerHTML = '<input type="search" placeholder="Search top values…" />';
     const searchInput = searchSlot.querySelector("input");
     searchInput.addEventListener("input", () => {
       const q = searchInput.value.toLowerCase();
-      const filtered = rows.filter((r) =>
+      const filtered = cache.rows.filter((r) =>
         String(r.value ?? "").toLowerCase().includes(q)
       );
       renderFacetValueList(col, container, filtered);
@@ -393,12 +231,20 @@ function renderFacetValueList(col, container, rows) {
   }
 }
 
+async function loadAllFacetValues() {
+  for (const c of columns) {
+    if (c.category === "categorical") {
+      await loadFacetValues(c);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Rendering: chart
+// Chart + summary
 // ---------------------------------------------------------------------------
 
 function renderChart(rows, groupBy) {
-  const labels = rows.map((r) => r.value);
+  const labels = rows.map((r) => r.value == null ? "(null)" : String(r.value));
   const data = rows.map((r) => r.count);
   const ctx = $("chart").getContext("2d");
 
@@ -444,15 +290,14 @@ function renderChart(rows, groupBy) {
       onClick: (_event, elements) => {
         if (!elements.length) return;
         const idx = elements[0].index;
-        const raw = rows[idx].rawValue;
-        toggleDrillDown(groupBy, raw);
+        toggleDrillDown(groupBy, rows[idx].value);
       },
     },
   });
 }
 
 function toggleDrillDown(colName, rawValue) {
-  const col = columns.find((c) => c.name === colName);
+  const col = columnByName.get(colName);
   if (!col) return;
   if (col.category === "boolean") {
     state.filters[colName] = { kind: "bool", value: !!rawValue };
@@ -465,21 +310,16 @@ function toggleDrillDown(colName, rawValue) {
     if (next.length === 0) delete state.filters[colName];
     else state.filters[colName] = { kind: "in", values: next };
   }
-  // Refresh facet UI so checkboxes reflect the new state.
   renderFacets();
   loadAllFacetValues();
   triggerUpdate();
 }
 
-// ---------------------------------------------------------------------------
-// Rendering: summary + sample
-// ---------------------------------------------------------------------------
-
-function renderSummary(filteredCount, countries, providers) {
+function renderSummary(filtered, countries, providers) {
   $("card-total").textContent = fmtN(totalCount);
-  $("card-filtered").textContent = fmtN(filteredCount);
+  $("card-filtered").textContent = fmtN(filtered);
   if (totalCount > 0) {
-    const pct = ((filteredCount / totalCount) * 100).toFixed(1);
+    const pct = ((filtered / totalCount) * 100).toFixed(1);
     $("card-filtered-pct").textContent = `${pct}% of total`;
   } else {
     $("card-filtered-pct").textContent = "";
@@ -487,6 +327,10 @@ function renderSummary(filteredCount, countries, providers) {
   $("card-countries").textContent = fmtN(countries);
   $("card-providers").textContent = fmtN(providers);
 }
+
+// ---------------------------------------------------------------------------
+// Sample table
+// ---------------------------------------------------------------------------
 
 function europeanaLinkFor(iri) {
   if (typeof iri !== "string") return null;
@@ -519,8 +363,7 @@ function renderSample(rows) {
     const tr = document.createElement("tr");
     for (const c of cols) {
       const td = document.createElement("td");
-      let v = r[c];
-      if (v != null && typeof v === "bigint") v = v.toString();
+      const v = r[c];
       if (c === "k_iri") {
         const href = europeanaLinkFor(v);
         if (href) {
@@ -546,6 +389,22 @@ function renderSample(rows) {
   host.appendChild(table);
 }
 
+async function loadSample() {
+  const btn = $("sample-btn");
+  btn.disabled = true;
+  const host = $("sample-table");
+  host.textContent = "Loading sample…";
+  host.classList.add("muted");
+  try {
+    const res = await api("/api/sample", { filters: state.filters, n: 10 });
+    renderSample(res.rows);
+  } catch (e) {
+    host.textContent = `Sample failed: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
@@ -554,55 +413,16 @@ const triggerUpdate = debounce(update, DEBOUNCE_MS);
 
 async function update() {
   const myId = ++queryId;
-  const where = buildWhere();
   try {
-    const [filteredCount, bars, countries, providers] = await Promise.all([
-      countFiltered(where),
-      groupByQuery(state.groupBy, where),
-      distinctCount("v_edm_country", where),
-      distinctCount("v_edm_dataProvider", where),
-    ]);
-    if (myId !== queryId) return; // stale — drop
-    renderSummary(filteredCount, countries, providers);
-    renderChart(bars, state.groupBy);
+    const res = await api("/api/summary", {
+      filters: state.filters,
+      group_by: state.groupBy,
+    });
+    if (myId !== queryId) return;
+    renderSummary(res.filtered, res.countries, res.providers);
+    renderChart(res.chart, state.groupBy);
   } catch (e) {
     showError(`Query failed: ${e.message}`);
-  }
-}
-
-async function distinctCount(colName, where) {
-  // Tolerate absent columns (e.g. when pointed at a different Parquet).
-  if (!columns.some((c) => c.name === colName)) return null;
-  const res = await conn.query(
-    `SELECT approx_count_distinct("${colName}") AS n FROM items ${where}`
-  );
-  return Number(rowsOf(res)[0].n);
-}
-
-async function loadAllFacetValues() {
-  // Sequential so each facet's result appears as soon as it's ready instead
-  // of all landing at the end. DuckDB-WASM's worker is single-threaded so
-  // parallel submission would serialize anyway.
-  for (const c of columns) {
-    if (c.category === "categorical") {
-      await loadFacetValues(c);
-    }
-  }
-}
-
-async function loadSample() {
-  const btn = $("sample-btn");
-  btn.disabled = true;
-  const host = $("sample-table");
-  host.textContent = "Loading sample…";
-  host.classList.add("muted");
-  try {
-    const rows = await randomSample(buildWhere(), 10);
-    renderSample(rows);
-  } catch (e) {
-    host.textContent = `Sample failed: ${e.message}`;
-  } finally {
-    btn.disabled = false;
   }
 }
 
@@ -619,22 +439,12 @@ function clearFilters() {
 
 async function main() {
   try {
-    setLoading(true, "Initializing DuckDB-WASM…");
-    await initDuckDB();
+    setLoading(true, "Connecting to server…");
+    const schema = await api("/api/schema");
+    columns = schema.columns;
+    columnByName = new Map(columns.map((c) => [c.name, c]));
+    totalCount = schema.total;
 
-    setLoading(true, "Registering Parquet file…");
-    const url = parquetUrl();
-    await registerParquet(url);
-
-    setLoading(true, "Reading schema…");
-    columns = await describeSchema();
-    for (const c of columns) c.category = categoryFor(c);
-
-    setLoading(true, "Reading Parquet footer…");
-    totalCount = await countTotal();
-    await probeRanges(columns);
-
-    setLoading(true, "Rendering UI…");
     renderFacets();
 
     $("group-by").addEventListener("change", (e) => {
@@ -647,8 +457,7 @@ async function main() {
     await update();
     setLoading(false);
 
-    // Facet top-values are loaded in the background after the chart is up
-    // so the initial interaction isn't blocked on ~1 scan per facet column.
+    // Populate facet checklists in the background after the chart is up.
     loadAllFacetValues();
   } catch (e) {
     setLoading(false);

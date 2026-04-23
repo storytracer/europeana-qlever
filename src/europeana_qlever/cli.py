@@ -2279,24 +2279,24 @@ def grasp_stop(ctx: click.Context):
 )
 @click.pass_context
 def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
-    """Launch a local DuckDB-WASM browser explorer over group_items.parquet.
+    """Launch a local server-backed DuckDB explorer over group_items.parquet.
 
-    Starts a tiny threaded HTTP server that serves the bundled single-page
-    app plus the exports directory (with CORS + HTTP Range support, which
-    DuckDB-WASM's ``httpfs`` extension needs). Runs until Ctrl+C.
+    A small threaded HTTP server serves the bundled single-page app and
+    answers /api/* JSON queries from a shared DuckDB connection over the
+    local (or remote) Parquet file. Runs until Ctrl+C.
     """
-    import urllib.parse
     import webbrowser
     from threading import Thread
 
     from .explorer import static_dir
-    from .explorer.server import find_free_port, serve
+    from .explorer.server import ExplorerEngine, find_free_port, serve
 
     exports_dir: Path = ctx.obj["exports_dir"]
+    budget = ctx.obj["budget"]
     static_root = static_dir()
 
     if data_url:
-        frontend_url = data_url
+        parquet_source = data_url
         data_banner = f"remote: {data_url}"
     else:
         parquet_path = exports_dir / "group_items.parquet"
@@ -2307,8 +2307,7 @@ def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
                 "or pass [cyan]--data-url[/cyan]."
             )
             raise SystemExit(1)
-        # The frontend loads '/data/group_items.parquet' served by this process.
-        frontend_url = "/data/group_items.parquet"
+        parquet_source = str(parquet_path)
         data_banner = f"local: {parquet_path}"
 
     try:
@@ -2317,18 +2316,33 @@ def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
         display.console.print(f"[red]{e}[/red]")
         raise SystemExit(1)
 
-    server = serve(static_root, exports_dir, bound_port)
-    base = f"http://localhost:{bound_port}/"
-    url = base + "?data=" + urllib.parse.quote(frontend_url, safe=":/")
-
     display.console.print(f"[bold]Europeana Data Explorer[/bold]")
     display.console.print(f"  static : {display.short_path(static_root)}")
     display.console.print(f"  data   : {data_banner}")
+    display.console.print(
+        f"  duckdb : memory={budget.duckdb_memory()} threads={budget.duckdb_threads()}"
+    )
+    display.console.print("  opening DuckDB view and counting rows…")
+
+    try:
+        engine = ExplorerEngine(
+            parquet_source,
+            memory_limit=budget.duckdb_memory(),
+            threads=budget.duckdb_threads(),
+        )
+    except Exception as e:
+        display.console.print(f"[red]Failed to open {data_banner}: {e}[/red]")
+        raise SystemExit(1)
+
+    server = serve(static_root, engine, bound_port)
+    url = f"http://localhost:{bound_port}/"
+
+    display.console.print(
+        f"  rows   : {engine.total_count:,} across {len(engine.columns)} columns"
+    )
     display.console.print(f"  url    : [cyan]{url}[/cyan]")
     display.console.print("  [dim](Ctrl+C to stop)[/dim]")
 
-    # Run serve_forever on a background thread so KeyboardInterrupt in the
-    # main thread unblocks cleanly on all platforms.
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -2344,4 +2358,5 @@ def explore(ctx: click.Context, port: int, no_open: bool, data_url: str | None):
         display.console.print("\n[yellow]Stopping explorer…[/yellow]")
         server.shutdown()
         server.server_close()
+        engine.close()
         raise SystemExit(130)
