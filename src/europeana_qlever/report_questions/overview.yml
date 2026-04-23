@@ -1,0 +1,263 @@
+name: Overview
+description: A quick scan of Europeana holdings — volume, rights, providers, languages, content coverage, media, and completeness. Favours fast scalar scans over group_items and values_edm_WebResource.
+
+questions:
+  - id: total_items
+    question: "Total items"
+    backend: parquet
+    query: |
+      SELECT count(*) AS total_items FROM group_items
+
+  - id: by_type
+    question: "Items by edm:type"
+    backend: parquet
+    query: |
+      SELECT v_edm_type AS type,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items
+      GROUP BY v_edm_type
+      ORDER BY count DESC
+
+  - id: by_reuse_level
+    question: "Items by reuse level"
+    backend: parquet
+    query: |
+      SELECT x_reuse_level AS reuse_level,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items
+      GROUP BY x_reuse_level
+      ORDER BY count DESC
+
+  - id: by_rights_family
+    question: "Items by rights family"
+    backend: parquet
+    query: |
+      SELECT x_rights_family AS rights_family,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items
+      GROUP BY x_rights_family
+      ORDER BY count DESC
+
+  - id: top_countries
+    question: "Top 25 countries by item count"
+    backend: parquet
+    query: |
+      SELECT v_edm_country AS country,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items
+      WHERE v_edm_country IS NOT NULL
+      GROUP BY v_edm_country
+      ORDER BY count DESC
+      LIMIT 25
+
+  - id: top_institutions
+    question: "Top 25 data provider institutions"
+    backend: parquet
+    query: |
+      SELECT COALESCE(o.name, g.v_edm_dataProvider) AS institution,
+             count(*) AS count
+      FROM group_items g
+      LEFT JOIN orgs o ON g.v_edm_dataProvider = o.k_iri
+      WHERE g.v_edm_dataProvider IS NOT NULL
+      GROUP BY 1
+      ORDER BY count DESC
+      LIMIT 25
+
+  - id: top_aggregators
+    question: "Top 25 aggregators"
+    backend: parquet
+    query: |
+      SELECT COALESCE(o.name, g.v_edm_provider) AS aggregator,
+             count(*) AS count
+      FROM group_items g
+      LEFT JOIN orgs o ON g.v_edm_provider = o.k_iri
+      WHERE g.v_edm_provider IS NOT NULL
+      GROUP BY 1
+      ORDER BY count DESC
+      LIMIT 25
+
+  - id: top_languages
+    question: "Top 25 primary languages by item count"
+    backend: parquet
+    query: |
+      SELECT x_primary_language AS language,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items
+      WHERE x_primary_language IS NOT NULL
+      GROUP BY x_primary_language
+      ORDER BY count DESC
+      LIMIT 25
+
+  - id: content_coverage
+    question: "Share of items with content URL, IIIF, description, creator, subject"
+    backend: parquet
+    query: |
+      SELECT count(*) AS total,
+             round(count(*) FILTER (WHERE x_has_content_url) * 100.0 / count(*), 2) AS pct_content_url,
+             round(count(*) FILTER (WHERE x_has_iiif)        * 100.0 / count(*), 2) AS pct_iiif,
+             round(count(*) FILTER (WHERE x_has_description) * 100.0 / count(*), 2) AS pct_description,
+             round(count(*) FILTER (WHERE x_has_creator)     * 100.0 / count(*), 2) AS pct_creator,
+             round(count(*) FILTER (WHERE x_has_subject)     * 100.0 / count(*), 2) AS pct_subject
+      FROM group_items
+
+  - id: completeness_distribution
+    question: "Completeness score distribution"
+    backend: parquet
+    query: |
+      SELECT v_edm_completeness AS score,
+             count(*) AS count,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items
+      GROUP BY v_edm_completeness
+      ORDER BY v_edm_completeness
+
+  - id: web_resource_stats
+    question: "Web resource totals and per-item density"
+    backend: parquet
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          GROUP BY k_iri_cho
+      )
+      SELECT (SELECT count(*) FROM values_edm_WebResource) AS total_web_resources,
+             (SELECT count(*) FROM group_items)            AS total_items,
+             count(*)                                      AS items_with_web_resources,
+             round(avg(wr_count), 2)                       AS avg_wr_per_item,
+             quantile_cont(wr_count, 0.5)                  AS median_wr_per_item,
+             quantile_cont(wr_count, 0.9)                  AS p90_wr_per_item,
+             max(wr_count)                                 AS max_wr_per_item
+      FROM per_cho
+
+  - id: multi_page_items
+    question: "Items by number of web resources (single vs multi-page)"
+    backend: parquet
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho,
+                 count(*) AS wr_count
+          FROM values_edm_WebResource
+          GROUP BY k_iri_cho
+      ),
+      buckets AS (
+          SELECT CASE
+                     WHEN wr_count = 1 THEN '1 (single)'
+                     WHEN wr_count BETWEEN 2 AND 5 THEN '2-5'
+                     WHEN wr_count BETWEEN 6 AND 10 THEN '6-10'
+                     WHEN wr_count BETWEEN 11 AND 50 THEN '11-50'
+                     WHEN wr_count BETWEEN 51 AND 100 THEN '51-100'
+                     ELSE '100+'
+                 END AS bucket,
+                 CASE
+                     WHEN wr_count = 1 THEN 1
+                     WHEN wr_count BETWEEN 2 AND 5 THEN 2
+                     WHEN wr_count BETWEEN 6 AND 10 THEN 3
+                     WHEN wr_count BETWEEN 11 AND 50 THEN 4
+                     WHEN wr_count BETWEEN 51 AND 100 THEN 5
+                     ELSE 6
+                 END AS sort_key
+          FROM per_cho
+      )
+      SELECT bucket AS web_resources_per_item,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY bucket, sort_key
+      ORDER BY sort_key
+
+  - id: mime_family_breakdown
+    question: "MIME family breakdown across web resources"
+    backend: parquet
+    query: |
+      SELECT CASE
+                 WHEN v_ebucore_hasMimeType IS NULL THEN 'unknown'
+                 WHEN position('/' IN v_ebucore_hasMimeType) = 0 THEN 'malformed'
+                 ELSE split_part(v_ebucore_hasMimeType, '/', 1)
+             END AS mime_family,
+             count(*) AS resources,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM values_edm_WebResource
+      GROUP BY mime_family
+      ORDER BY resources DESC
+
+  - id: top_mime_types
+    question: "Top 25 specific MIME types"
+    backend: parquet
+    query: |
+      SELECT v_ebucore_hasMimeType AS mime_type,
+             count(*) AS resources,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM values_edm_WebResource
+      WHERE v_ebucore_hasMimeType IS NOT NULL
+      GROUP BY v_ebucore_hasMimeType
+      ORDER BY resources DESC
+      LIMIT 25
+
+  - id: image_resolution_buckets
+    question: "Image resolution distribution (image MIME types only)"
+    backend: parquet
+    query: |
+      WITH buckets AS (
+          SELECT CASE
+                     WHEN v_ebucore_width IS NULL OR v_ebucore_height IS NULL THEN 'unknown'
+                     WHEN v_ebucore_width * v_ebucore_height < 100000 THEN '< 0.1 MP'
+                     WHEN v_ebucore_width * v_ebucore_height < 500000 THEN '0.1-0.5 MP'
+                     WHEN v_ebucore_width * v_ebucore_height < 1000000 THEN '0.5-1 MP'
+                     WHEN v_ebucore_width * v_ebucore_height < 4000000 THEN '1-4 MP'
+                     WHEN v_ebucore_width * v_ebucore_height < 16000000 THEN '4-16 MP'
+                     ELSE '>= 16 MP'
+                 END AS resolution_bucket,
+                 CASE
+                     WHEN v_ebucore_width IS NULL OR v_ebucore_height IS NULL THEN 0
+                     WHEN v_ebucore_width * v_ebucore_height < 100000 THEN 1
+                     WHEN v_ebucore_width * v_ebucore_height < 500000 THEN 2
+                     WHEN v_ebucore_width * v_ebucore_height < 1000000 THEN 3
+                     WHEN v_ebucore_width * v_ebucore_height < 4000000 THEN 4
+                     WHEN v_ebucore_width * v_ebucore_height < 16000000 THEN 5
+                     ELSE 6
+                 END AS sort_key
+          FROM values_edm_WebResource
+          WHERE v_ebucore_hasMimeType LIKE 'image/%'
+      )
+      SELECT resolution_bucket,
+             count(*) AS resources,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY resolution_bucket, sort_key
+      ORDER BY sort_key
+
+  - id: file_size_buckets
+    question: "File size distribution (web resources with recorded byte size)"
+    backend: parquet
+    query: |
+      WITH buckets AS (
+          SELECT CASE
+                     WHEN v_ebucore_fileByteSize < 100 * 1024 THEN '< 100 KB'
+                     WHEN v_ebucore_fileByteSize < 1024 * 1024 THEN '100 KB - 1 MB'
+                     WHEN v_ebucore_fileByteSize < 10 * 1024 * 1024 THEN '1 MB - 10 MB'
+                     WHEN v_ebucore_fileByteSize < 100 * 1024 * 1024 THEN '10 MB - 100 MB'
+                     WHEN v_ebucore_fileByteSize < 1024 * 1024 * 1024 THEN '100 MB - 1 GB'
+                     ELSE '>= 1 GB'
+                 END AS size_bucket,
+                 CASE
+                     WHEN v_ebucore_fileByteSize < 100 * 1024 THEN 1
+                     WHEN v_ebucore_fileByteSize < 1024 * 1024 THEN 2
+                     WHEN v_ebucore_fileByteSize < 10 * 1024 * 1024 THEN 3
+                     WHEN v_ebucore_fileByteSize < 100 * 1024 * 1024 THEN 4
+                     WHEN v_ebucore_fileByteSize < 1024 * 1024 * 1024 THEN 5
+                     ELSE 6
+                 END AS sort_key
+          FROM values_edm_WebResource
+          WHERE v_ebucore_fileByteSize IS NOT NULL
+      )
+      SELECT size_bucket,
+             count(*) AS resources,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY size_bucket, sort_key
+      ORDER BY sort_key
