@@ -42,7 +42,7 @@ _CROISSANT_DTYPE: dict[str, mlc.DataType] = {
 _STRUCT_SUBFIELDS: dict[str, list[tuple[str, str, mlc.DataType]]] = {
     "LangValueX": [
         ("x_value", "Text value.", mlc.DataType.TEXT),
-        ("x_value_lang", "Language tag (e.g. 'en', 'de', '' for untagged).", mlc.DataType.TEXT),
+        ("x_value_lang", "Language tag (e.g. 'en', 'de'; null for untagged).", mlc.DataType.TEXT),
     ],
     "LabeledEntityX": [
         ("x_value", "Raw value (IRI or literal string).", mlc.DataType.TEXT),

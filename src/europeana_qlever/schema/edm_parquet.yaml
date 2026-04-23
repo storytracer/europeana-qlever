@@ -286,7 +286,7 @@ classes:
         description: Whether x_value is an IRI rather than a literal.
       x_value_lang:
         range: string
-        description: Language tag of x_value (empty string if absent).
+        description: Language tag of x_value (null if absent).
 
   # =================================================================
   # values_ore_Aggregation — one row per provider aggregation

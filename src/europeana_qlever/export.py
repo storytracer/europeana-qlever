@@ -451,7 +451,7 @@ def _make_array(values: tuple, field: pa.Field) -> pa.Array:
             [_parse_timestamp(v) if v else None for v in values],
             type=field.type,
         )
-    return pa.array(values, type=pa.string())
+    return pa.array([v if v else None for v in values], type=pa.string())
 
 
 def _parse_timestamp(v: str) -> datetime | None:
