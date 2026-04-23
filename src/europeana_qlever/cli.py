@@ -759,7 +759,16 @@ def _write_view(base_url: str, view_name: str, sparql: str) -> None:
     if resp.status_code != 200:
         display.console.print(f"[red]Failed to create view: {resp.text}[/red]")
         raise SystemExit(1)
-    display.console.print(f"[green]View created:[/green] {resp.json()}")
+    try:
+        body = resp.json()
+    except Exception:
+        display.console.print(f"[red]Non-JSON response: {resp.text}[/red]")
+        raise SystemExit(1)
+    # QLever returns 200 with e.g. {"exception": "..."} even on failure.
+    if "materialized-view-written" not in body:
+        display.console.print(f"[red]View NOT written. Server said:[/red] {body}")
+        raise SystemExit(1)
+    display.console.print(f"[green]View written:[/green] {body}")
 
     with display.console.status(f"Preloading view {view_name}…"):
         load_resp = httpx.get(
@@ -776,6 +785,22 @@ def _write_view(base_url: str, view_name: str, sparql: str) -> None:
     else:
         display.console.print(
             f"[yellow]Preload returned {load_resp.status_code}: {load_resp.text}[/yellow]"
+        )
+
+    # Flush the query cache: QLever keys cached results by SPARQL text, so
+    # queries referencing the view would otherwise return stale results
+    # computed against the previous view contents.
+    with display.console.status("Clearing query cache…"):
+        clear_resp = httpx.get(
+            base_url,
+            params={"cmd": "clear-cache-complete", "access-token": QLEVER_ACCESS_TOKEN},
+            timeout=60,
+        )
+    if clear_resp.status_code == 200:
+        display.console.print(f"[green]Cache cleared:[/green] {clear_resp.text.strip()}")
+    else:
+        display.console.print(
+            f"[yellow]Cache clear returned {clear_resp.status_code}: {clear_resp.text}[/yellow]"
         )
 
 
