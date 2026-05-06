@@ -384,6 +384,28 @@ def _resolve_key(key: str, specs: dict) -> str:
 # Static query execution — format DuckDB result as Markdown table
 # ---------------------------------------------------------------------------
 
+async def _run_duckdb_query(con: duckdb.DuckDBPyConnection, query: str) -> str:
+    """Execute a DuckDB query in a worker thread and format the result.
+
+    Running in a thread keeps the asyncio event loop responsive so SIGINT
+    (Ctrl+C) can be delivered while the query runs. On cancellation, we
+    call ``con.interrupt()`` so DuckDB actually aborts the running query
+    instead of leaving the worker thread spinning until shutdown hangs.
+    """
+    def _exec_and_format() -> str:
+        rel = con.execute(query)
+        return _format_result_table(rel)
+
+    try:
+        return await asyncio.to_thread(_exec_and_format)
+    except asyncio.CancelledError:
+        try:
+            con.interrupt()
+        except Exception:
+            pass
+        raise
+
+
 def _format_result_table(result: duckdb.DuckDBPyConnection) -> str:
     """Format a DuckDB query result as a Markdown table.
 
@@ -562,8 +584,9 @@ async def run_report(
                     if q.query:
                         # Static execution — run pre-defined SQL directly
                         try:
-                            rel = store.connection.execute(q.query)
-                            result_text = _format_result_table(rel)
+                            result_text = await _run_duckdb_query(
+                                store.connection, q.query,
+                            )
                             elapsed = time.perf_counter() - t0
                             qr = ReportQuestionResult(
                                 id=q.id,
@@ -628,8 +651,9 @@ async def run_report(
                                 and q.backend == "parquet"
                             ):
                                 try:
-                                    rel = store.connection.execute(ask_result.query)
-                                    result_text = _format_result_table(rel)
+                                    result_text = await _run_duckdb_query(
+                                        store.connection, ask_result.query,
+                                    )
                                 except Exception:
                                     pass
 
@@ -666,12 +690,24 @@ async def run_report(
         url_liveness_data: dict | None = None
         if probe_urls:
             console.rule("[bold]URL Liveness[/bold]", style="dim")
-            urls = store.connection.execute(
+            url_query = (
                 "SELECT v_edm_isShownBy FROM items "
                 "WHERE v_edm_isShownBy IS NOT NULL "
                 "ORDER BY random() "
                 f"LIMIT {sample_size}"
-            ).fetchall()
+            )
+
+            def _fetch_urls() -> list:
+                return store.connection.execute(url_query).fetchall()
+
+            try:
+                urls = await asyncio.to_thread(_fetch_urls)
+            except asyncio.CancelledError:
+                try:
+                    store.connection.interrupt()
+                except Exception:
+                    pass
+                raise
             url_list = [row[0] for row in urls]
             if url_list:
                 url_liveness_data = await _probe_urls(url_list, sample_size)
