@@ -173,9 +173,6 @@ def generate_croissant(exports_dir: Path) -> Path:
             for pq_file in partition_files:
                 rel = pq_file.relative_to(exports_dir).as_posix()
                 partition_col = pq_file.parent.name  # e.g. "x_property=v_dc_subject"
-                display.console.print(
-                    f"  [dim]{table_name}/{partition_col}[/dim]: computing checksum…"
-                )
                 sha = _sha256(pq_file)
                 size_bytes = pq_file.stat().st_size
                 distributions.append(mlc.FileObject(
@@ -208,7 +205,6 @@ def generate_croissant(exports_dir: Path) -> Path:
 
         file_obj_id = f"{table_name}-parquet"
 
-        display.console.print(f"  [dim]{table_name}[/dim]: computing checksum…")
         sha = _sha256(parquet_path)
         size_bytes = parquet_path.stat().st_size
 
