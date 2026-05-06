@@ -430,11 +430,56 @@ edm:EuropeanaAggregation has a copy but it is incomplete.""",
         topic="materialized_views",
         edm_knowledge="""\
 The open-items QLever materialized view precomputes all items with
-open reuse rights joined with edm:type.""",
+open reuse rights joined with edm:type.
+
+QLever column-order constraint: a SERVICE block on a materialized view
+cannot bind a later column to a constant while an earlier column is
+unbound. So you CANNOT bind view:column-type to "IMAGE" while
+view:column-item is a variable — QLever rejects with "When setting the
+second column of a materialized view to a fixed value, the first column
+must also be fixed." Retrieve only column-item from the view and filter
+edm:type via the Europeana proxy (where ?item is already bound).""",
         sparql_pattern="""\
 PREFIX view: <https://qlever.cs.uni-freiburg.de/materializedView/>
-SERVICE view:open-items { [ view:column-item ?item ; view:column-type ?type ] }
-FILTER(?type = "IMAGE")""",
+
+# Correct: bind ?item via the view; filter edm:type via the Europeana proxy.
+SERVICE view:open-items { [ view:column-item ?item ] }
+?eProxy ore:proxyFor ?item ; edm:europeanaProxy "true" ; edm:type "IMAGE" .
+
+# WRONG (rejected by QLever — column-item unbound while column-type fixed):
+# SERVICE view:open-items {
+#   [ view:column-item ?item ; view:column-type "IMAGE" ]
+# }""",
+    ),
+
+    # -- Full-text literal scanning at scale (SPARQL only) --
+    EdmNote(
+        topic="literal_scan",
+        edm_knowledge="""\
+CONTAINS / REGEX / LCASE on free-text literals (dc:description,
+dc:title, …) scans every literal in the index. With ~66M items and
+billions of literals this WILL time out unless the candidate set is
+narrowed first.""",
+        sparql_pattern="""\
+Before any CONTAINS/REGEX/LCASE on a literal:
+  1. Narrow with a selective pattern — open-items view, edm:type, a
+     country, or a specific entity IRI.
+  2. Restrict by language. Include "" alongside the target language so
+     untagged literals are not silently excluded:
+     FILTER(LANG(?desc) = "en" || LANG(?desc) = "")
+
+# Bad — full literal scan, times out:
+?proxy dc:description ?desc .
+FILTER(CONTAINS(LCASE(STR(?desc)), "teapot"))
+
+# Good — narrow first, then scan the filtered subset:
+SERVICE view:open-items { [ view:column-item ?item ] }
+?eProxy ore:proxyFor ?item ; edm:europeanaProxy "true" ; edm:type "IMAGE" .
+?proxy ore:proxyFor ?item .
+FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" }
+?proxy dc:description ?desc .
+FILTER(LANG(?desc) = "en" || LANG(?desc) = "")
+FILTER(CONTAINS(LCASE(STR(?desc)), "teapot"))""",
     ),
 
     # -- Schema-derived: SPARQL prefixes --
