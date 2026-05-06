@@ -2224,8 +2224,10 @@ def grasp_start(ctx: click.Context):
 
     Requires write-grasp-config to have been run first.
     """
-    grasp_dir = ctx.obj["work_dir"] / "grasp"
+    work_dir: Path = ctx.obj["work_dir"]
+    grasp_dir = work_dir / "grasp"
     config_path = grasp_dir / "europeana-grasp.yaml"
+    index_dir = work_dir / "grasp-index"
 
     if not config_path.exists():
         display.console.print(
@@ -2234,10 +2236,22 @@ def grasp_start(ctx: click.Context):
         )
         raise SystemExit(1)
 
+    if not (index_dir / "europeana").is_dir():
+        display.console.print(
+            f"[red]GRASP indices not found at {index_dir}/europeana[/red]\n"
+            "Run 'grasp-setup' first."
+        )
+        raise SystemExit(1)
+
+    env = os.environ.copy()
+    env["GRASP_INDEX_DIR"] = str(index_dir)
+
     display.console.print(f"Starting GRASP server from {config_path}")
+    display.console.print(f"  Index dir: {index_dir}")
     subprocess.Popen(
         ["grasp", "serve", str(config_path)],
         cwd=str(grasp_dir),
+        env=env,
         start_new_session=True,
     )
     display.console.print("[green]GRASP server started[/green]")
