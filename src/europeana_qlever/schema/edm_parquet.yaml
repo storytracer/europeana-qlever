@@ -1363,6 +1363,38 @@ classes:
         range: string
         description: The proxy property column name (v_dc_subject, etc.).
 
+  # =================================================================
+  # map_edm_entities — Europeana enrichment edges
+  # =================================================================
+
+  MapEdmEntities:
+    description: >-
+      The Europeana enrichment edge table: one row per (CHO, entity)
+      pair where the entity is part of Europeana's curated EDM
+      collection (the four data.europeana.eu/{agent,place,concept,
+      timespan}/ namespaces). Provider-local entity URIs that haven't
+      been reconciled to Europeana's collection are deliberately
+      excluded — they aren't enrichment, just unresolved identifiers.
+      Deduplicated on (k_iri_cho, k_iri_entity, x_entity_class) so a
+      CHO referencing the same entity through multiple proxy
+      properties counts once. The catalogue side (entity + label +
+      item count) is derivable on the fly via GROUP BY against this
+      table joined with values_<class> for labels.
+    annotations:
+      table_name: map_edm_entities
+      export_type: map
+      export_sets: "pipeline,maps"
+      depends_on: "map_cho_entities"
+    attributes:
+      k_iri_cho:
+        range: uri
+        required: true
+      k_iri_entity:
+        range: uri
+        required: true
+      x_entity_class:
+        range: EntityClass
+
 # ===================================================================
 # Pipeline metadata (top-level annotations)
 # ===================================================================

@@ -514,6 +514,36 @@ def map_cho_entities_steps() -> list[ComposeStep]:
 
 
 # ---------------------------------------------------------------------------
+# map_edm_entities — Europeana enrichment edges
+# ---------------------------------------------------------------------------
+
+
+_EDM_ENTITY_NAMESPACE_PREFIX = "http://data.europeana.eu/"
+
+
+def map_edm_entities_steps() -> list[ComposeStep]:
+    """Return compose steps for map_edm_entities.
+
+    The Europeana-curated subset of ``map_cho_entities``: only edges
+    whose entity IRI lives under one of the four
+    ``data.europeana.eu/{agent,place,concept,timespan}/`` namespaces.
+    Provider-local entity URIs that appear in ``map_cho_entities`` but
+    aren't reconciled to Europeana's collection are excluded — they
+    aren't enrichment, just unresolved identifiers.
+
+    Deduplicated on (k_iri_cho, k_iri_entity, x_entity_class) so a CHO
+    referencing the same entity through multiple proxy properties
+    counts once.
+    """
+    sql = (
+        "SELECT DISTINCT k_iri_cho, k_iri_entity, x_entity_class\n"
+        "FROM read_parquet('{exports_dir}/map_cho_entities.parquet')\n"
+        f"WHERE k_iri_entity LIKE '{_EDM_ENTITY_NAMESPACE_PREFIX}%'"
+    )
+    return [ComposeStep(name="map_edm_entities_final", sql=sql, is_final=True)]
+
+
+# ---------------------------------------------------------------------------
 # Registry dispatcher
 # ---------------------------------------------------------------------------
 
@@ -533,6 +563,8 @@ def compose_steps_for(table_name: str) -> list[ComposeStep]:
             return map_sameAs_steps()
         if table_name == "map_cho_entities":
             return map_cho_entities_steps()
+        if table_name == "map_edm_entities":
+            return map_edm_entities_steps()
     return []
 
 

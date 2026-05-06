@@ -124,6 +124,18 @@ _CHO_PROXIES = "values_ore_Proxy.parquet"
 _CHO_TITLES = "links_ore_Proxy/x_property=v_dc_title/data.parquet"
 _CHO_PREFIX = "http://data.europeana.eu/item/"
 
+# Synthetic facets backed by map_edm_entities. User-facing names match
+# Europeana's own docs (Semantic enrichments page uses "places,
+# concepts, agents, time periods").
+_ENTITY_FACETS = (
+    # (facet name, entity class enum value from EntityClass)
+    ("Topics", "skos_Concept"),
+    ("Agents", "edm_Agent"),
+    ("Places", "edm_Place"),
+    ("Time periods", "edm_TimeSpan"),
+)
+_MAP_EDM_ENTITIES_PARQUET = "map_edm_entities.parquet"
+
 
 class ExplorerEngine:
     """Holds the long-lived DuckDB connection and answers API requests."""
@@ -169,8 +181,10 @@ class ExplorerEngine:
         self._load_low_cardinality_flags()
 
         self.iri_sources: list[_IRISource] = []
+        self.entity_facets_enabled = False
         if exports_dir is not None:
             self._register_iri_sources(exports_dir)
+            self._register_entity_facet_tables(exports_dir)
 
     def _register_iri_sources(self, exports_dir: Path) -> None:
         for filename, view, prefix in _ENTITY_TABLES:
@@ -200,6 +214,41 @@ class ExplorerEngine:
                 iri_prefix=_CHO_PREFIX,
                 lookup_sql_template=_CHO_TITLE_LOOKUP_SQL,
             ))
+
+    def _register_entity_facet_tables(self, exports_dir: Path) -> None:
+        """Register map_edm_entities as a DuckDB TABLE for synthetic facets.
+
+        Materialised as a real DuckDB TABLE (not a view) because the
+        SEMI JOIN against it is the hot path for every synthetic
+        facet's top-values query. The Parquet is already restricted to
+        Europeana-curated entities and deduplicated on
+        ``(k_iri_cho, k_iri_entity, x_entity_class)``, so we just load
+        it as-is.
+        """
+        path = exports_dir / _MAP_EDM_ENTITIES_PARQUET
+        if not path.exists():
+            return
+
+        # DuckDB doesn't accept prepared parameters in DDL; escape quotes
+        # manually (same convention as the items view above).
+        escaped = str(path).replace("'", "''")
+        self.con.execute(
+            "CREATE TABLE edm_entities AS SELECT * FROM read_parquet("
+            f"'{escaped}')"
+        )
+        self.entity_facets_enabled = True
+
+        for name, cls in _ENTITY_FACETS:
+            col = {
+                "name": name,
+                "type": "ENTITY_IRI",
+                "category": "categorical",
+                "low_cardinality": False,
+                "synthetic": True,
+                "entity_class": cls,
+            }
+            self.columns.append(col)
+            self.column_set[name] = col
 
     # -- startup ---------------------------------------------------------
 
@@ -243,8 +292,26 @@ class ExplorerEngine:
         for col, f in (filters or {}).items():
             if col not in self.column_set or not isinstance(f, dict):
                 continue  # silently drop unknown / malformed filters
-            q = f'"{col}"'
+            col_def = self.column_set[col]
             kind = f.get("kind")
+            # Synthetic facets resolve via SEMI JOIN to edm_entities,
+            # not by referencing a column on items.
+            if col_def.get("synthetic"):
+                if kind != "in":
+                    continue
+                values = f.get("values") or []
+                if not isinstance(values, list) or not values:
+                    continue
+                placeholders = ", ".join(["?"] * len(values))
+                parts.append(
+                    "\"k_iri\" IN (SELECT k_iri_cho FROM edm_entities "
+                    f"WHERE x_entity_class = ? AND k_iri_entity IN "
+                    f"({placeholders}))"
+                )
+                params.append(col_def["entity_class"])
+                params.extend(values)
+                continue
+            q = f'"{col}"'
             if kind == "in":
                 values = f.get("values") or []
                 if not isinstance(values, list) or not values:
@@ -315,8 +382,13 @@ class ExplorerEngine:
         return {"labels": out}
 
     def summary(self, filters: dict, group_by: str) -> dict:
-        if group_by not in self.column_set:
+        gb_def = self.column_set.get(group_by)
+        if gb_def is None:
             raise ValueError(f"unknown group_by column: {group_by}")
+        if gb_def.get("synthetic"):
+            raise ValueError(
+                f"synthetic facet '{group_by}' cannot be used as group_by"
+            )
         where, params = self._build_where(filters)
         gb = f'"{group_by}"'
 
@@ -373,22 +445,37 @@ class ExplorerEngine:
     ) -> dict:
         if col not in self.column_set:
             raise ValueError(f"unknown column: {col}")
+        col_def = self.column_set[col]
         limit = max(1, min(int(limit), 1000))
         where, params = self._build_where(filters)
-        q = f'"{col}"'
-        predicate = f"{q} IS NOT NULL"
-        if where:
-            full_where = f"{where} AND {predicate}"
-        else:
-            full_where = f"WHERE {predicate}"
 
-        with self.lock:
-            rows = self.con.execute(
-                f"SELECT {q} AS v, COUNT(*) AS n "
-                f"FROM items {full_where} "
-                f"GROUP BY 1 ORDER BY 2 DESC LIMIT ?",
-                params + [limit + 1],  # +1 to detect truncation
-            ).fetchall()
+        if col_def.get("synthetic"):
+            # Rank entities of this class by how many CHOs in the
+            # currently-filtered items reference them. edm_entities is
+            # materialised (TABLE, not view) so this stays interactive.
+            sql = (
+                "SELECT k_iri_entity AS v, COUNT(*) AS n\n"
+                "FROM edm_entities\n"
+                "WHERE x_entity_class = ?\n"
+                f"  AND k_iri_cho IN (SELECT k_iri FROM items {where})\n"
+                "GROUP BY 1 ORDER BY 2 DESC LIMIT ?"
+            )
+            args = [col_def["entity_class"], *params, limit + 1]
+            with self.lock:
+                rows = self.con.execute(sql, args).fetchall()
+        else:
+            q = f'"{col}"'
+            predicate = f"{q} IS NOT NULL"
+            full_where = (
+                f"{where} AND {predicate}" if where else f"WHERE {predicate}"
+            )
+            with self.lock:
+                rows = self.con.execute(
+                    f"SELECT {q} AS v, COUNT(*) AS n "
+                    f"FROM items {full_where} "
+                    f"GROUP BY 1 ORDER BY 2 DESC LIMIT ?",
+                    params + [limit + 1],  # +1 to detect truncation
+                ).fetchall()
 
         truncated = len(rows) > limit
         rows = rows[:limit]

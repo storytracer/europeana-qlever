@@ -605,7 +605,9 @@ function View({
   const groupByOptions = useMemo(
     () =>
       schema.columns.filter(
-        (c) => c.category === "categorical" || c.category === "boolean"
+        (c) =>
+          (c.category === "categorical" || c.category === "boolean") &&
+          !c.synthetic
       ),
     [schema]
   );
