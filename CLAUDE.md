@@ -35,16 +35,8 @@ src/europeana_qlever/
   report.py                       # Composable report: YAML-driven questions (static SQL + ask agent), ReportFilters
   report_questions/                # Bundled report question YAML files (read directly by `report`)
     __init__.py                    # Package marker + DEFAULTS_DIR path
-    volume.yml                     # Volume & composition (5)
-    rights.yml                     # Rights distribution (5)
-    language.yml                   # Language coverage (4)
-    completeness.yml               # Metadata completeness (4)
-    entities.yml                   # Entity enrichment (5)
-    enrichment.yml                 # Entity enrichment quality (5)
-    content.yml                    # Content accessibility (4)
-    media.yml                      # Media and content quality (5)
-    providers.yml                  # Provider leaderboards (5)
-    crosscut.yml                   # Cross-cutting matrices (5)
+    overview.yml                   # Overview / quality scan
+    external_links.yml             # External link / sameAs analysis
   monitor.py                      # Background resource monitor (CPU, memory, disk, process tracking)
   query.py                        # Schema-driven SPARQL query generation (Query, QueryFilters, QueryRegistry, SparqlHelpers)
   resources.py                    # Auto-detection of system resources & budget calculation
