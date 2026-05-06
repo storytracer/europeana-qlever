@@ -430,21 +430,28 @@ edm:EuropeanaAggregation has a copy but it is incomplete.""",
         topic="materialized_views",
         edm_knowledge="""\
 The open-items QLever materialized view precomputes all items with
-open reuse rights joined with edm:type.
+open reuse rights (CC0, PDM, CC-BY, CC-BY-SA) joined with edm:type.
 
-QLever column-order constraint: a SERVICE block on a materialized view
-cannot bind a later column to a constant while an earlier column is
-unbound. So you CANNOT bind view:column-type to "IMAGE" while
-view:column-item is a variable — QLever rejects with "When setting the
-second column of a materialized view to a fixed value, the first column
-must also be fixed." Retrieve only column-item from the view and filter
-edm:type via the Europeana proxy (where ?item is already bound).""",
+ONLY use this view when the user's question explicitly scopes to open
+access — words like "open", "open rights", "open access", "reusable",
+"CC0/CC-BY/PDM", or "freely licensed". For any other question (general
+counts, type filters, content searches) DO NOT use this view: it
+silently restricts the answer to the open-rights subset and gives the
+wrong total. Filter edm:type via the Europeana proxy instead.
+
+QLever column-order constraint (when the view is appropriate): a
+SERVICE block on a materialized view cannot bind a later column to a
+constant while an earlier column is unbound. So you CANNOT inline
+view:column-type as "IMAGE" while view:column-item is a variable —
+QLever rejects with "When setting the second column of a materialized
+view to a fixed value, the first column must also be fixed." Use
+FILTER on the variable instead.""",
         sparql_pattern="""\
 PREFIX view: <https://qlever.cs.uni-freiburg.de/materializedView/>
 
-# Correct: bind ?item via the view; filter edm:type via the Europeana proxy.
-SERVICE view:open-items { [ view:column-item ?item ] }
-?eProxy ore:proxyFor ?item ; edm:europeanaProxy "true" ; edm:type "IMAGE" .
+# Correct (only when the user asked for open / reusable items):
+SERVICE view:open-items { [ view:column-item ?item ; view:column-type ?type ] }
+FILTER(?type = "IMAGE")
 
 # WRONG (rejected by QLever — column-item unbound while column-type fixed):
 # SERVICE view:open-items {
@@ -461,24 +468,29 @@ dc:title, …) scans every literal in the index. With ~66M items and
 billions of literals this WILL time out unless the candidate set is
 narrowed first.""",
         sparql_pattern="""\
-Before any CONTAINS/REGEX/LCASE on a literal:
-  1. Narrow with a selective pattern — open-items view, edm:type, a
-     country, or a specific entity IRI.
-  2. Restrict by language. Include "" alongside the target language so
-     untagged literals are not silently excluded:
-     FILTER(LANG(?desc) = "en" || LANG(?desc) = "")
+Narrow the candidate set BEFORE the literal scan with a selective
+structural pattern — Europeana-proxy edm:type, a country, a specific
+entity IRI. Add view:open-items ONLY if the user asked for open /
+reusable items (otherwise it silently drops the closed-rights subset
+from the answer).
 
-# Bad — full literal scan, times out:
+Do NOT add a LANG filter unless the user's question specifies a
+language — it changes the answer by silently dropping items whose
+literal carries a different language tag. When the user does specify a
+language, include "" alongside the target tag so untagged literals are
+not also dropped: FILTER(LANG(?x) = "en" || LANG(?x) = "")
+
+# Bad — full literal scan, will time out:
 ?proxy dc:description ?desc .
 FILTER(CONTAINS(LCASE(STR(?desc)), "teapot"))
 
-# Good — narrow first, then scan the filtered subset:
-SERVICE view:open-items { [ view:column-item ?item ] }
+# Good — narrow first via the Europeana proxy's edm:type, then scan
+# the filtered subset. No open-items (the question is not scoped to
+# open items). No LANG filter (no language was specified).
 ?eProxy ore:proxyFor ?item ; edm:europeanaProxy "true" ; edm:type "IMAGE" .
 ?proxy ore:proxyFor ?item .
 FILTER NOT EXISTS { ?proxy edm:europeanaProxy "true" }
 ?proxy dc:description ?desc .
-FILTER(LANG(?desc) = "en" || LANG(?desc) = "")
 FILTER(CONTAINS(LCASE(STR(?desc)), "teapot"))""",
     ),
 
