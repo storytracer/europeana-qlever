@@ -134,7 +134,7 @@ _ENTITY_FACETS = (
     ("Places", "edm_Place"),
     ("Time periods", "edm_TimeSpan"),
 )
-_MAP_EDM_ENTITIES_PARQUET = "map_edm_entities.parquet"
+_EXPLORER_EDM_ENTITIES_PARQUET = "explorer_edm_entities.parquet"
 
 
 class ExplorerEngine:
@@ -216,16 +216,17 @@ class ExplorerEngine:
             ))
 
     def _register_entity_facet_tables(self, exports_dir: Path) -> None:
-        """Register map_edm_entities as a DuckDB TABLE for synthetic facets.
+        """Register explorer_edm_entities as a DuckDB TABLE for synthetic facets.
 
         Materialised as a real DuckDB TABLE (not a view) because the
         SEMI JOIN against it is the hot path for every synthetic
         facet's top-values query. The Parquet is already restricted to
-        Europeana-curated entities and deduplicated on
-        ``(k_iri_cho, k_iri_entity, x_entity_class)``, so we just load
-        it as-is.
+        Europeana-curated entities, deduplicated on
+        ``(k_iri_cho, k_iri_entity, x_entity_class)``, and carries
+        ``x_label`` (English prefLabel with IRI fallback) inline so
+        ``top_values`` can return labels in a single round-trip.
         """
-        path = exports_dir / _MAP_EDM_ENTITIES_PARQUET
+        path = exports_dir / _EXPLORER_EDM_ENTITIES_PARQUET
         if not path.exists():
             return
 
@@ -451,18 +452,31 @@ class ExplorerEngine:
 
         if col_def.get("synthetic"):
             # Rank entities of this class by how many CHOs in the
-            # currently-filtered items reference them. edm_entities is
-            # materialised (TABLE, not view) so this stays interactive.
+            # currently-filtered items reference them, and return the
+            # entity's English prefLabel inline so the frontend can
+            # render without an async resolve_labels round-trip.
+            # ANY_VALUE(x_label) is safe — x_label is functionally
+            # determined by k_iri_entity by construction.
             sql = (
-                "SELECT k_iri_entity AS v, COUNT(*) AS n\n"
+                "SELECT k_iri_entity AS v, ANY_VALUE(x_label) AS label,"
+                " COUNT(*) AS n\n"
                 "FROM edm_entities\n"
                 "WHERE x_entity_class = ?\n"
                 f"  AND k_iri_cho IN (SELECT k_iri FROM items {where})\n"
-                "GROUP BY 1 ORDER BY 2 DESC LIMIT ?"
+                "GROUP BY 1 ORDER BY 3 DESC LIMIT ?"
             )
             args = [col_def["entity_class"], *params, limit + 1]
             with self.lock:
                 rows = self.con.execute(sql, args).fetchall()
+            truncated = len(rows) > limit
+            rows = rows[:limit]
+            return {
+                "values": [
+                    {"value": _json_scalar(v), "label": lbl, "count": int(n)}
+                    for v, lbl, n in rows
+                ],
+                "truncated": truncated,
+            }
         else:
             q = f'"{col}"'
             predicate = f"{q} IS NOT NULL"

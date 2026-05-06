@@ -159,7 +159,12 @@ function CategoricalFacet({ col, filters, setFilters, labels, requestLabels }) {
   }, [col.name, otherFilters]);
 
   useEffect(() => {
-    if (data) requestLabels(data.rows.map((r) => r.value));
+    if (!data) return;
+    // Synthetic facets (Topics/Agents/Places/Time periods) come back
+    // with `label` inline — only async-fetch labels for rows that
+    // don't already have one.
+    const missing = data.rows.filter((r) => !r.label).map((r) => r.value);
+    if (missing.length) requestLabels(missing);
   }, [data, requestLabels]);
 
   const selected = new Set(filters[col.name]?.values ?? []);
@@ -167,7 +172,7 @@ function CategoricalFacet({ col, filters, setFilters, labels, requestLabels }) {
   const matches = (q, row) => {
     if (!q) return true;
     const v = String(row.value ?? "").toLowerCase();
-    const lab = (labels[row.value] || "").toLowerCase();
+    const lab = (row.label || labels[row.value] || "").toLowerCase();
     return v.includes(q) || (lab && lab.includes(q));
   };
   const visible = data
@@ -211,7 +216,7 @@ function CategoricalFacet({ col, filters, setFilters, labels, requestLabels }) {
           : visible.length === 0
           ? html`<div class="muted">No values.</div>`
           : visible.map((r) => {
-              const lab = labels[r.value] || "";
+              const lab = r.label || labels[r.value] || "";
               const raw = r.value == null ? "(null)" : String(r.value);
               const display = lab || raw;
               const title = lab ? `${lab}\n${raw}` : raw;

@@ -142,7 +142,7 @@ classes:
     annotations:
       table_name: values_ore_Proxy
       export_type: values
-      export_sets: "pipeline,raw"
+      export_sets: "pipeline,raw,explorer"
       sparql_base_pattern: "?k_iri ore:proxyFor ?k_iri_cho ."
       required_prefixes: "edm,ore"
       sample_subject_variable: "k_iri_cho"
@@ -211,7 +211,7 @@ classes:
     annotations:
       table_name: links_ore_Proxy
       export_type: links
-      export_sets: "pipeline,raw"
+      export_sets: "pipeline,raw,explorer"
       subject_base_pattern: "?k_iri ore:proxyFor ?_cho ."
       required_prefixes: "dc,dcterms,edm,ore,owl,skos"
       sample_subject_variable: "_cho"
@@ -614,7 +614,7 @@ classes:
     annotations:
       table_name: values_edm_Agent
       export_type: values
-      export_sets: "pipeline,raw"
+      export_sets: "pipeline,raw,explorer"
       sparql_base_pattern: "?k_iri a edm:Agent . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
       sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
       required_prefixes: "edm,rdaGr2,skos"
@@ -704,7 +704,7 @@ classes:
     annotations:
       table_name: values_edm_Place
       export_type: values
-      export_sets: "pipeline,raw"
+      export_sets: "pipeline,raw,explorer"
       sparql_base_pattern: "?k_iri a edm:Place . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
       sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
       required_prefixes: "edm,skos,wgs84_pos"
@@ -775,7 +775,7 @@ classes:
     annotations:
       table_name: values_skos_Concept
       export_type: values
-      export_sets: "pipeline,raw"
+      export_sets: "pipeline,raw,explorer"
       sparql_base_pattern: "?k_iri a skos:Concept . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
       sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
       required_prefixes: "skos"
@@ -828,7 +828,7 @@ classes:
     annotations:
       table_name: values_edm_TimeSpan
       export_type: values
-      export_sets: "pipeline,raw"
+      export_sets: "pipeline,raw,explorer"
       sparql_base_pattern: "?k_iri a edm:TimeSpan . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
       sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
       required_prefixes: "edm,skos"
@@ -899,7 +899,7 @@ classes:
     annotations:
       table_name: values_foaf_Organization
       export_type: values
-      export_sets: "pipeline,raw"
+      export_sets: "pipeline,raw,explorer"
       sparql_base_pattern: "?k_iri a foaf:Organization . ?k_iri skos:prefLabel ?v_skos_prefLabel ."
       sparql_extra: "BIND(LANG(?v_skos_prefLabel) AS ?x_prefLabel_lang)"
       required_prefixes: "edm,foaf,skos"
@@ -1210,7 +1210,7 @@ classes:
     annotations:
       table_name: group_items
       export_type: group
-      export_sets: "pipeline,group"
+      export_sets: "pipeline,group,explorer"
       depends_on: >-
         values_edm_ProvidedCHO, values_ore_Proxy, values_ore_Aggregation,
         values_edm_EuropeanaAggregation, values_edm_WebResource,
@@ -1394,6 +1394,43 @@ classes:
         required: true
       x_entity_class:
         range: EntityClass
+
+  # =================================================================
+  # explorer_edm_entities — UI-optimised edges with inline label
+  # =================================================================
+
+  ExplorerEdmEntities:
+    description: >-
+      Explorer-optimised view of map_edm_entities. One row per
+      (CHO, Europeana entity) pair, denormalised with the entity's
+      English prefLabel inline so the explorer renders facets in a
+      single round-trip. Built on top of map_edm_entities; do not
+      consume this for analytics — use map_edm_entities for the
+      canonical lean edges and join values_<class> for labels when
+      needed.
+    annotations:
+      table_name: explorer_edm_entities
+      export_type: map
+      export_sets: "pipeline,explorer"
+      depends_on: >-
+        map_edm_entities, values_edm_Agent, values_edm_Place,
+        values_skos_Concept, values_edm_TimeSpan
+    attributes:
+      k_iri_cho:
+        range: uri
+        required: true
+      k_iri_entity:
+        range: uri
+        required: true
+      x_entity_class:
+        range: EntityClass
+      x_label:
+        range: string
+        required: true
+        description: >-
+          English prefLabel for the entity, denormalised from
+          values_<class>. Falls back to k_iri_entity when no English
+          prefLabel exists.
 
 # ===================================================================
 # Pipeline metadata (top-level annotations)

@@ -544,6 +544,62 @@ def map_edm_entities_steps() -> list[ComposeStep]:
 
 
 # ---------------------------------------------------------------------------
+# explorer_edm_entities — UI-optimised edges with inline English label
+# ---------------------------------------------------------------------------
+
+
+_EDM_ENTITY_NAMESPACES = {
+    # class enum value → IRI prefix of Europeana's curated entity collection.
+    # Used to filter values_<class> reads to only Europeana-curated entities
+    # (mirrors the broader filter applied in map_edm_entities).
+    "edm_Agent":    "http://data.europeana.eu/agent/",
+    "edm_Place":    "http://data.europeana.eu/place/",
+    "skos_Concept": "http://data.europeana.eu/concept/",
+    "edm_TimeSpan": "http://data.europeana.eu/timespan/",
+}
+
+
+def explorer_edm_entities_steps() -> list[ComposeStep]:
+    """Return compose steps for explorer_edm_entities.
+
+    Builds on top of ``map_edm_entities`` (already filtered to
+    Europeana-curated entities and deduplicated) by joining each
+    (CHO, entity) edge with the entity's English prefLabel from
+    ``values_<class>``. ``COALESCE`` substitutes ``k_iri_entity`` when
+    no English label exists so ``x_label`` is never NULL — downstream
+    UI consumers can render it directly.
+    """
+    label_select = (
+        "SELECT k_iri,\n"
+        "       MAX(CASE WHEN x_prefLabel_lang = 'en' "
+        "THEN v_skos_prefLabel END) AS x_label_en\n"
+        "FROM read_parquet('{{exports_dir}}/values_{cls}.parquet')\n"
+        "WHERE k_iri LIKE '{prefix}%'\n"
+        "GROUP BY k_iri"
+    )
+    labels_sql = "\nUNION ALL\n".join(
+        label_select.format(cls=c, prefix=p)
+        for c, p in _EDM_ENTITY_NAMESPACES.items()
+    )
+    return [
+        ComposeStep(
+            name="entity_labels",
+            sql=f"CREATE TEMP TABLE entity_labels AS\n{labels_sql}",
+        ),
+        ComposeStep(
+            name="explorer_edm_entities_final",
+            is_final=True,
+            sql=(
+                "SELECT m.k_iri_cho, m.k_iri_entity, m.x_entity_class,\n"
+                "       COALESCE(l.x_label_en, m.k_iri_entity) AS x_label\n"
+                "FROM read_parquet('{exports_dir}/map_edm_entities.parquet') m\n"
+                "LEFT JOIN entity_labels l ON l.k_iri = m.k_iri_entity"
+            ),
+        ),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Registry dispatcher
 # ---------------------------------------------------------------------------
 
@@ -565,6 +621,8 @@ def compose_steps_for(table_name: str) -> list[ComposeStep]:
             return map_cho_entities_steps()
         if table_name == "map_edm_entities":
             return map_edm_entities_steps()
+        if table_name == "explorer_edm_entities":
+            return explorer_edm_entities_steps()
     return []
 
 
