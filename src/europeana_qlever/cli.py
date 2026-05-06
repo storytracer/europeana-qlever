@@ -1707,39 +1707,6 @@ def pipeline(
 # report
 # ---------------------------------------------------------------------------
 
-@cli.command("write-report-config")
-@click.option("--force", is_flag=True, default=False,
-              help="Overwrite existing question files.")
-@click.pass_context
-def write_report_config(ctx: click.Context, force: bool):
-    """Generate default report question files in <work-dir>/reports/questions/.
-
-    Copies the bundled overview question file — a quick scan of volume,
-    reuse levels, top providers, content coverage, and completeness.  Add
-    more YAML files alongside it to extend the report.
-    """
-    import shutil
-
-    from .report_questions import DEFAULTS_DIR
-
-    questions_dir = ctx.obj["work_dir"] / "reports" / "questions"
-    questions_dir.mkdir(parents=True, exist_ok=True)
-
-    copied = 0
-    for src in sorted(DEFAULTS_DIR.glob("*.yml")):
-        dst = questions_dir / src.name
-        if dst.exists() and not force:
-            display.console.print(f"  [yellow]exists:[/yellow] {dst.name} (use --force to overwrite)")
-            continue
-        shutil.copy2(src, dst)
-        display.console.print(f"  {dst.name}")
-        copied += 1
-
-    display.console.print(
-        f"\n[green]{copied} question file(s) written to {questions_dir}[/green]"
-    )
-
-
 @cli.command()
 @click.option("--sections", "-s", default=None,
               help="Comma-separated section IDs to include (e.g. volume,rights).")
@@ -1780,7 +1747,7 @@ def report(
 ):
     """Composable report over exported Parquet files.
 
-    Runs questions defined in <work-dir>/reports/questions/*.yml.
+    Runs the bundled question YAMLs that ship with the package.
     Questions with a pre-defined query execute as static DuckDB SQL;
     questions without a query are answered by the ask agent.
 
@@ -1794,6 +1761,7 @@ def report(
     import asyncio
 
     from .report import ReportFilters, run_report
+    from .report_questions import DEFAULTS_DIR
     from .telemetry import command_span
 
     telemetry = ctx.obj["telemetry"]
@@ -1816,7 +1784,7 @@ def report(
     }) as counters:
         result = asyncio.run(run_report(
             exports_dir=exports_dir,
-            questions_dir=work_dir / "reports" / "questions",
+            questions_dir=DEFAULTS_DIR,
             output_dir=work_dir / "reports",
             filters=filters,
             section_ids=section_ids,

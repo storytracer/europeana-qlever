@@ -245,10 +245,7 @@ uv run europeana-qlever -d /data/europeana export links_ore_Proxy --property dc_
 After exporting, generate a Markdown report analysing data quality and coverage:
 
 ```bash
-# Bootstrap the default question set into <work-dir>/reports/questions/
-uv run europeana-qlever -d /data/europeana write-report-config
-
-# Run all sections
+# Run all sections (questions are bundled with the package)
 uv run europeana-qlever -d /data/europeana report
 
 # Include live URL reachability probing
@@ -285,7 +282,6 @@ europeana-qlever -d WORK_DIR
 │   ├── qlever                 Profile SPARQL exports against a running QLever server
 │   └── static                 Offline structural analysis via SPARQL algebra
 ├── export                     Export data as Parquet files (values_*, links_*, group_items, map_*)
-├── write-report-config        Copy default report question YAML files into <work-dir>/reports/questions/
 ├── report                     Quality/coverage report over exported Parquet files
 ├── ask QUESTION               NL query: --backend parquet (DuckDB, offline) or sparql (GRASP)
 ├── benchmark                  Run the benchmark question set against parquet, sparql, or both
@@ -502,7 +498,7 @@ Files in `src/europeana_qlever/grasp/`:
 | `src/europeana_qlever/schema/edm_parquet.yaml` | Export schema — declares all 29 export tables (14 values_* + 11 links_* + group_items + 3 map_*) as LinkML classes with SPARQL patterns and pipeline annotations |
 | `src/europeana_qlever/ask/` | NL-to-SPARQL / NL-to-DuckDB agents, shared EDM domain notes, benchmark runner and question set |
 | `src/europeana_qlever/grasp/` | Bundled GRASP resource files (SPARQL templates, prefix mappings) used by `write-grasp-config` and `grasp-setup` |
-| `src/europeana_qlever/report_questions/` | Bundled default report question YAML files (copied to `<work-dir>/reports/questions/` by `write-report-config`) |
+| `src/europeana_qlever/report_questions/` | Bundled report question YAML files (read directly by `report`; edit in place to customise) |
 | `references/ontologies/metis-schema/` | Europeana metis-schema XSD + OWL source files (copied from GitHub) |
 | `references/ontologies/external/` | Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, ODRL, etc.) |
 | `references/vocabularies/metis-vocabularies/` | Europeana's Metis vocabulary registry — authority URI patterns + XSL mappings (the source of truth for `x_authority` classification) |
@@ -525,7 +521,6 @@ Files in `src/europeana_qlever/grasp/`:
 | `exports/` | Parquet output files — `<name>.parquet` for values_* / composites, `<name>/x_property=<col>/data.parquet` directories for Hive-partitioned links_* tables (TSV intermediates are deleted) |
 | `analysis/` | Query performance analysis Markdown reports |
 | `reports/` | Report output (JSON + Markdown) |
-| `reports/questions/` | Report question YAML files (user-customisable; bootstrapped by `write-report-config`) |
 | `grasp/` | GRASP runtime config (`europeana-grasp.yaml`, `europeana-notes.json`, search indices) |
 | `telemetry.jsonl` | Structured JSONL telemetry log (command spans, resource samples, stage events) |
 | `pipeline_state.json` | Pipeline checkpoint for resume-on-failure |

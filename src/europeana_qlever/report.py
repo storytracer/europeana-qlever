@@ -1,9 +1,10 @@
 """Composable report system over Europeana data.
 
-Reports are assembled from YAML question files in
-``{work_dir}/reports/questions/``.  Each YAML file defines a section with
-questions.  Questions can carry a pre-defined ``query`` (executed directly
-via DuckDB) or be answered by the ask agent (NL→SQL or NL→SPARQL).
+Reports are assembled from the YAML question files bundled in
+:mod:`europeana_qlever.report_questions`.  Each YAML file defines a
+section with questions.  Questions can carry a pre-defined ``query``
+(executed directly via DuckDB) or be answered by the ask agent
+(NL→SQL or NL→SPARQL).
 
 Filtering is schema-driven: :class:`ReportFilters` accepts any Item field
 name from the LinkML schema and generates the appropriate DuckDB SQL using
@@ -496,8 +497,7 @@ async def run_report(
     if not questions_dir.exists() or not list(questions_dir.glob("*.yml")):
         console.print(
             "[red]No question files found.[/red] "
-            f"Expected YAML files in {questions_dir}\n"
-            "Run [bold]write-report-config[/bold] to generate defaults."
+            f"Expected YAML files in {questions_dir}"
         )
         return Report()
 

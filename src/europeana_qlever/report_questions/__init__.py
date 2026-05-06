@@ -1,8 +1,7 @@
-"""Bundled default report question files.
+"""Bundled report question files.
 
-Copied to ``{work_dir}/reports/questions/`` by the ``write-report-config``
-CLI command.  Users can then customise the YAML files to add, remove, or
-modify report questions.
+Read directly by the ``report`` CLI command.  Edit the YAML files in this
+directory to add, remove, or modify report questions.
 """
 
 from pathlib import Path
