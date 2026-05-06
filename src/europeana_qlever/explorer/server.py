@@ -124,17 +124,17 @@ _CHO_PROXIES = "values_ore_Proxy.parquet"
 _CHO_TITLES = "links_ore_Proxy/x_property=v_dc_title/data.parquet"
 _CHO_PREFIX = "http://data.europeana.eu/item/"
 
-# Synthetic facets backed by map_edm_entities. User-facing names match
-# Europeana's own docs (Semantic enrichments page uses "places,
-# concepts, agents, time periods").
+# Synthetic facets backed by per-class explorer Parquets. User-facing
+# names match Europeana's own docs (Semantic enrichments page uses
+# "places, concepts, agents, time periods").
 _ENTITY_FACETS = (
-    # (facet name, entity class enum value from EntityClass)
-    ("Topics", "skos_Concept"),
-    ("Agents", "edm_Agent"),
-    ("Places", "edm_Place"),
-    ("Time periods", "edm_TimeSpan"),
+    # (facet name, entity class enum value, parquet filename, DuckDB table)
+    ("Topics",       "skos_Concept", "explorer_topics.parquet",  "explorer_topics"),
+    ("Agents",       "edm_Agent",    "explorer_agents.parquet",  "explorer_agents"),
+    ("Places",       "edm_Place",    "explorer_places.parquet",  "explorer_places"),
+    ("Time periods", "edm_TimeSpan", "explorer_periods.parquet", "explorer_periods"),
 )
-_EXPLORER_EDM_ENTITIES_PARQUET = "explorer_edm_entities.parquet"
+_FACET_TOP_N_PARQUET = "explorer_facet_top_n.parquet"
 
 
 class ExplorerEngine:
@@ -216,30 +216,42 @@ class ExplorerEngine:
             ))
 
     def _register_entity_facet_tables(self, exports_dir: Path) -> None:
-        """Register explorer_edm_entities as a DuckDB TABLE for synthetic facets.
+        """Register the per-class explorer tables and the top-N view.
 
-        Materialised as a real DuckDB TABLE (not a view) because the
-        SEMI JOIN against it is the hot path for every synthetic
-        facet's top-values query. The Parquet is already restricted to
-        Europeana-curated entities, deduplicated on
-        ``(k_iri_cho, k_iri_entity, x_entity_class)``, and carries
-        ``x_label`` (English prefLabel with IRI fallback) inline so
-        ``top_values`` can return labels in a single round-trip.
+        Each facet (Topics / Agents / Places / Time periods) is backed by
+        its own Parquet (``explorer_<facet>.parquet``) — these are
+        physical partitions of ``explorer_edm_entities`` produced by the
+        compose pipeline, sorted by ``k_iri_entity`` so DuckDB row-group
+        statistics can prune filtered scans. Each is materialised as a
+        DuckDB TABLE so the SEMI JOIN hot path scans an in-memory
+        columnar layout.
+
+        The precomputed top-N table (``explorer_facet_top_n``) is
+        registered as a view; ``top_values`` short-circuits to it when
+        no other filters are active, turning a multi-million-row
+        aggregation into a 500-row sorted lookup.
         """
-        path = exports_dir / _EXPLORER_EDM_ENTITIES_PARQUET
-        if not path.exists():
+        per_class_paths = [exports_dir / fn for _, _, fn, _ in _ENTITY_FACETS]
+        top_n_path = exports_dir / _FACET_TOP_N_PARQUET
+        if not all(p.exists() for p in per_class_paths) or not top_n_path.exists():
             return
 
         # DuckDB doesn't accept prepared parameters in DDL; escape quotes
         # manually (same convention as the items view above).
-        escaped = str(path).replace("'", "''")
+        for _, _, filename, table in _ENTITY_FACETS:
+            escaped = str(exports_dir / filename).replace("'", "''")
+            self.con.execute(
+                f"CREATE TABLE {table} AS SELECT * FROM read_parquet("
+                f"'{escaped}')"
+            )
+        top_n_escaped = str(top_n_path).replace("'", "''")
         self.con.execute(
-            "CREATE TABLE edm_entities AS SELECT * FROM read_parquet("
-            f"'{escaped}')"
+            "CREATE VIEW facet_top_n AS SELECT * FROM read_parquet("
+            f"'{top_n_escaped}')"
         )
         self.entity_facets_enabled = True
 
-        for name, cls in _ENTITY_FACETS:
+        for name, cls, _, table in _ENTITY_FACETS:
             col = {
                 "name": name,
                 "type": "ENTITY_IRI",
@@ -247,6 +259,7 @@ class ExplorerEngine:
                 "low_cardinality": False,
                 "synthetic": True,
                 "entity_class": cls,
+                "facet_table": table,
             }
             self.columns.append(col)
             self.column_set[name] = col
@@ -295,21 +308,21 @@ class ExplorerEngine:
                 continue  # silently drop unknown / malformed filters
             col_def = self.column_set[col]
             kind = f.get("kind")
-            # Synthetic facets resolve via SEMI JOIN to edm_entities,
-            # not by referencing a column on items.
+            # Synthetic facets resolve via SEMI JOIN to the per-class
+            # explorer table (no x_entity_class clause needed — the
+            # table is already pre-filtered to that class).
             if col_def.get("synthetic"):
                 if kind != "in":
                     continue
                 values = f.get("values") or []
                 if not isinstance(values, list) or not values:
                     continue
+                table = col_def["facet_table"]
                 placeholders = ", ".join(["?"] * len(values))
                 parts.append(
-                    "\"k_iri\" IN (SELECT k_iri_cho FROM edm_entities "
-                    f"WHERE x_entity_class = ? AND k_iri_entity IN "
-                    f"({placeholders}))"
+                    f"\"k_iri\" IN (SELECT k_iri_cho FROM {table} "
+                    f"WHERE k_iri_entity IN ({placeholders}))"
                 )
-                params.append(col_def["entity_class"])
                 params.extend(values)
                 continue
             q = f'"{col}"'
@@ -451,21 +464,33 @@ class ExplorerEngine:
         where, params = self._build_where(filters)
 
         if col_def.get("synthetic"):
-            # Rank entities of this class by how many CHOs in the
-            # currently-filtered items reference them, and return the
-            # entity's English prefLabel inline so the frontend can
-            # render without an async resolve_labels round-trip.
-            # ANY_VALUE(x_label) is safe — x_label is functionally
-            # determined by k_iri_entity by construction.
-            sql = (
-                "SELECT k_iri_entity AS v, ANY_VALUE(x_label) AS label,"
-                " COUNT(*) AS n\n"
-                "FROM edm_entities\n"
-                "WHERE x_entity_class = ?\n"
-                f"  AND k_iri_cho IN (SELECT k_iri FROM items {where})\n"
-                "GROUP BY 1 ORDER BY 3 DESC LIMIT ?"
-            )
-            args = [col_def["entity_class"], *params, limit + 1]
+            table = col_def["facet_table"]
+            # No other filters active → short-circuit to the precomputed
+            # top-N table (instant cold open, no aggregation cost).
+            # The frontend's CategoricalFacet already strips the current
+            # facet's own selection from `filters` before calling, so an
+            # empty `filters` here means "unfiltered everywhere".
+            if not filters:
+                sql = (
+                    "SELECT k_iri_entity AS v, x_label AS label,"
+                    " x_item_count AS n\n"
+                    "FROM facet_top_n\n"
+                    "WHERE x_entity_class = ?\n"
+                    "ORDER BY x_rank LIMIT ?"
+                )
+                args = [col_def["entity_class"], limit + 1]
+            else:
+                # Live aggregation against the per-class table.
+                # ANY_VALUE(x_label) is safe — x_label is functionally
+                # determined by k_iri_entity by construction.
+                sql = (
+                    "SELECT k_iri_entity AS v, ANY_VALUE(x_label) AS label,"
+                    " COUNT(*) AS n\n"
+                    f"FROM {table}\n"
+                    f"WHERE k_iri_cho IN (SELECT k_iri FROM items {where})\n"
+                    "GROUP BY 1 ORDER BY 3 DESC LIMIT ?"
+                )
+                args = [*params, limit + 1]
             with self.lock:
                 rows = self.con.execute(sql, args).fetchall()
             truncated = len(rows) > limit

@@ -1432,6 +1432,131 @@ classes:
           values_<class>. Falls back to k_iri_entity when no English
           prefLabel exists.
 
+  # =================================================================
+  # explorer_<class> — per-class slices for fast facet queries
+  # =================================================================
+  #
+  # Four physical partitions of explorer_edm_entities, one per EDM
+  # contextual class. The explorer registers each as its own DuckDB
+  # TABLE at startup so synthetic-facet queries don't need a
+  # WHERE x_entity_class = ? clause and Parquet row groups are
+  # already sorted by k_iri_entity for fast filtered scans.
+
+  ExplorerTopics:
+    description: >-
+      Per-class slice of explorer_edm_entities for skos:Concept
+      ("Topics" facet). Sorted by k_iri_entity for row-group pruning.
+    annotations:
+      table_name: explorer_topics
+      export_type: map
+      export_sets: "pipeline,explorer"
+      depends_on: "explorer_edm_entities"
+    attributes:
+      k_iri_cho:
+        range: uri
+        required: true
+      k_iri_entity:
+        range: uri
+        required: true
+      x_label:
+        range: string
+        required: true
+
+  ExplorerAgents:
+    description: >-
+      Per-class slice of explorer_edm_entities for edm:Agent
+      ("Agents" facet). Sorted by k_iri_entity for row-group pruning.
+    annotations:
+      table_name: explorer_agents
+      export_type: map
+      export_sets: "pipeline,explorer"
+      depends_on: "explorer_edm_entities"
+    attributes:
+      k_iri_cho:
+        range: uri
+        required: true
+      k_iri_entity:
+        range: uri
+        required: true
+      x_label:
+        range: string
+        required: true
+
+  ExplorerPlaces:
+    description: >-
+      Per-class slice of explorer_edm_entities for edm:Place
+      ("Places" facet). Sorted by k_iri_entity for row-group pruning.
+    annotations:
+      table_name: explorer_places
+      export_type: map
+      export_sets: "pipeline,explorer"
+      depends_on: "explorer_edm_entities"
+    attributes:
+      k_iri_cho:
+        range: uri
+        required: true
+      k_iri_entity:
+        range: uri
+        required: true
+      x_label:
+        range: string
+        required: true
+
+  ExplorerPeriods:
+    description: >-
+      Per-class slice of explorer_edm_entities for edm:TimeSpan
+      ("Time periods" facet). Sorted by k_iri_entity for row-group
+      pruning.
+    annotations:
+      table_name: explorer_periods
+      export_type: map
+      export_sets: "pipeline,explorer"
+      depends_on: "explorer_edm_entities"
+    attributes:
+      k_iri_cho:
+        range: uri
+        required: true
+      k_iri_entity:
+        range: uri
+        required: true
+      x_label:
+        range: string
+        required: true
+
+  # =================================================================
+  # explorer_facet_top_n — precomputed top-N entity per class
+  # =================================================================
+
+  ExplorerFacetTopN:
+    description: >-
+      Precomputed top-N entities per class, ranked by unfiltered CHO
+      count. Used by the explorer to render the initial (unfiltered)
+      facet view instantly — short-circuiting the live aggregation
+      against explorer_<class> when no other filters are active.
+    annotations:
+      table_name: explorer_facet_top_n
+      export_type: map
+      export_sets: "pipeline,explorer"
+      depends_on: "explorer_edm_entities"
+    attributes:
+      x_entity_class:
+        range: EntityClass
+        required: true
+      x_rank:
+        range: integer
+        required: true
+        description: 1-indexed rank within x_entity_class.
+      k_iri_entity:
+        range: uri
+        required: true
+      x_label:
+        range: string
+        required: true
+      x_item_count:
+        range: integer
+        required: true
+        description: Distinct CHOs that reference this entity.
+
 # ===================================================================
 # Pipeline metadata (top-level annotations)
 # ===================================================================

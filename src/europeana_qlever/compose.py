@@ -593,10 +593,81 @@ def explorer_edm_entities_steps() -> list[ComposeStep]:
                 "SELECT m.k_iri_cho, m.k_iri_entity, m.x_entity_class,\n"
                 "       COALESCE(l.x_label_en, m.k_iri_entity) AS x_label\n"
                 "FROM read_parquet('{exports_dir}/map_edm_entities.parquet') m\n"
-                "LEFT JOIN entity_labels l ON l.k_iri = m.k_iri_entity"
+                "LEFT JOIN entity_labels l ON l.k_iri = m.k_iri_entity\n"
+                # Sort so Parquet row-group min/max stats prune by class
+                # and entity — every facet query filters on these.
+                "ORDER BY m.x_entity_class, m.k_iri_entity"
             ),
         ),
     ]
+
+
+# ---------------------------------------------------------------------------
+# explorer_<class> — per-class slices of explorer_edm_entities
+# ---------------------------------------------------------------------------
+
+
+_EXPLORER_PER_CLASS_TABLES = {
+    # Parquet table_name → entity-class enum value
+    "explorer_topics":  "skos_Concept",
+    "explorer_agents":  "edm_Agent",
+    "explorer_places":  "edm_Place",
+    "explorer_periods": "edm_TimeSpan",
+}
+
+
+def _explorer_per_class_steps(class_value: str) -> list[ComposeStep]:
+    """One-step compose for a per-class slice of explorer_edm_entities.
+
+    Drops the redundant ``x_entity_class`` column (the file name encodes
+    the class) and sorts by ``k_iri_entity`` so subsequent filtered
+    facet queries get row-group pruning.
+    """
+    sql = (
+        "SELECT k_iri_cho, k_iri_entity, x_label\n"
+        "FROM read_parquet('{exports_dir}/explorer_edm_entities.parquet')\n"
+        f"WHERE x_entity_class = '{class_value}'\n"
+        "ORDER BY k_iri_entity"
+    )
+    return [ComposeStep(name="explorer_per_class_final", sql=sql, is_final=True)]
+
+
+# ---------------------------------------------------------------------------
+# explorer_facet_top_n — precomputed top-N per class for instant cold open
+# ---------------------------------------------------------------------------
+
+
+_EXPLORER_FACET_TOP_N_LIMIT = 500
+
+
+def explorer_facet_top_n_steps() -> list[ComposeStep]:
+    """Return compose steps for explorer_facet_top_n.
+
+    Aggregates explorer_edm_entities to one row per (class, entity)
+    with `x_item_count` and a per-class `x_rank`. Keeps only the top
+    `_EXPLORER_FACET_TOP_N_LIMIT` entities per class — enough to fill
+    the initial CategoricalFacet render without the explorer having
+    to run a live aggregation when no other filters are active.
+    """
+    sql = (
+        "WITH ranked AS (\n"
+        "  SELECT x_entity_class,\n"
+        "         k_iri_entity,\n"
+        "         ANY_VALUE(x_label) AS x_label,\n"
+        "         COUNT(*) AS x_item_count,\n"
+        "         ROW_NUMBER() OVER (\n"
+        "           PARTITION BY x_entity_class\n"
+        "           ORDER BY COUNT(*) DESC\n"
+        "         ) AS x_rank\n"
+        "  FROM read_parquet('{exports_dir}/explorer_edm_entities.parquet')\n"
+        "  GROUP BY 1, 2\n"
+        ")\n"
+        "SELECT x_entity_class, x_rank, k_iri_entity, x_label, x_item_count\n"
+        "FROM ranked\n"
+        f"WHERE x_rank <= {_EXPLORER_FACET_TOP_N_LIMIT}\n"
+        "ORDER BY x_entity_class, x_rank"
+    )
+    return [ComposeStep(name="explorer_facet_top_n_final", sql=sql, is_final=True)]
 
 
 # ---------------------------------------------------------------------------
@@ -623,6 +694,12 @@ def compose_steps_for(table_name: str) -> list[ComposeStep]:
             return map_edm_entities_steps()
         if table_name == "explorer_edm_entities":
             return explorer_edm_entities_steps()
+        if table_name in _EXPLORER_PER_CLASS_TABLES:
+            return _explorer_per_class_steps(
+                _EXPLORER_PER_CLASS_TABLES[table_name]
+            )
+        if table_name == "explorer_facet_top_n":
+            return explorer_facet_top_n_steps()
     return []
 
 
