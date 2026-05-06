@@ -172,7 +172,7 @@ class ReportFilters:
 
     Parse from a CLI string::
 
-        ReportFilters.parse("country=NL,FR type=IMAGE has_iiif completeness>=5")
+        ReportFilters.parse("country=NL,FR type=IMAGE has_iiif content_tier>=3")
 
     Merge two instances (``other`` wins for scalar conflicts)::
 
@@ -199,7 +199,7 @@ class ReportFilters:
             country=NL,FR           # in_list / eq
             reuse_level=open        # eq
             has_iiif                # boolean flag
-            completeness>=5         # range (min)
+            content_tier>=3         # range (min)
             width<=1000             # range (max)
 
         Raises :class:`click.BadParameter` for unknown field names.
@@ -335,7 +335,8 @@ def _resolve_key(key: str, specs: dict) -> str:
         "datasets": "v_edm_datasetName",
         "dataset_name": "v_edm_datasetName",
         "rights": "v_edm_rights",
-        "completeness": "v_edm_completeness",
+        "content_tier": "x_content_tier",
+        "metadata_tier": "x_metadata_tier",
         "reuse_level": "x_reuse_level",
         "has_iiif": "x_has_iiif",
         "mime_type": "v_ebucore_hasMimeType",

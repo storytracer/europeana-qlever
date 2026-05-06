@@ -37,6 +37,7 @@ prefixes:
   ebucore: http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#
   edm: http://www.europeana.eu/schemas/edm/
   foaf: http://xmlns.com/foaf/0.1/
+  oa: http://www.w3.org/ns/oa#
   odrl: http://www.w3.org/ns/odrl/2/
   ore: http://www.openarchives.org/ore/terms/
   owl: http://www.w3.org/2002/07/owl#
@@ -1129,6 +1130,73 @@ classes:
       x_value_lang: { range: string }
 
   # =================================================================
+  # values_publishing_tier — content/metadata tier per CHO
+  # =================================================================
+
+  PublishingTier:
+    description: >-
+      One row per CHO with the Europeana Publishing Framework content
+      and metadata tier URIs. Tiers live on edm:EuropeanaAggregation
+      via dqv:hasQualityAnnotation → oa:hasBody (see EDM.md §3.6 — the
+      provider/aggregator aggregations may carry duplicate annotations
+      but the canonical attachment is the Europeana-side aggregation,
+      which has stable 1:1 cardinality with the CHO). Each branch of
+      the UNION binds the tier URI directly in the triple pattern, so
+      QLever uses POS-segment lookups instead of scanning every
+      oa:hasBody triple and post-filtering — the previous VALUES form
+      could not be pushed into the index scan and forced a 195M-row
+      sort.
+    class_uri: edm:ProvidedCHO
+    annotations:
+      table_name: values_publishing_tier
+      export_type: values
+      export_sets: "pipeline,raw"
+      sparql_base_pattern: "?_eagg a edm:EuropeanaAggregation . ?_eagg edm:aggregatedCHO ?k_iri ."
+      sparql_extra: |
+        ?_eagg dqv:hasQualityAnnotation ?_qa_ct .
+        {
+          { ?_qa_ct oa:hasBody <http://www.europeana.eu/schemas/epf/contentTier0> . BIND(<http://www.europeana.eu/schemas/epf/contentTier0> AS ?x_content_tier_uri) }
+          UNION
+          { ?_qa_ct oa:hasBody <http://www.europeana.eu/schemas/epf/contentTier1> . BIND(<http://www.europeana.eu/schemas/epf/contentTier1> AS ?x_content_tier_uri) }
+          UNION
+          { ?_qa_ct oa:hasBody <http://www.europeana.eu/schemas/epf/contentTier2> . BIND(<http://www.europeana.eu/schemas/epf/contentTier2> AS ?x_content_tier_uri) }
+          UNION
+          { ?_qa_ct oa:hasBody <http://www.europeana.eu/schemas/epf/contentTier3> . BIND(<http://www.europeana.eu/schemas/epf/contentTier3> AS ?x_content_tier_uri) }
+          UNION
+          { ?_qa_ct oa:hasBody <http://www.europeana.eu/schemas/epf/contentTier4> . BIND(<http://www.europeana.eu/schemas/epf/contentTier4> AS ?x_content_tier_uri) }
+        }
+        ?_eagg dqv:hasQualityAnnotation ?_qa_mt .
+        {
+          { ?_qa_mt oa:hasBody <http://www.europeana.eu/schemas/epf/metadataTier0> . BIND(<http://www.europeana.eu/schemas/epf/metadataTier0> AS ?x_metadata_tier_uri) }
+          UNION
+          { ?_qa_mt oa:hasBody <http://www.europeana.eu/schemas/epf/metadataTierA> . BIND(<http://www.europeana.eu/schemas/epf/metadataTierA> AS ?x_metadata_tier_uri) }
+          UNION
+          { ?_qa_mt oa:hasBody <http://www.europeana.eu/schemas/epf/metadataTierB> . BIND(<http://www.europeana.eu/schemas/epf/metadataTierB> AS ?x_metadata_tier_uri) }
+          UNION
+          { ?_qa_mt oa:hasBody <http://www.europeana.eu/schemas/epf/metadataTierC> . BIND(<http://www.europeana.eu/schemas/epf/metadataTierC> AS ?x_metadata_tier_uri) }
+        }
+      required_prefixes: "dqv,edm,oa"
+      sample_subject_variable: "k_iri"
+    attributes:
+      k_iri:
+        range: uri
+        required: true
+        identifier: true
+        description: CHO IRI (foreign key into values_edm_ProvidedCHO).
+        annotations:
+          sparql_binding: "?k_iri"
+      x_content_tier_uri:
+        range: uri
+        description: Content-tier URI (epf:contentTier0–4) on the EuropeanaAggregation.
+        annotations:
+          sparql_binding: "?x_content_tier_uri"
+      x_metadata_tier_uri:
+        range: uri
+        description: Metadata-tier URI (epf:metadataTier0/A/B/C) on the EuropeanaAggregation.
+        annotations:
+          sparql_binding: "?x_metadata_tier_uri"
+
+  # =================================================================
   # group_items — categorical dimensions for fast analytics
   # =================================================================
 
@@ -1146,17 +1214,17 @@ classes:
       depends_on: >-
         values_edm_ProvidedCHO, values_ore_Proxy, values_ore_Aggregation,
         values_edm_EuropeanaAggregation, values_edm_WebResource,
-        values_svcs_Service, links_ore_Proxy
+        values_svcs_Service, values_publishing_tier, links_ore_Proxy
     attributes:
       k_iri:
         range: uri
         required: true
         identifier: true
-      v_edm_completeness:
-        range: integer
       v_edm_country:
         range: string
       v_edm_dataProvider:
+        range: string
+      v_edm_datasetName:
         range: string
       v_edm_provider:
         range: string
@@ -1178,6 +1246,18 @@ classes:
         range: ReuseLevel
       x_rights_family:
         range: RightsFamily
+      x_content_tier:
+        range: integer
+        description: >-
+          Europeana Content Tier (0–4) for this item, derived from the
+          provider aggregation's epf:contentTierN quality annotation. NULL
+          when the annotation is missing.
+      x_metadata_tier:
+        range: string
+        description: >-
+          Europeana Metadata Tier (0, A, B, C) for this item, derived from
+          the provider aggregation's epf:metadataTierX quality annotation.
+          NULL when the annotation is missing.
 
   # =================================================================
   # map_rights — distinct rights URIs with classification

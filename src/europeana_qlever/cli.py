@@ -1287,6 +1287,9 @@ def analyze_static(
               help="Skip exports whose .parquet already exists.")
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget (e.g. '4GB' or 'auto').")
+@click.option("--duckdb-threads", type=int, default=None,
+              help="Override DuckDB thread count. Lower values reduce per-thread "
+                   "memory pressure on large composite exports (default: half CPU).")
 @click.option("--chunk-size", type=int, default=5_000_000, show_default=True,
               help="Rows per chunk for group_items composition. 0 disables "
                    "chunking (one-shot aggregation; uses more RAM).")
@@ -1326,6 +1329,7 @@ def export(
     timeout: int,
     skip_existing: bool,
     duckdb_memory: str,
+    duckdb_threads: int | None,
     chunk_size: int,
     keep_base: bool,
     reuse_tsv: bool,
@@ -1383,7 +1387,7 @@ def export(
             timeout=timeout,
             skip_existing=skip_existing,
             memory_limit=duckdb_memory,
-            duckdb_threads=budget.duckdb_threads(),
+            duckdb_threads=duckdb_threads if duckdb_threads is not None else budget.duckdb_threads(),
             temp_directory=exports_dir / ".duckdb_tmp",
             filters=filters,
             keep_base=keep_base,
@@ -1713,7 +1717,7 @@ def pipeline(
 @click.option("--questions", "-q", default=None,
               help="Comma-separated question IDs to include (e.g. total_items,by_type).")
 @click.option("--filters", "-f", "filter_string", default=None,
-              help='Filter expression, e.g. "country=NL,FR type=IMAGE reuse_level=open has_iiif completeness>=5"')
+              help='Filter expression, e.g. "country=NL,FR type=IMAGE reuse_level=open has_iiif content_tier>=3"')
 @click.option("--probe-urls", is_flag=True, default=False,
               help="Sample is_shown_by URLs and test HTTP liveness.")
 @click.option("--sample-size", default=1000, show_default=True,

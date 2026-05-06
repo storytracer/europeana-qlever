@@ -50,23 +50,22 @@ def _links_read(table_name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Trimmed to columns actually consumed downstream — every additional
+# column inflates the resident size of the 60M-row provider_agg /
+# europeana_agg temp tables, which dominates DuckDB's working set
+# during chunked group_items composition.
 _PROVIDER_AGG_COLS = [
     "v_edm_dataProvider",
-    "v_edm_isShownAt",
     "v_edm_isShownBy",
-    "v_edm_object",
     "v_edm_provider",
     "v_edm_rights",
 ]
 
 
 _EUROPEANA_AGG_COLS = [
-    "v_edm_completeness",
     "v_edm_country",
     "v_edm_datasetName",
-    "v_edm_landingPage",
     "v_edm_language",
-    "v_edm_preview",
 ]
 
 
@@ -123,32 +122,52 @@ def _europeana_agg_step(*, chunk_filter: bool = False) -> ComposeStep:
     return ComposeStep(name="europeana_agg", sql=sql)
 
 
-def _primary_wr_step() -> ComposeStep:
-    """Primary WebResource scalars per CHO (used by group_items for the
-    ``x_has_iiif`` flag).
+def _publishing_tier_step(*, chunk_filter: bool = False) -> ComposeStep:
+    """Europeana publishing-framework tier URIs per CHO.
+
+    Sourced from values_publishing_tier (EuropeanaAggregation →
+    dqv:hasQualityAnnotation → oa:hasBody, see EDM.md §3.6). The
+    upstream SPARQL is already 1:1 per CHO so no collapsing is
+    needed. Built per-chunk in chunked mode (the full ~32M-row table
+    would otherwise sit alongside provider_agg / europeana_agg /
+    primary_wr in DuckDB memory and tip the working set over the
+    budget); built once in one-shot mode.
+    """
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON t.k_iri = cc.k_iri"
+        if chunk_filter else ""
+    )
+    sql = (
+        f"{create} publishing_tier AS\n"
+        "SELECT t.k_iri AS k_iri,\n"
+        "       t.x_content_tier_uri AS x_content_tier_uri,\n"
+        "       t.x_metadata_tier_uri AS x_metadata_tier_uri\n"
+        "FROM read_parquet('{exports_dir}/values_publishing_tier.parquet') t"
+        + (f"\n{chunk_join}" if chunk_join else "")
+    )
+    return ComposeStep(name="publishing_tier", sql=sql)
+
+
+def _primary_wr_step(*, chunk_filter: bool = False) -> ComposeStep:
+    """Primary WebResource ``x_has_iiif`` flag per CHO.
 
     Reads from the already-1:1 ``provider_agg`` temp table so the join
     through ``v_edm_isShownBy`` is guaranteed at most one row per CHO.
     A defensive ``DISTINCT ON (k_iri)`` wrapper collapses any duplicate
-    WebResource rows that might slip through from upstream.
+    WebResource rows that might slip through from upstream. Only the
+    boolean flag is projected — the WebResource scalar columns aren't
+    consumed by group_items and were inflating the resident temp table
+    by ~25 GB on the full dataset. In chunked mode this rebuilds per
+    chunk (provider_agg is itself chunk-filtered) so the working set
+    stays small.
     """
-    wr_cols = [
-        "v_ebucore_audioChannelNumber", "v_ebucore_bitRate", "v_ebucore_duration",
-        "v_ebucore_fileByteSize", "v_ebucore_frameRate", "v_ebucore_hasMimeType",
-        "v_ebucore_height", "v_ebucore_orientation", "v_ebucore_sampleRate",
-        "v_ebucore_sampleSize", "v_ebucore_width",
-        "v_edm_codecName", "v_edm_hasColorSpace",
-        "v_edm_pointCount", "v_edm_polygonCount", "v_edm_spatialResolution",
-        "v_edm_vertexCount",
-        "v_schema_digitalSourceType",
-    ]
-    select_cols = ",\n       ".join(f"wr.{c} AS {c}" for c in wr_cols)
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
     sql = (
-        "CREATE TEMP TABLE primary_wr AS\n"
-        f"SELECT DISTINCT ON (pa.k_iri)\n"
-        f"       pa.k_iri AS k_iri,\n"
-        f"       {select_cols},\n"
-        f"       (svc.k_iri_webresource IS NOT NULL) AS x_has_iiif\n"
+        f"{create} primary_wr AS\n"
+        "SELECT DISTINCT ON (pa.k_iri)\n"
+        "       pa.k_iri AS k_iri,\n"
+        "       (svc.k_iri_webresource IS NOT NULL) AS x_has_iiif\n"
         "FROM provider_agg pa\n"
         "JOIN read_parquet('{exports_dir}/values_edm_WebResource.parquet') wr\n"
         "     ON pa.v_edm_isShownBy = wr.k_iri\n"
@@ -282,9 +301,9 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
     """
     select_parts = [
         "cho.k_iri AS k_iri",
-        "eagg.v_edm_completeness AS v_edm_completeness",
         "eagg.v_edm_country AS v_edm_country",
         "agg.v_edm_dataProvider AS v_edm_dataProvider",
+        "eagg.v_edm_datasetName AS v_edm_datasetName",
         "agg.v_edm_provider AS v_edm_provider",
         "europeana_proxy_scalars.v_edm_type AS v_edm_type",
         "(agg.v_edm_isShownBy IS NOT NULL) AS x_has_content_url",
@@ -295,6 +314,8 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
         "eagg.v_edm_language AS x_primary_language",
         f"{reuse_level_sql('agg.v_edm_rights')} AS x_reuse_level",
         f"{duckdb_family_case('agg.v_edm_rights')} AS x_rights_family",
+        "TRY_CAST(REGEXP_EXTRACT(tier.x_content_tier_uri, 'contentTier([0-9])$', 1) AS INTEGER) AS x_content_tier",
+        "NULLIF(REGEXP_EXTRACT(tier.x_metadata_tier_uri, 'metadataTier([0A-C])$', 1), '') AS x_metadata_tier",
     ]
     select_parts.sort(key=lambda s: s.rsplit(" AS ", 1)[1] if " AS " in s else s)
     select_str = ",\n  ".join(select_parts)
@@ -310,6 +331,7 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
         f"{chunk_join}"
         "LEFT JOIN provider_agg agg ON agg.k_iri = cho.k_iri\n"
         "LEFT JOIN europeana_agg eagg ON eagg.k_iri = cho.k_iri\n"
+        "LEFT JOIN publishing_tier tier ON tier.k_iri = cho.k_iri\n"
         "LEFT JOIN europeana_proxy_scalars ON europeana_proxy_scalars.k_iri = cho.k_iri\n"
         "LEFT JOIN primary_wr ON primary_wr.k_iri = cho.k_iri\n"
         "LEFT JOIN (SELECT k_iri FROM provider_proxy_properties "
@@ -326,16 +348,16 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
 def group_items_shared_steps() -> list[ComposeStep]:
     """CHO-independent steps for group_items chunked runs.
 
-    ``provider_agg`` / ``europeana_agg`` / ``primary_wr`` read the raw
-    Aggregation / EuropeanaAggregation / WebResource Parquets which
-    don't depend on ``chunk_chos``; materializing them once avoids N
-    redundant full-file scans across the chunk loop.
+    Only ``cho_numbered`` is truly chunk-independent (it provides the
+    stable ROW_NUMBER → chunk-window mapping). All other temp tables
+    that previously lived here (``provider_agg`` / ``europeana_agg`` /
+    ``primary_wr``) are now built per-chunk: their ``DISTINCT ON``
+    sorts on the full 60M-row aggregation tables exceeded DuckDB's
+    memory budget even at 32 GB, and the per-chunk redundant Parquet
+    reads are cheap by comparison.
     """
     return [
         _cho_numbered_step(),
-        _provider_agg_step(),
-        _europeana_agg_step(),
-        _primary_wr_step(),
     ]
 
 
@@ -346,7 +368,11 @@ def group_items_chunk_steps() -> list[ComposeStep]:
     """
     return [
         _chunk_chos_step(),
+        _provider_agg_step(chunk_filter=True),
+        _europeana_agg_step(chunk_filter=True),
+        _primary_wr_step(chunk_filter=True),
         _proxy_cho_step(chunk_filter=True),
+        _publishing_tier_step(chunk_filter=True),
         _provider_proxy_properties_step(chunk_filter=True),
         _europeana_proxy_scalars_step(chunk_filter=True),
         _group_items_final_step(chunk_filter=True),
@@ -362,6 +388,7 @@ def group_items_steps() -> list[ComposeStep]:
         _proxy_cho_step(),
         _provider_agg_step(),
         _europeana_agg_step(),
+        _publishing_tier_step(),
         _primary_wr_step(),
         _provider_proxy_properties_step(),
         _europeana_proxy_scalars_step(),

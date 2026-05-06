@@ -792,7 +792,15 @@ class ExportProgress:
     # -- Composite lane (reuses convert bar) -------------------------------
 
     def begin_composite(self, name: str, total_steps: int) -> None:
-        """Use the convert lane to track DuckDB compose step progress."""
+        """Use the convert lane to track DuckDB compose step progress.
+
+        For non-chunked composites the unit is a compose step. For chunked
+        composites the caller should pass ``total_steps=num_chunks`` and
+        only advance once per chunk completion (via ``composite_step``);
+        per-step status text inside a chunk is sent via
+        ``composite_status`` which updates the description without
+        advancing the bar.
+        """
         if not self._enabled:
             return
         self._cvt_progress.reset(
@@ -807,6 +815,16 @@ class ExportProgress:
         if not self._enabled:
             return
         self._cvt_progress.update(self._cvt_task, advance=1)
+
+    def composite_status(self, label: str) -> None:
+        """Update the convert-lane description without advancing the bar.
+
+        Used by the chunked compose path to display the current step
+        within a chunk while the bar tracks chunks-completed.
+        """
+        if not self._enabled:
+            return
+        self._cvt_progress.update(self._cvt_task, description=label)
 
     def end_composite(self) -> None:
         """Reset the convert lane to idle after a composite finishes."""
@@ -1286,13 +1304,21 @@ class ExportPipeline:
                 f"  {total_chos:,} CHOs → {num_chunks} chunk(s) of {chunk_size:,}"
             )
 
-        progress_total = len(shared) + num_chunks * len(per_chunk) + 1  # +1 combine
+        # Bar tracks chunks (the meaningful unit for the user), not the
+        # ~65 internal compose steps. Each step within a chunk updates
+        # the description for visual feedback; only chunk completion
+        # advances the bar so MofN / ETA are interpretable.
         if ui is not None and ui.enabled:
-            ui.begin_composite(export.name, progress_total)
+            ui.begin_composite(export.name, num_chunks)
 
         try:
             # Shared steps: labels + cho_numbered (built once, reused across chunks).
             for i, step in enumerate(shared, 1):
+                if ui is not None and ui.enabled:
+                    ui.composite_status(
+                        f"[magenta]compose[/magenta] {export.name} "
+                        f"· prep · {step.name}"
+                    )
                 sql = step.sql.replace("{exports_dir}", dir_str)
                 t0 = time.perf_counter()
                 con.execute(sql)
@@ -1302,8 +1328,6 @@ class ExportPipeline:
                         f"  [dim][shared {i}/{len(shared)}][/dim] "
                         f"{step.name} ({elapsed:.1f}s)"
                     )
-                if ui is not None and ui.enabled:
-                    ui.composite_step(step.name)
 
             # Chunk loop.
             chunk_paths: list[Path] = []
@@ -1319,8 +1343,7 @@ class ExportPipeline:
                             f"skip (exists: {chunk_path.name})"
                         )
                     if ui is not None and ui.enabled:
-                        for _ in per_chunk:
-                            ui.composite_step("chunk-skip")
+                        ui.composite_step("chunk-skip")
                     continue
 
                 chunk_start = idx * chunk_size
@@ -1328,6 +1351,11 @@ class ExportPipeline:
                 chunk_t0 = time.perf_counter()
 
                 for j, step in enumerate(per_chunk, 1):
+                    if ui is not None and ui.enabled:
+                        ui.composite_status(
+                            f"[magenta]compose[/magenta] {export.name} "
+                            f"· chunk {idx + 1}/{num_chunks} · {step.name}"
+                        )
                     sql = (
                         step.sql
                         .replace("{exports_dir}", dir_str)
@@ -1349,8 +1377,6 @@ class ExportPipeline:
                             f"  [dim][chunk {nn} {j}/{len(per_chunk)}][/dim] "
                             f"{step.name} ({elapsed:.1f}s)"
                         )
-                    if ui is not None and ui.enabled:
-                        ui.composite_step(step.name)
 
                 con.execute("CHECKPOINT")
                 if self._verbose:
@@ -1359,8 +1385,14 @@ class ExportPipeline:
                         f"  [magenta]chunk {nn} done[/magenta] "
                         f"({total_elapsed:.1f}s)"
                     )
+                if ui is not None and ui.enabled:
+                    ui.composite_step("chunk-done")
 
             # Combine: idempotent union into the final Parquet.
+            if ui is not None and ui.enabled:
+                ui.composite_status(
+                    f"[magenta]compose[/magenta] {export.name} · combine"
+                )
             combine_t0 = time.perf_counter()
             glob_pattern = str(self._output_dir / f"{export.name}_chunk_*.parquet")
             parquet_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1378,8 +1410,6 @@ class ExportPipeline:
                     f"  [magenta]combined {num_chunks} chunk(s)[/magenta] "
                     f"({time.perf_counter()-combine_t0:.1f}s)"
                 )
-            if ui is not None and ui.enabled:
-                ui.composite_step("combine")
 
             count: int = con.execute(
                 f"SELECT COUNT(*) FROM '{parquet_path}'"

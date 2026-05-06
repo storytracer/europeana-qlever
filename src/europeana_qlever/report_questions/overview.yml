@@ -1,5 +1,5 @@
 name: Overview
-description: A quick scan of Europeana holdings — volume, rights, providers, languages, content coverage, media, and completeness. Favours fast scalar scans over group_items and values_edm_WebResource.
+description: A quick scan of Europeana holdings — volume, rights, providers, languages, content coverage, and media. Favours fast scalar scans over group_items and values_edm_WebResource.
 
 questions:
   - id: total_items
@@ -104,17 +104,6 @@ questions:
              round(count(*) FILTER (WHERE x_has_creator)     * 100.0 / count(*), 2) AS pct_creator,
              round(count(*) FILTER (WHERE x_has_subject)     * 100.0 / count(*), 2) AS pct_subject
       FROM group_items
-
-  - id: completeness_distribution
-    question: "Completeness score distribution"
-    backend: parquet
-    query: |
-      SELECT v_edm_completeness AS score,
-             count(*) AS count,
-             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
-      FROM group_items
-      GROUP BY v_edm_completeness
-      ORDER BY v_edm_completeness
 
   - id: web_resource_stats
     question: "Web resource totals and per-item density"
