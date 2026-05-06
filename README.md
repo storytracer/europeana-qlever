@@ -503,10 +503,13 @@ Files in `src/europeana_qlever/grasp/`:
 | `src/europeana_qlever/ask/` | NL-to-SPARQL / NL-to-DuckDB agents, shared EDM domain notes, benchmark runner and question set |
 | `src/europeana_qlever/grasp/` | Bundled GRASP resource files (SPARQL templates, prefix mappings) used by `write-grasp-config` and `grasp-setup` |
 | `src/europeana_qlever/report_questions/` | Bundled default report question YAML files (copied to `<work-dir>/reports/questions/` by `write-report-config`) |
-| `ontologies/metis-schema/` | Europeana metis-schema XSD + OWL source files (copied from GitHub) |
-| `ontologies/external/` | Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, ODRL, etc.) |
-| `scripts/` | Standalone uv scripts for schema generation and documentation sync |
-| `scripts/generate-edm-schema.py` | Generate `schema/edm.yaml` from metis-schema XSD+OWL and external ontologies |
+| `references/ontologies/metis-schema/` | Europeana metis-schema XSD + OWL source files (copied from GitHub) |
+| `references/ontologies/external/` | Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, ODRL, etc.) |
+| `references/vocabularies/metis-vocabularies/` | Europeana's Metis vocabulary registry — authority URI patterns + XSL mappings (the source of truth for `x_authority` classification) |
+| `scripts/` | Standalone uv scripts for schema generation and reference sync |
+| `scripts/update-all.py` | Orchestrator — runs every `update-*.py` in dependency order |
+| `scripts/update-edm-schema.py` | Regenerate `schema/edm.yaml` from metis-schema XSD+OWL and external ontologies |
+| `scripts/update-metis-vocabularies.py` | Sync Europeana's Metis vocabulary registry |
 | `scripts/update-qlever-docs.py` | Sync QLever docs from upstream GitHub repo |
 | `scripts/update-europeana-docs.py` | Sync Europeana KB from Confluence (anonymous, incremental) |
 | `docs/europeana/EDM.md` | Europeana Data Model reference — narrative overview of EDM entities, namespaces, rights framework |
@@ -529,15 +532,21 @@ Files in `src/europeana_qlever/grasp/`:
 
 ## Updating documentation and schemas
 
-The EDM schema, ontology sources, and documentation are updated via standalone uv scripts:
+The EDM schema, ontology sources, vocabulary registry, and documentation are updated via standalone uv scripts. Run them all at once or individually:
 
 ```bash
-uv run scripts/generate-edm-schema.py      # Regenerate schema/edm.yaml from ontology sources
-uv run scripts/update-qlever-docs.py        # Sync QLever docs from GitHub (full replace)
-uv run scripts/update-europeana-docs.py     # Sync Europeana KB from Confluence (incremental)
+uv run scripts/update-all.py                   # Run every update-*.py in dependency order
+uv run scripts/update-edm-schema.py            # Regenerate schema/edm.yaml from ontology sources
+uv run scripts/update-metis-vocabularies.py    # Sync Europeana's Metis vocabulary registry
+uv run scripts/update-qlever-docs.py           # Sync QLever docs from GitHub (full replace)
+uv run scripts/update-europeana-docs.py        # Sync Europeana KB from Confluence (incremental)
 ```
 
-The `generate-edm-schema.py` script clones the official [europeana/metis-schema](https://github.com/europeana/metis-schema) repository, copies XSD+OWL files to `ontologies/metis-schema/`, fetches external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, etc.) to `ontologies/external/`, and generates `schema/edm.yaml` with descriptions from all sources. Use `--no-external-descriptions` to skip incorporating external ontology descriptions.
+`update-all.py` accepts `--only NAME [...]` and `--skip NAME [...]` to scope a run; e.g. `uv run scripts/update-all.py --only metis-vocabularies`.
+
+The `update-edm-schema.py` script clones the official [europeana/metis-schema](https://github.com/europeana/metis-schema) repository, copies XSD+OWL files to `references/ontologies/metis-schema/`, fetches external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, etc.) to `references/ontologies/external/`, and generates `schema/edm.yaml` with descriptions from all sources. Use `--no-external-descriptions` to skip incorporating external ontology descriptions.
+
+The `update-metis-vocabularies.py` script clones [europeana/metis-vocabularies](https://github.com/europeana/metis-vocabularies) and copies the resources tree (47 YAML metadata files + 46 XSL mapping files) to `references/vocabularies/metis-vocabularies/`. This registry is Europeana's own canonical list of authority URI patterns used by Metis enrichment — the runtime helper `schema_loader.metis_vocabularies()` loads it on demand and is the source of truth for `x_authority` classification on `map_sameAs`.
 
 The Europeana script uses `confluence-markdown-exporter` with anonymous access. A lockfile (`docs/europeana/confluence-lock.json`) tracks Confluence page version numbers so subsequent runs only re-export changed pages. Local attachment references are rewritten to remote Confluence download URLs so no binary files are committed.
 

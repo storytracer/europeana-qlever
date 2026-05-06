@@ -11,15 +11,15 @@ metis-schema GitHub repository, and produces a LinkML YAML schema at
 
 External ontology files (DC, DCTERMS, SKOS, FOAF, etc.) are fetched to provide
 descriptions for non-EDM properties. All ontology files are cached in the
-``ontologies/`` directory. Use ``--no-external-descriptions`` to skip
-incorporating external descriptions into the schema.
+``references/ontologies/`` directory. Use ``--no-external-descriptions`` to
+skip incorporating external descriptions into the schema.
 
 The script is idempotent — re-run it whenever Europeana publishes a new EDM
 version to regenerate the schema.
 
 Usage:
-    uv run scripts/generate-edm-schema.py
-    uv run scripts/generate-edm-schema.py --no-external-descriptions
+    uv run scripts/update-edm-schema.py
+    uv run scripts/update-edm-schema.py --no-external-descriptions
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ ELEMENT_CLASS_DEFS: dict[str, tuple[str, str]] = {
 }
 
 # Ontology cache directory (project root)
-ONTOLOGIES_DIR = PROJECT_ROOT / "ontologies"
+ONTOLOGIES_DIR = PROJECT_ROOT / "references" / "ontologies"
 METIS_SCHEMA_DIR = ONTOLOGIES_DIR / "metis-schema"
 
 # External ontology sources: prefix → (URL, rdflib format, filename)
@@ -900,7 +900,7 @@ def _ensure_metis_schema() -> Path:
         print(f"ERROR: OWL file not found at {src_owl}", file=sys.stderr)
         sys.exit(1)
 
-    # Copy needed files to ontologies/metis-schema/
+    # Copy needed files to references/ontologies/metis-schema/
     print(f"Copying metis-schema files to {dest}...")
     dest.mkdir(parents=True, exist_ok=True)
     if xsd_dest.exists():

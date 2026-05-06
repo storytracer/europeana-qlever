@@ -1,0 +1,188 @@
+name: Entity enrichment coverage
+description: Coverage and multilingual depth of contextual entity references on CHOs. ``map_cho_entities`` covers anything typed as ``edm:Agent``/``edm:Place``/``skos:Concept``/``edm:TimeSpan`` that a CHO references — Europeana-curated entities (under ``data.europeana.eu``), externally-dereferenced entities pulled in by Metis (Wikidata, GND, VIAF, Getty, GeoNames, etc.), and provider-supplied local IRIs alike. For source-tier splits and Metis-coverage details, see the ``external_links`` section.
+
+questions:
+  - id: cho_enrichment_total
+    question: "Total CHOs with at least one contextual entity reference"
+    backend: parquet
+    query: |
+      WITH total AS (SELECT count(*) AS n FROM group_items)
+      SELECT (SELECT n FROM total)                                                  AS total_chos,
+             count(DISTINCT k_iri_cho)                                              AS chos_with_any_enrichment,
+             round(count(DISTINCT k_iri_cho) * 100.0 / (SELECT n FROM total), 2)    AS pct
+      FROM map_cho_entities
+
+  - id: cho_enrichment_europeana_vs_other
+    question: "How many CHOs link to a Europeana entity (data.europeana.eu/...), to other entities (external authorities or provider-supplied), to both, or to neither?"
+    backend: parquet
+    query: |
+      WITH total AS (SELECT count(*) AS n FROM group_items),
+      classified AS (
+          SELECT k_iri_cho,
+                 starts_with(k_iri_entity, 'http://data.europeana.eu/') AS is_europeana
+          FROM map_cho_entities
+      ),
+      per_cho AS (
+          SELECT k_iri_cho,
+                 max(is_europeana::int) > 0      AS has_europeana,
+                 max((NOT is_europeana)::int) > 0 AS has_other
+          FROM classified
+          GROUP BY k_iri_cho
+      )
+      SELECT
+          count(*) FILTER (WHERE has_europeana AND has_other)         AS with_both,
+          count(*) FILTER (WHERE has_europeana AND NOT has_other)     AS only_europeana,
+          count(*) FILTER (WHERE NOT has_europeana AND has_other)     AS only_other,
+          (SELECT n FROM total) - count(*)                            AS with_neither,
+          round(count(*) FILTER (WHERE has_europeana) * 100.0
+                 / (SELECT n FROM total), 2)                          AS pct_with_europeana,
+          round(count(*) FILTER (WHERE has_other) * 100.0
+                 / (SELECT n FROM total), 2)                          AS pct_with_other
+      FROM per_cho
+
+  - id: cho_enrichment_by_class
+    question: "CHO enrichment coverage by entity class"
+    backend: parquet
+    query: |
+      WITH total AS (SELECT count(*) AS n FROM group_items)
+      SELECT x_entity_class                                                          AS entity_class,
+             count(DISTINCT k_iri_cho)                                               AS chos_linked,
+             round(count(DISTINCT k_iri_cho) * 100.0 / (SELECT n FROM total), 2)     AS pct_of_chos,
+             count(DISTINCT k_iri_entity)                                            AS distinct_entities
+      FROM map_cho_entities
+      GROUP BY x_entity_class
+      ORDER BY chos_linked DESC
+
+  - id: cho_enrichment_by_property
+    question: "Which provider properties carry the most enrichment links"
+    backend: parquet
+    query: |
+      WITH total AS (SELECT count(*) AS n FROM group_items)
+      SELECT x_property                                                              AS property,
+             x_entity_class                                                          AS entity_class,
+             count(DISTINCT k_iri_cho)                                               AS chos_linked,
+             round(count(DISTINCT k_iri_cho) * 100.0 / (SELECT n FROM total), 2)     AS pct_of_chos
+      FROM map_cho_entities
+      GROUP BY x_property, x_entity_class
+      ORDER BY chos_linked DESC
+      LIMIT 25
+
+  - id: preflabel_langs_entity_weighted
+    question: "Distinct prefLabel languages per entity, distribution (entity-weighted)"
+    backend: parquet
+    query: |
+      WITH per_entity AS (
+          SELECT 'edm_Agent'    AS class, k_iri, count(DISTINCT x_prefLabel_lang) AS n_langs
+          FROM values_edm_Agent     WHERE x_prefLabel_lang IS NOT NULL GROUP BY k_iri
+          UNION ALL
+          SELECT 'edm_Place',          k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_edm_Place     WHERE x_prefLabel_lang IS NOT NULL GROUP BY k_iri
+          UNION ALL
+          SELECT 'skos_Concept',       k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_skos_Concept  WHERE x_prefLabel_lang IS NOT NULL GROUP BY k_iri
+          UNION ALL
+          SELECT 'edm_TimeSpan',       k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_edm_TimeSpan  WHERE x_prefLabel_lang IS NOT NULL GROUP BY k_iri
+      ),
+      bucketed AS (
+          SELECT class,
+                 CASE
+                     WHEN n_langs = 1 THEN '1'
+                     WHEN n_langs BETWEEN 2 AND 5  THEN '2-5'
+                     WHEN n_langs BETWEEN 6 AND 10 THEN '6-10'
+                     WHEN n_langs BETWEEN 11 AND 20 THEN '11-20'
+                     WHEN n_langs > 20 THEN '20+'
+                 END AS bucket,
+                 CASE
+                     WHEN n_langs = 1 THEN 1
+                     WHEN n_langs BETWEEN 2 AND 5  THEN 2
+                     WHEN n_langs BETWEEN 6 AND 10 THEN 3
+                     WHEN n_langs BETWEEN 11 AND 20 THEN 4
+                     WHEN n_langs > 20 THEN 5
+                 END AS sort_key
+          FROM per_entity
+      )
+      SELECT class                                                              AS entity_class,
+             bucket                                                             AS prefLabel_languages,
+             count(*)                                                           AS entities,
+             round(count(*) * 100.0 / sum(count(*)) OVER (PARTITION BY class), 2) AS pct_of_class
+      FROM bucketed
+      GROUP BY class, bucket, sort_key
+      ORDER BY class, sort_key
+
+  - id: preflabel_langs_cho_weighted
+    question: "Distinct prefLabel languages reached per CHO reference (CHO-weighted, what users actually see)"
+    backend: parquet
+    query: |
+      WITH entity_langs AS (
+          SELECT 'edm_Agent'    AS class, k_iri, count(DISTINCT x_prefLabel_lang) AS n_langs
+          FROM values_edm_Agent     WHERE x_prefLabel_lang IS NOT NULL GROUP BY k_iri
+          UNION ALL
+          SELECT 'edm_Place',          k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_edm_Place     WHERE x_prefLabel_lang IS NOT NULL GROUP BY k_iri
+          UNION ALL
+          SELECT 'skos_Concept',       k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_skos_Concept  WHERE x_prefLabel_lang IS NOT NULL GROUP BY k_iri
+          UNION ALL
+          SELECT 'edm_TimeSpan',       k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_edm_TimeSpan  WHERE x_prefLabel_lang IS NOT NULL GROUP BY k_iri
+      ),
+      cho_view AS (
+          SELECT m.x_entity_class AS class,
+                 m.k_iri_cho,
+                 e.n_langs
+          FROM map_cho_entities m
+          LEFT JOIN entity_langs e ON m.k_iri_entity = e.k_iri AND m.x_entity_class = e.class
+      ),
+      bucketed AS (
+          SELECT class,
+                 CASE
+                     WHEN n_langs IS NULL OR n_langs = 0 THEN '0 (no prefLabel)'
+                     WHEN n_langs = 1 THEN '1'
+                     WHEN n_langs BETWEEN 2 AND 5  THEN '2-5'
+                     WHEN n_langs BETWEEN 6 AND 10 THEN '6-10'
+                     WHEN n_langs BETWEEN 11 AND 20 THEN '11-20'
+                     WHEN n_langs > 20 THEN '20+'
+                 END AS bucket,
+                 CASE
+                     WHEN n_langs IS NULL OR n_langs = 0 THEN 0
+                     WHEN n_langs = 1 THEN 1
+                     WHEN n_langs BETWEEN 2 AND 5  THEN 2
+                     WHEN n_langs BETWEEN 6 AND 10 THEN 3
+                     WHEN n_langs BETWEEN 11 AND 20 THEN 4
+                     WHEN n_langs > 20 THEN 5
+                 END AS sort_key,
+                 k_iri_cho
+          FROM cho_view
+      )
+      SELECT class                                                                  AS entity_class,
+             bucket                                                                 AS prefLabel_languages,
+             count(DISTINCT k_iri_cho)                                              AS distinct_chos,
+             round(count(DISTINCT k_iri_cho) * 100.0
+                   / sum(count(DISTINCT k_iri_cho)) OVER (PARTITION BY class), 2)   AS pct_of_class_chos
+      FROM bucketed
+      GROUP BY class, bucket, sort_key
+      ORDER BY class, sort_key
+
+  - id: enrichment_class_breadth
+    question: "Number of distinct enrichment entity classes per CHO"
+    backend: parquet
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(DISTINCT x_entity_class) AS n_classes
+          FROM map_cho_entities
+          GROUP BY k_iri_cho
+      ),
+      with_zero AS (
+          SELECT n_classes FROM per_cho
+          UNION ALL
+          SELECT 0 AS n_classes
+          FROM group_items g
+          WHERE NOT EXISTS (SELECT 1 FROM map_cho_entities m WHERE m.k_iri_cho = g.k_iri)
+      )
+      SELECT n_classes                                                AS distinct_entity_classes,
+             count(*)                                                 AS chos,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2)       AS pct
+      FROM with_zero
+      GROUP BY n_classes
+      ORDER BY n_classes

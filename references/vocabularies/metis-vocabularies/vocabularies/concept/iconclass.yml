@@ -1,0 +1,10 @@
+name: IconClass concepts
+types:
+- CONCEPT
+paths:
+- https://iconclass.org/
+resourceUrlTemplate: ${resourceId}.rdf
+examples:
+- https://iconclass.org/11(+5)
+- https://iconclass.org/46D3
+- https://iconclass.org/25H11

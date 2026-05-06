@@ -1,0 +1,5 @@
+name: Dismarc Genres
+types:
+- CONCEPT
+paths:
+- http://purl.org/dismarc/ns/dmGenres/

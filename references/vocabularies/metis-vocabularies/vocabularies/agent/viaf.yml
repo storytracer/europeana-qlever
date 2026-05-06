@@ -1,0 +1,11 @@
+name: Virtual International Authority File (VIAF)
+types:
+- AGENT
+paths:
+- http://viaf.org/viaf/
+examples:
+- http://viaf.org/viaf/13114421
+- http://viaf.org/viaf/110233335
+- http://viaf.org/viaf/38465
+counterExamples:
+- http://viaf.org/viaf/271359876

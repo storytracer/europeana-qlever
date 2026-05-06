@@ -1,0 +1,7 @@
+name: PartagePlus
+types:
+- CONCEPT
+paths:
+- http://partage.vocnet.org/
+examples:
+- http://partage.vocnet.org/part00036

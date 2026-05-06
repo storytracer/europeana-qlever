@@ -1,0 +1,8 @@
+name: WWI Data Europeana from Loc
+types:
+- CONCEPT
+paths:
+- http://data.europeana.eu/concept/loc
+parentIterations: 1
+examples:
+- http://data.europeana.eu/concept/loc/sh2008113795

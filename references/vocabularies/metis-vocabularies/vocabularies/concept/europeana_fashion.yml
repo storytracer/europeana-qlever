@@ -1,0 +1,8 @@
+name: Fashion Vocabulary
+types:
+- CONCEPT
+paths:
+- http://thesaurus.europeanafashion.eu/thesaurus/
+userAgent: "Apache-HttpClient/5 (Java/21)"
+examples:
+- http://thesaurus.europeanafashion.eu/thesaurus/10397

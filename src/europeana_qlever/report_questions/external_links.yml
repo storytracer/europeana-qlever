@@ -1,0 +1,153 @@
+name: External entity links
+description: Coverage and validity of owl:sameAs links from Europeana contextual entities. map_sameAs carries x_well_formed (basic LOD-URI hygiene check) and x_metis_known (matches a vocabulary in the Metis registry, references/vocabularies/metis-vocabularies/). x_authority is set only when both are true. The Metis-coverage diagnostic shows what fraction of referenced authority IRIs Metis actually dereferenced into local data — that's the gap between "we have an external link" and "we have local entity data".
+
+questions:
+  - id: link_validity_breakdown
+    question: "Same-as link well-formedness and Metis-recognition breakdown"
+    backend: parquet
+    query: |
+      WITH classified AS (
+          SELECT
+              CASE
+                  WHEN x_well_formed AND x_metis_known    THEN 'well-formed + Metis-known'
+                  WHEN x_well_formed AND NOT x_metis_known THEN 'well-formed + outside Metis'
+                  WHEN v_owl_sameAs IS NULL OR v_owl_sameAs = '' THEN 'malformed: empty'
+                  WHEN regexp_matches(v_owl_sameAs, '\s')        THEN 'malformed: whitespace'
+                  WHEN regexp_matches(v_owl_sameAs, '\$\d')      THEN 'malformed: template_artefact'
+                  WHEN regexp_matches(v_owl_sameAs, '^file://')  THEN 'malformed: non_lod_scheme (file://)'
+                  WHEN NOT regexp_matches(v_owl_sameAs, '^https?://') THEN 'malformed: non_lod_scheme (other)'
+                  ELSE                                                  'malformed: bad_authority'
+              END AS bucket,
+              v_owl_sameAs
+          FROM map_sameAs
+      )
+      SELECT bucket,
+             count(*)                                            AS sameas_links,
+             count(DISTINCT v_owl_sameAs)                        AS distinct_iris,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2)  AS pct_of_links
+      FROM classified
+      GROUP BY bucket
+      ORDER BY sameas_links DESC
+
+  - id: links_by_authority
+    question: "Distinct external IRIs and same-as triple count, by Metis authority"
+    backend: parquet
+    query: |
+      SELECT x_authority                  AS authority,
+             count(DISTINCT v_owl_sameAs) AS distinct_external_iris,
+             count(*)                     AS sameas_links
+      FROM map_sameAs
+      WHERE x_well_formed AND x_metis_known
+      GROUP BY x_authority
+      ORDER BY distinct_external_iris DESC
+
+  - id: entities_linked_by_authority
+    question: "Linked Europeana entities by class and Metis authority, with % of class total"
+    backend: parquet
+    query: |
+      WITH totals AS (
+          SELECT 'edm_Agent' AS class, count(DISTINCT k_iri) AS total FROM values_edm_Agent
+          UNION ALL SELECT 'edm_Place',    count(DISTINCT k_iri) FROM values_edm_Place
+          UNION ALL SELECT 'skos_Concept', count(DISTINCT k_iri) FROM values_skos_Concept
+          UNION ALL SELECT 'edm_TimeSpan', count(DISTINCT k_iri) FROM values_edm_TimeSpan
+      ),
+      linked AS (
+          SELECT x_entity_class        AS class,
+                 x_authority,
+                 count(DISTINCT k_iri) AS linked_entities
+          FROM map_sameAs
+          WHERE x_well_formed AND x_metis_known
+          GROUP BY 1, 2
+      )
+      SELECT l.class                                              AS entity_class,
+             l.x_authority                                        AS authority,
+             l.linked_entities,
+             t.total                                              AS total_entities,
+             round(l.linked_entities * 100.0 / t.total, 2)        AS pct_of_class
+      FROM linked l
+      JOIN totals t ON l.class = t.class
+      ORDER BY l.class, l.linked_entities DESC
+
+  - id: top_outside_metis_hosts
+    question: "Top hosts among well-formed but outside-Metis IRIs (candidate authorities)"
+    backend: parquet
+    query: |
+      SELECT regexp_extract(v_owl_sameAs, 'https?://([^/]+)', 1) AS host,
+             count(*)                                             AS sameas_links,
+             count(DISTINCT v_owl_sameAs)                         AS distinct_iris,
+             count(DISTINCT k_iri)                                AS linked_europeana_entities
+      FROM map_sameAs
+      WHERE x_well_formed AND NOT x_metis_known
+      GROUP BY host
+      HAVING count(*) >= 50000
+      ORDER BY sameas_links DESC
+      LIMIT 25
+
+  - id: cho_coverage_by_authority
+    question: "CHOs reachable from each Metis authority via map_cho_entities → map_sameAs"
+    backend: parquet
+    query: |
+      WITH total AS (SELECT count(*) AS n FROM group_items)
+      SELECT s.x_authority                                                          AS authority,
+             count(DISTINCT m.k_iri_cho)                                            AS chos_linked,
+             round(count(DISTINCT m.k_iri_cho) * 100.0 / (SELECT n FROM total), 2)  AS pct_of_chos
+      FROM map_cho_entities m
+      JOIN map_sameAs s ON m.k_iri_entity = s.k_iri
+      WHERE s.x_well_formed AND s.x_metis_known
+      GROUP BY s.x_authority
+      ORDER BY chos_linked DESC
+
+  - id: metis_dereferencing_coverage
+    question: "For each Metis authority, what fraction of referenced IRIs were actually dereferenced into local entity data?"
+    backend: parquet
+    query: |
+      WITH refs AS (
+          -- Distinct external IRIs referenced via owl:sameAs from Europeana entities,
+          -- grouped by the Metis authority they belong to.
+          SELECT DISTINCT x_authority AS authority, v_owl_sameAs AS iri
+          FROM map_sameAs
+          WHERE x_well_formed AND x_metis_known
+      ),
+      local_entities AS (
+          -- IRIs that appear as subjects of typed entities in our index.
+          -- If Metis dereferenced an external IRI it shows up here; otherwise it doesn't.
+          SELECT DISTINCT k_iri AS iri FROM values_edm_Agent
+          UNION
+          SELECT DISTINCT k_iri          FROM values_edm_Place
+          UNION
+          SELECT DISTINCT k_iri          FROM values_skos_Concept
+          UNION
+          SELECT DISTINCT k_iri          FROM values_edm_TimeSpan
+      ),
+      joined AS (
+          SELECT r.authority,
+                 r.iri,
+                 CASE WHEN l.iri IS NOT NULL THEN 1 ELSE 0 END AS has_local_data
+          FROM refs r
+          LEFT JOIN local_entities l ON r.iri = l.iri
+      )
+      SELECT authority,
+             count(*)                                                         AS distinct_refs,
+             sum(has_local_data)                                              AS dereferenced,
+             round(sum(has_local_data) * 100.0 / count(*), 2)                 AS pct_dereferenced
+      FROM joined
+      GROUP BY authority
+      ORDER BY distinct_refs DESC
+
+  - id: multi_authority_overlap
+    question: "Distribution of distinct Metis authorities per linked Europeana entity"
+    backend: parquet
+    query: |
+      WITH per_entity AS (
+          SELECT k_iri,
+                 count(DISTINCT x_authority) AS n_authorities
+          FROM map_sameAs
+          WHERE x_well_formed AND x_metis_known
+          GROUP BY k_iri
+      )
+      SELECT n_authorities,
+             count(*)                                            AS entities,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2)  AS pct
+      FROM per_entity
+      GROUP BY n_authorities
+      ORDER BY n_authorities

@@ -1,0 +1,8 @@
+name: Israel Museum Jerusalem objects
+types:
+- CONCEPT
+paths:
+- http://www.imj.org.il/imagine/thesaurus/objects
+resourceUrlTemplate: ${resourceId}.rdf
+examples:
+- http://www.imj.org.il/imagine/thesaurus/objects/T15729

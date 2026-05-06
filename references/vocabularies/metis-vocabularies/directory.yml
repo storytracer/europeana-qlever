@@ -1,0 +1,183 @@
+# AAT - Getty Art and Architecture Thesaurus
+- metadata: vocabularies/concept/aat.yml
+  mapping: vocabularies/concept/aat.xsl
+
+# Adamlink - Amsterdam
+- metadata: vocabularies/multitype/adamlink.yml
+  mapping: vocabularies/multitype/adamlink.xsl
+
+# Brinkman - Subjects that the National Library of the Netherlands assigns to publications
+- metadata: vocabularies/concept/brinkman.yml
+  mapping: vocabularies/concept/brinkman.xsl
+
+# DeBias vocabulary
+- metadata: vocabularies/concept/debias.yml
+  mapping: vocabularies/concept/debias.xsl
+
+# Dismarc Format - Discover Music Archives (Europeana)
+- metadata: vocabularies/concept/dismarc_format.yml
+  mapping: vocabularies/concept/dismarc_format.xsl
+
+# Dismarc Genres - Discover Music Archives (Europeana)
+- metadata: vocabularies/concept/dismarc_genres.yml
+  mapping: vocabularies/concept/dismarc_genres.xsl
+
+# EAGLE - Europeana network of Ancient Greek and Latin Epigraphy
+- metadata: vocabularies/concept/eagle.yml
+  mapping: vocabularies/concept/eagle.xsl
+
+# Europeana Fashion
+- metadata: vocabularies/concept/europeana_fashion.yml
+  mapping: vocabularies/concept/europeana_fashion.xsl
+
+# Europeana Sounds
+- metadata: vocabularies/concept/europeana_sounds.yml
+  mapping: vocabularies/concept/europeana_sounds.xsl
+
+# Europeana WWI
+- metadata: vocabularies/concept/europeana_ww1.yml
+  mapping: vocabularies/concept/europeana_ww1.xsl
+
+# EuroVoc - European Data
+- metadata: vocabularies/concept/eurovoc.yml
+  mapping: vocabularies/concept/eurovoc.xsl
+
+# Geonames
+- metadata: vocabularies/place/geonames.yml
+  mapping: vocabularies/place/geonames.xsl
+
+# Gemeinsame Normdatei (GND) Collections - Deutsche Nationalbibliothek
+- metadata: vocabularies/gnd/gnd.yml
+  mapping: vocabularies/gnd/gnd.xsl
+
+# Homosaurus
+- metadata: vocabularies/concept/homosaurus.yml
+  mapping: vocabularies/concept/homosaurus.xsl
+
+# Iconclass
+- metadata: vocabularies/concept/iconclass.yml
+  mapping: vocabularies/concept/iconclass.xsl
+
+# IMJ (Israel Museum Jerusalem)
+- metadata: vocabularies/concept/imj.yml
+  mapping: vocabularies/concept/imj.xsl
+
+# IED - Indisch Erfgoed Thesaurus
+- metadata: vocabularies/multitype/ied.yml
+  mapping: vocabularies/multitype/ied.xsl
+
+# Kamp Westerbork Thesaurus
+- metadata: vocabularies/concept/westerbork.yml
+  mapping: vocabularies/concept/westerbork.xsl
+
+# KulturNav (Norway)
+- metadata: vocabularies/agent/kulturnav.yml
+  mapping: vocabularies/agent/kulturnav.xsl
+
+# LCNAF - Library of Congress Name Authority File
+- metadata: vocabularies/concept/lcnaf.yml
+  mapping: vocabularies/concept/lcnaf.xsl
+
+# LCSH - Library of Congress Subject Headings
+- metadata: vocabularies/concept/lcsh.yml
+  mapping: vocabularies/concept/lcsh.xsl
+
+# MIMO Agents - Musical Instrument Museums Online
+- metadata: vocabularies/agent/mimo.yml
+  mapping: vocabularies/agent/mimo.xsl
+
+# MIMO Concepts - Musical Instrument Museums Online
+- metadata: vocabularies/concept/mimo.yml
+  mapping: vocabularies/concept/mimo.xsl
+
+# Muziekschatten - Musical Treasures
+- metadata: vocabularies/multitype/muziekschatten.yml
+  mapping: vocabularies/multitype/muziekschatten.xsl
+
+# Objektbezeichnungsdatei (OBG)
+- metadata: vocabularies/concept/obg.yml
+  mapping: vocabularies/concept/obg.xsl
+
+# Partage Plus
+- metadata: vocabularies/concept/partage_plus.yml
+  mapping: vocabularies/concept/partage_plus.xsl
+
+# Rijksdienst Cultureel Erfgoed - Archeologisch Basis Register (ABR)
+- metadata: vocabularies/cultureelerfgoed/abr.yml
+  mapping: vocabularies/cultureelerfgoed/abr.xsl
+
+# Rijksdienst Cultureel Erfgoed - Colonial Past (KV)
+- metadata: vocabularies/cultureelerfgoed/kv.yml
+  mapping: vocabularies/cultureelerfgoed/kv.xsl
+
+# Rijksdienst Cultureel Erfgoed - Cultural Heritage Thesaurus (CHT)
+- metadata: vocabularies/cultureelerfgoed/cht.yml
+  mapping: vocabularies/cultureelerfgoed/cht.xsl
+
+# Rijksdienst Cultureel Erfgoed - Common Thesaurus for Audiovisual Archives (GTAA)
+- metadata: vocabularies/cultureelerfgoed/gtaa.yml
+  mapping: vocabularies/cultureelerfgoed/gtaa.xsl
+
+# Rijksdienst Cultureel Erfgoed - WO2 Biografieën (WO2B)
+- metadata: vocabularies/cultureelerfgoed/wo2b.yml
+  mapping: vocabularies/cultureelerfgoed/wo2b.xsl
+
+# Rijksdienst Cultureel Erfgoed - WO2 Thesaurus (WO2T)
+- metadata: vocabularies/cultureelerfgoed/wo2t.yml
+  mapping: vocabularies/cultureelerfgoed/wo2t.xsl
+
+# SearchCulture - Cultural Heritage Item Types
+- metadata: vocabularies/searchculture/chit.yml
+  mapping: vocabularies/searchculture/chit.xsl
+
+# SearchCulture - Thematic Tags
+- metadata: vocabularies/searchculture/tt.yml
+  mapping: vocabularies/searchculture/tt.xsl
+
+# SearchCulture - UNESCO Thesaurus
+- metadata: vocabularies/searchculture/unesco_t.yml
+  mapping: vocabularies/searchculture/unesco_t.xsl
+
+# SearchCulture - Greek Historical Periods
+- metadata: vocabularies/searchculture/ghp.yml
+  mapping: vocabularies/searchculture/ghp.xsl
+
+# SearchCulture - Figures in Greek History and Culture
+- metadata: vocabularies/searchculture/fghc.yml
+  mapping: vocabularies/searchculture/fghc.xsl
+
+# SearchCulture - Folklore Item Types
+- metadata: vocabularies/searchculture/fit.yml
+  mapping: vocabularies/searchculture/fit.xsl
+
+# TGN - Getty Thesaurus of Geographic Names
+- metadata: vocabularies/place/tgn.yml
+  mapping: vocabularies/place/tgn.xsl
+
+# Thesaurus Historic Personal Data (THP) - Persons in Context
+- metadata: vocabularies/concept/thp.yml
+  mapping: vocabularies/concept/thp.xsl
+
+# UDC - Universal Decimal Classification
+- metadata: vocabularies/concept/udc.yml
+  mapping: vocabularies/concept/udc.xsl
+
+# ULAN - Getty Union List of Artist Names
+- metadata: vocabularies/agent/ulan.yml
+  mapping: vocabularies/agent/ulan.xsl
+
+# UNESCO - United Nations Educational, Scientific and Cultural Organization
+- metadata: vocabularies/concept/unesco.yml
+  mapping: vocabularies/concept/unesco.xsl
+
+# VIAF - Virtual International Authority File
+- metadata: vocabularies/agent/viaf.yml
+  mapping: vocabularies/agent/viaf.xsl
+
+# Wikidata
+- metadata: vocabularies/wikidata/wikidata.yml
+  mapping: vocabularies/wikidata/wikidata.xsl
+
+# YSO - General Finnish Ontology
+- metadata: vocabularies/concept/yso.yml
+  mapping: vocabularies/concept/yso.xsl

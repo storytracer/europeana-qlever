@@ -1,0 +1,8 @@
+name: EAGLE_vocabulary
+types:
+- CONCEPT
+paths:
+- https://www.eagle-network.eu/voc/material/lod/
+resourceUrlTemplate: ${resourceId}.rdf
+examples:
+- https://www.eagle-network.eu/voc/material/lod/113

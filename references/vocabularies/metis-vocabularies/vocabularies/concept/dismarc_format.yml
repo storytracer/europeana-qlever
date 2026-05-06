@@ -1,0 +1,5 @@
+name: Dismarc Format
+types:
+- CONCEPT
+paths:
+- http://purl.org/dismarc/ns/dmFormats/

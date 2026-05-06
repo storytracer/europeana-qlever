@@ -17,7 +17,9 @@ from .rights import duckdb_family_case, duckdb_is_open_case, duckdb_label_case
 from .schema_loader import (
     authority_sql,
     export_classes,
+    metis_known_sql,
     reuse_level_sql,
+    well_formed_sql,
 )
 
 
@@ -402,12 +404,19 @@ def map_sameAs_steps() -> list[ComposeStep]:
         ("links_skos_Concept", "skos_Concept"),
         ("links_edm_TimeSpan", "edm_TimeSpan"),
     ]
+    well_formed_expr = well_formed_sql("x_value")
+    metis_known_expr = metis_known_sql("x_value")
     auth_case = authority_sql("x_value")
     unions = []
     for table, ecls in source_tables:
         unions.append(
-            f"SELECT k_iri, x_value AS v_owl_sameAs,\n"
-            f"       {auth_case} AS x_authority,\n"
+            f"SELECT k_iri,\n"
+            f"       x_value AS v_owl_sameAs,\n"
+            f"       {well_formed_expr} AS x_well_formed,\n"
+            f"       {metis_known_expr} AS x_metis_known,\n"
+            f"       CASE WHEN {well_formed_expr} AND {metis_known_expr}\n"
+            f"            THEN {auth_case}\n"
+            f"            ELSE NULL END AS x_authority,\n"
             f"       '{ecls}' AS x_entity_class\n"
             f"FROM {_links_read(table)}\n"
             f"WHERE x_property = 'v_owl_sameAs'"
@@ -416,6 +425,8 @@ def map_sameAs_steps() -> list[ComposeStep]:
     select_parts = [
         "k_iri",
         "v_owl_sameAs",
+        "x_well_formed",
+        "x_metis_known",
         "x_authority",
         "x_entity_class",
     ]

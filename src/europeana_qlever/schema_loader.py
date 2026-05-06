@@ -337,30 +337,187 @@ def reuse_level_sql(rights_column: str = "v_edm_rights") -> str:
 
 
 @functools.cache
-def authority_patterns() -> dict[str, str]:
-    """Return authority name → URI prefix mapping."""
-    annots = _annots(schema_view().schema)
-    raw = annots.get("authority_patterns", "")
-    result: dict[str, str] = {}
-    for pair in _parse_csv(raw):
-        if "=" not in pair:
+def metis_vocabularies() -> dict[str, "MetisVocabulary"]:
+    """Load Metis vocabulary metadata from references/vocabularies/metis-vocabularies/.
+
+    The Metis enrichment pipeline (europeana/metis-vocabularies) defines
+    one YAML metadata file per authoritative vocabulary it dereferences.
+    Each file declares the URI ``paths`` Metis recognises plus entity
+    types, examples, and content-negotiation hints. We adopt this as the
+    source of truth for "is this URI an authority Europeana knows about?".
+
+    Returns a mapping from short name (filename stem) to :class:`MetisVocabulary`.
+    """
+    import yaml
+
+    root = (
+        Path(__file__).resolve().parent.parent.parent
+        / "references" / "vocabularies" / "metis-vocabularies" / "vocabularies"
+    )
+    if not root.is_dir():
+        raise RuntimeError(
+            f"Metis vocabularies not found at {root}. "
+            "Run scripts/update-metis-vocabularies.py to vendor them."
+        )
+
+    # Metis splits some vocabularies across multiple YAML files when one
+    # logical vocabulary needs different XSL transforms per entity type
+    # (e.g. mimo.yml lives under both agent/ and concept/ because MIMO
+    # has Agent-typed and Concept-typed entities with different mappings).
+    # For URI classification we don't care about the XSL split — they're
+    # the same authority — so we merge entries that share a filename stem,
+    # taking the union of paths and types and the longest common name
+    # prefix as the display name.
+    stem_groups: dict[str, list[tuple[Path, dict]]] = {}
+    for path in sorted(root.rglob("*.yml")):
+        with path.open() as f:
+            raw = yaml.safe_load(f)
+        if not isinstance(raw, dict) or "paths" not in raw:
             continue
-        name, prefix = pair.split("=", 1)
-        result[name.strip()] = prefix.strip()
-    return result
+        stem_groups.setdefault(path.stem, []).append((path, raw))
+
+    out: dict[str, MetisVocabulary] = {}
+    for name, group in stem_groups.items():
+        merged_types: list[str] = []
+        merged_paths: list[str] = []
+        display_names: list[str] = []
+        for _, raw in group:
+            display_names.append(str(raw.get("name", name)))
+            t = raw.get("types") or []
+            if isinstance(t, str):
+                t = [t]
+            for v in t:
+                if v not in merged_types:
+                    merged_types.append(v)
+            p = raw.get("paths") or []
+            if isinstance(p, str):
+                p = [p]
+            for v in p:
+                if v not in merged_paths:
+                    merged_paths.append(v)
+        out[name] = MetisVocabulary(
+            name=name,
+            display_name=_common_name(display_names),
+            types=tuple(merged_types),
+            paths=tuple(merged_paths),
+        )
+    return out
+
+
+def _common_name(names: list[str]) -> str:
+    """Pick a representative display name from one or more variants.
+
+    For a single name, return it unchanged. For multiple, return the
+    longest shared prefix split on " - " (e.g. "MIMO - Persons" and
+    "MIMO - General Concepts" → "MIMO"); fall back to the first name
+    if no shared prefix exists.
+    """
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    parts_per_name = [n.split(" - ") for n in names]
+    common: list[str] = []
+    for fragments in zip(*parts_per_name):
+        if all(f == fragments[0] for f in fragments):
+            common.append(fragments[0])
+        else:
+            break
+    return " - ".join(common) if common else names[0]
+
+
+@dataclass(frozen=True)
+class MetisVocabulary:
+    """One row from the Metis vocabulary registry."""
+
+    name: str
+    display_name: str
+    types: tuple[str, ...]
+    paths: tuple[str, ...]
+
+
+def well_formed_sql(value_column: str = "x_value") -> str:
+    """Generate a DuckDB BOOLEAN expression for basic LOD-URI hygiene.
+
+    True when the value passes our syntactic checks: HTTP(S) scheme,
+    well-formed authority component, no embedded whitespace, no
+    obvious template-substitution artefacts (e.g. unexpanded ``$N``
+    placeholders left in the IRI).
+
+    This is *not* RFC 3987 IRI grammar — just enough to rule out
+    obviously broken values that should never participate in
+    authority classification.
+    """
+    return (
+        "("
+        f"{value_column} IS NOT NULL "
+        f"AND {value_column} <> '' "
+        f"AND NOT regexp_matches({value_column}, '\\s') "
+        f"AND NOT regexp_matches({value_column}, '\\$\\d') "
+        f"AND regexp_matches({value_column}, '^https?://[a-zA-Z0-9.-]+/')"
+        ")"
+    )
+
+
+def _metis_path_to_prefix_check(path: str, value_column: str) -> str:
+    """Produce a SQL expression that matches *value_column* against a Metis path.
+
+    Metis paths are recorded with a specific scheme (some HTTP, some
+    HTTPS — inconsistently). To honour Metis as the source of truth for
+    the host + path while accepting either scheme on the data side,
+    we strip the scheme from the Metis path and emit a regex check.
+    """
+    import re
+
+    stripped = re.sub(r"^https?://", "", path)
+    # Escape regex metacharacters in the host/path portion.
+    escaped = re.escape(stripped)
+    pattern = f"^https?://{escaped}"
+    return f"regexp_matches({value_column}, '{pattern}')"
+
+
+def metis_known_sql(value_column: str = "x_value") -> str:
+    """Generate a DuckDB BOOLEAN expression: does *value_column* match any Metis vocabulary?
+
+    True when the IRI's prefix matches at least one path in the Metis
+    registry (with scheme tolerance). Honest framing: we recognise the
+    vocabulary, we have *not* probed the URL for resolvability.
+
+    Should be combined with :func:`well_formed_sql` — a malformed IRI
+    may coincidentally pass the regex.
+    """
+    paths = [p for v in metis_vocabularies().values() for p in v.paths]
+    if not paths:
+        return "FALSE"
+    clauses = [_metis_path_to_prefix_check(p, value_column) for p in paths]
+    return "(" + " OR ".join(clauses) + ")"
 
 
 def authority_sql(value_column: str = "x_value") -> str:
-    """Generate a DuckDB ``CASE/WHEN`` for authority classification."""
-    patterns = authority_patterns()
-    clauses = [
-        f"WHEN STARTS_WITH({value_column}, '{prefix}') THEN '{name}'"
-        for name, prefix in patterns.items()
-    ]
+    """Generate a DuckDB ``CASE/WHEN`` returning the matching Metis vocabulary name.
+
+    Returns the vocabulary's short name (e.g. ``'wikidata'``, ``'aat'``,
+    ``'gnd'``) when the IRI matches one of its paths. Multiple paths
+    per vocabulary are OR'd. Callers should gate the result on
+    ``well_formed_sql() AND metis_known_sql()`` and emit ``NULL`` when
+    either is false.
+    """
+    vocabs = metis_vocabularies()
+    clauses: list[str] = []
+    for vocab in vocabs.values():
+        per_vocab = [
+            _metis_path_to_prefix_check(p, value_column) for p in vocab.paths
+        ]
+        if not per_vocab:
+            continue
+        match = "(" + " OR ".join(per_vocab) + ")"
+        clauses.append(f"WHEN {match} THEN '{vocab.name}'")
+    if not clauses:
+        return "NULL"
     lines = "\n          ".join(clauses)
     return f"""CASE
           {lines}
-          ELSE 'other'
+          ELSE NULL
         END"""
 
 

@@ -92,16 +92,13 @@ enums:
       unknown: {}
 
   Authority:
-    permissible_values:
-      wikidata: {}
-      viaf: {}
-      isni: {}
-      gnd: {}
-      bnf: {}
-      loc: {}
-      geonames: {}
-      dbpedia: {}
-      other: {}
+    description: >-
+      Short name of a Metis vocabulary (filename stem under
+      references/vocabularies/metis-vocabularies/vocabularies/, e.g.
+      ``wikidata``, ``aat``, ``gnd``). Range is open by design — the set
+      of known authorities is sourced from the Metis registry and
+      changes whenever it's resynced. Not enumerated here to avoid
+      drift.
 
 classes:
 
@@ -1231,8 +1228,29 @@ classes:
         required: true
       v_owl_sameAs:
         range: uri
+      x_well_formed:
+        range: boolean
+        description: >-
+          True when v_owl_sameAs passes basic LOD-URI hygiene checks:
+          HTTP(S) scheme, well-formed authority, no whitespace or
+          template artefacts. Not RFC 3987 grammar conformance — just
+          enough to rule out obviously broken values. Required for
+          x_authority to be set.
+      x_metis_known:
+        range: boolean
+        description: >-
+          True when v_owl_sameAs matches the prefix of a vocabulary in
+          the Metis registry (references/vocabularies/metis-vocabularies/).
+          Honest framing: we recognise the vocabulary, we have not
+          probed the URL for resolvability. Required for x_authority to
+          be set.
       x_authority:
         range: Authority
+        description: >-
+          Metis vocabulary short name when x_well_formed AND
+          x_metis_known; NULL otherwise. Use WHERE x_well_formed AND
+          x_metis_known in queries that need only Metis-recognised
+          authority links.
       x_entity_class:
         range: EntityClass
 
@@ -1282,13 +1300,9 @@ annotations:
     http://rightsstatements.org/vocab/NoC-OKLR/1.0/,
     http://rightsstatements.org/vocab/InC-EDU/1.0/
 
-  # Authority patterns for classifying owl:sameAs target IRIs.
-  authority_patterns: >-
-    wikidata=http://www.wikidata.org/,
-    viaf=http://viaf.org/,
-    gnd=http://d-nb.info/gnd/,
-    isni=http://isni.org/,
-    loc=http://id.loc.gov/,
-    bnf=http://data.bnf.fr/,
-    geonames=http://sws.geonames.org/,
-    dbpedia=http://dbpedia.org/
+  # Authority recognition is sourced from references/vocabularies/metis-vocabularies/
+  # — Europeana's own registry of vocabularies its Metis pipeline knows about.
+  # Each vocabulary's metadata YAML declares the URI prefixes Metis treats as
+  # canonical. The schema_loader.metis_vocabularies() function loads them at
+  # runtime; no patterns are embedded here. To add or update authorities,
+  # re-run scripts/update-metis-vocabularies.py.

@@ -71,12 +71,17 @@ src/europeana_qlever/
     properties-info.sparql         # Runtime property detail lookup template
 README.md                         # General-purpose project README
 scripts/
-  generate-edm-schema.py          # uv script: generate schema/edm.yaml from ontology sources (XSD, OWL, external RDF)
+  update-all.py                   # uv script: orchestrator — runs all update-*.py in dependency order
+  update-edm-schema.py            # uv script: regenerate schema/edm.yaml from ontology sources (XSD, OWL, external RDF)
+  update-metis-vocabularies.py    # uv script: sync Europeana's Metis vocabulary registry
   update-qlever-docs.py           # uv script: sync QLever docs from upstream GitHub repo
   update-europeana-docs.py        # uv script: sync Europeana KB from Confluence (anonymous, incremental)
-ontologies/
-  metis-schema/                   # Europeana metis-schema XSD + OWL files (copied from GitHub clone)
-  external/                       # Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, etc.)
+references/                       # Vendored upstream specification artifacts (ontologies + URI registries)
+  ontologies/
+    metis-schema/                 # Europeana metis-schema XSD + OWL files (copied from GitHub clone)
+    external/                     # Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, etc.)
+  vocabularies/
+    metis-vocabularies/           # Europeana's Metis vocabulary registry — authority URI patterns + XSL mappings
 docs/
   qlever/docs/                    # QLever documentation (MkDocs source from upstream)
     quickstart.md, qleverfile.md, qlever-control.md, text-search.md,
@@ -224,15 +229,21 @@ Always read from these local copies rather than fetching from the web:
 
 ### Updating documentation
 
-Doc sets and ontologies are updated via standalone uv scripts:
+Doc sets and references are updated via standalone uv scripts:
 
 ```bash
-uv run scripts/generate-edm-schema.py      # Regenerate schema/edm.yaml from ontology sources
-uv run scripts/update-qlever-docs.py        # Sync QLever docs from GitHub (full replace)
-uv run scripts/update-europeana-docs.py     # Sync Europeana KB from Confluence (incremental)
+uv run scripts/update-all.py                   # Run every update-*.py in dependency order
+uv run scripts/update-edm-schema.py            # Regenerate schema/edm.yaml from ontology sources
+uv run scripts/update-metis-vocabularies.py    # Sync Europeana's Metis vocabulary registry
+uv run scripts/update-qlever-docs.py           # Sync QLever docs from GitHub (full replace)
+uv run scripts/update-europeana-docs.py        # Sync Europeana KB from Confluence (incremental)
 ```
 
-The `generate-edm-schema.py` script clones europeana/metis-schema to `/tmp`, copies XSD+OWL files to `ontologies/metis-schema/`, fetches external ontology RDF files (DC, DCTERMS, SKOS, FOAF, ORE, etc.) to `ontologies/external/`, and generates `edm.yaml` with descriptions from all sources. Description priority: EDM OWL > XSD annotations > external ontologies > hardcoded fallbacks. Use `--no-external-descriptions` to skip incorporating external descriptions.
+The orchestrator (`update-all.py`) accepts `--only NAME [...]` and `--skip NAME [...]` to scope a run; e.g. `uv run scripts/update-all.py --only metis-vocabularies`.
+
+The `update-edm-schema.py` script clones europeana/metis-schema to `/tmp`, copies XSD+OWL files to `references/ontologies/metis-schema/`, fetches external ontology RDF files (DC, DCTERMS, SKOS, FOAF, ORE, etc.) to `references/ontologies/external/`, and generates `edm.yaml` with descriptions from all sources. Description priority: EDM OWL > XSD annotations > external ontologies > hardcoded fallbacks. Use `--no-external-descriptions` to skip incorporating external descriptions.
+
+The `update-metis-vocabularies.py` script clones europeana/metis-vocabularies to `/tmp` and copies the `src/main/resources/` tree (47 YAML metadata files + 46 XSL mapping files) to `references/vocabularies/metis-vocabularies/`. This registry is Europeana's own canonical list of authority URI patterns used by Metis enrichment — the `schema_loader.metis_vocabularies()` helper loads the YAMLs at runtime and is the source of truth for `x_authority` classification on `map_sameAs`.
 
 The Europeana script uses `confluence-markdown-exporter` with anonymous access. A lockfile (`docs/europeana/confluence-lock.json`) tracks Confluence page version numbers so subsequent runs only re-export pages that changed. After export, local attachment references are rewritten to remote Confluence download URLs and the attachment files are deleted (so binary files are never committed).
 
@@ -270,13 +281,13 @@ The provider proxy (identified by `FILTER NOT EXISTS { ?proxy edm:europeanaProxy
 **Composite layer** (`group_items`, `map_*`):
 
 - `group_items` is a wide, scalar-only per-CHO table designed for fast analytics (grouping, filtering, counting) — all categorical/boolean/integer columns, no lists. Contains the computed `x_reuse_level`, `x_rights_family` and has_* boolean flags. A previous `merged_items` table that flattened multi-valued properties into LIST\<STRUCT\> columns was removed — the join tree did not fit in memory on the 60 M-CHO dataset, and downstream queries against the raw `links_ore_Proxy` Hive directory are both simpler and cheaper.
-- `map_rights` maps every distinct `edm:rights` URI to rights family and reuse level. `map_sameAs` collects cross-entity sameAs links. `map_cho_entities` resolves the CHO→entity reference graph.
+- `map_rights` maps every distinct `edm:rights` URI to rights family and reuse level. `map_sameAs` collects cross-entity sameAs links and tags each one with `x_well_formed` (basic IRI hygiene), `x_metis_known` (matches a vocabulary in the Metis registry, see `references/vocabularies/metis-vocabularies/`), and `x_authority` (Metis vocabulary short name when both bools are true; NULL otherwise). `map_cho_entities` resolves the CHO→entity reference graph.
 
 ## Conventions
 
 - All data-processing logic is in the Python CLI. No bash scripts for pipeline steps.
 - CLI commands are in `cli.py`, business logic in `merge.py`/`export.py`/`query.py`/`compose.py`/`rights.py`/`validate.py`/`throttle.py`, schema access in `schema_loader.py`, configuration in `constants.py`, resource detection in `resources.py`, live display in `dashboard.py`/`display.py`, state tracking in `state.py`, telemetry in `telemetry.py`, composable reporting in `report.py`, NL querying in `ask/`.
-- **Two-layer LinkML schema**: `schema/edm.yaml` is the primary source of truth for the EDM data model — 12 classes, 242 fully-described attributes generated from the metis-schema XSD+OWL, XSD documentation annotations, and external vocabulary ontologies (DC, DCTERMS, SKOS, FOAF, etc.) cached in `ontologies/`. `schema/edm_parquet.yaml` imports `edm.yaml` and declares all 29 export tables (14 `values_*` + 11 `links_*` + `group_items` + 3 `map_*`) as LinkML classes — each with `export_type`, `export_sets`, `sparql_base_pattern`, and per-column annotations. Runtime code reads the export schema via `schema_loader.py`. The base EDM schema serves as a "menu" for designing new exports; regenerate it with `uv run scripts/generate-edm-schema.py`.
+- **Two-layer LinkML schema**: `schema/edm.yaml` is the primary source of truth for the EDM data model — 12 classes, 242 fully-described attributes generated from the metis-schema XSD+OWL, XSD documentation annotations, and external vocabulary ontologies (DC, DCTERMS, SKOS, FOAF, etc.) cached in `references/ontologies/`. `schema/edm_parquet.yaml` imports `edm.yaml` and declares all 29 export tables (14 `values_*` + 11 `links_*` + `group_items` + 3 `map_*`) as LinkML classes — each with `export_type`, `export_sets`, `sparql_base_pattern`, and per-column annotations. Runtime code reads the export schema via `schema_loader.py`. The base EDM schema serves as a "menu" for designing new exports; regenerate it with `uv run scripts/update-edm-schema.py`.
 - **Fully declarative exports**: Every final export (`values_*`, `links_*`, `group_items`, `map_*`) is a LinkML class in `edm_parquet.yaml` with annotations that drive SPARQL generation, DuckDB composition, PyArrow schemas, and export set membership. Adding a new export requires only editing the YAML — no Python code changes. `schema_loader.export_classes()` discovers all exports; `schema_loader.links_scan_entries()` enumerates the synthetic per-property partition scans; `schema_loader.pyarrow_schema(name)` returns static PyArrow schemas; `query.py` generates SPARQL from `sparql_base_pattern` annotations; `export.py` builds export sets from `export_sets` annotations.
 - **No unit tests.** This project does not use unit tests. Do not create test files or run pytest.
 - Use `rich.console.Console` for all terminal output (not bare `print`).
