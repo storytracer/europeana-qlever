@@ -1,72 +1,94 @@
 # europeana-qlever
 
-CLI for ingesting the full Europeana EDM metadata dump (~66 million records, 2-5 billion triples in Turtle format) into a [QLever](https://github.com/ad-freiburg/qlever) SPARQL engine and exporting query results as Parquet files. Includes a [GRASP](https://github.com/ad-freiburg/grasp) integration for natural-language querying of the Europeana knowledge graph via an LLM-powered NL-to-SPARQL agent.
+A Python CLI for working with the full **Europeana** cultural-heritage metadata dump as a queryable knowledge graph.
 
-## Overview
+It downloads Europeana's bulk RDF dump (~66 million records, 2–5 billion triples), loads it into a [QLever](https://github.com/ad-freiburg/qlever) SPARQL engine, and exports clean, analysis-ready **Parquet** tables. On top of that, it ships:
 
-The pipeline downloads Europeana's bulk TTL dump, merges thousands of small ZIP archives into chunked TTL files with unified prefixes, builds a QLever index, serves a SPARQL endpoint, and exports structured query results to Parquet via a hybrid SPARQL + DuckDB architecture.
+- a quality and coverage **report** generator,
+- a browser-based **explorer** for interactive faceting and charts,
+- a natural-language **ask** interface (NL → SQL on Parquet, or NL → SPARQL via [GRASP](https://github.com/ad-freiburg/grasp)).
+
+---
+
+## Table of contents
+
+- [What it does](#what-it-does)
+- [Quick start](#quick-start)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Step-by-step usage](#step-by-step-usage)
+- [Exploring the data](#exploring-the-data)
+  - [Parquet exports](#parquet-exports)
+  - [Quality & coverage report](#quality--coverage-report)
+  - [Browser explorer](#browser-explorer)
+  - [Natural-language querying](#natural-language-querying)
+- [How big is it?](#how-big-is-it)
+- [CLI reference](#cli-reference)
+- [Project layout](#project-layout)
+- [Updating schemas & docs](#updating-schemas--docs)
+- [Refreshing the data](#refreshing-the-data)
+- [License](#license)
+
+---
+
+## What it does
+
+The pipeline turns a folder of TTL ZIP files into a SPARQL endpoint and a set of Parquet tables you can query with DuckDB, pandas, or any standard tool.
 
 ```
-Europeana FTP (15,000+ ZIPs)
-  → merge (parallel extraction, inline validation, prefix unification)
-  → QLever index (~2-5 hours)
-  → SPARQL endpoint (localhost:7001)
-  → create-views (QLever materialized views for fast analytics)
-  → Parquet export (Phase 1: raw values_* / links_* scans → Parquet
-                    Phase 2: DuckDB composition → group_items, map_*, explorer_*)
-  → report (quality/coverage analytics over exported Parquets)
-  → ask (NL querying over Parquet via DuckDB, or over SPARQL via GRASP)
-  → explore (browser-based DuckDB explorer over group_items.parquet, port 1378)
+Europeana FTP dump  ──►  merge  ──►  QLever index  ──►  SPARQL endpoint  ──►  Parquet exports
+   (15,000+ ZIPs)                     (~2–5 hours)        (localhost:7001)      (values_*, links_*,
+                                                                                 group_items, map_*)
 
-GRASP (natural-language querying, CLI-managed like QLever)
-  → write-grasp-config (generate server config + EDM domain notes)
-  → grasp-setup (build entity/property search indices from QLever)
-  → grasp-start / grasp-stop (LLM agent on localhost:6789)
-  → benchmark (evaluate NL→SPARQL vs NL→DuckDB accuracy on test questions)
+                                            └──►  report      (quality & coverage)
+                                            └──►  explore     (browser explorer)
+                                            └──►  ask         (NL → SQL or NL → SPARQL)
 ```
 
-## Dataset sizing
+All commands sit behind a single CLI: `europeana-qlever`.
 
-| Metric | Estimate |
-|--------|----------|
-| Records | ~66 million |
-| Triples per record | ~30-80 |
-| Total triples | ~2-5 billion |
-| Compressed TTL on FTP | ~50-120 GB |
-| Uncompressed TTL | ~200-500 GB |
-| QLever index size | ~100-250 GB |
-| RAM for indexing | ~8-15 GB (configurable via `--stxxl-memory`) |
-| RAM for query serving | ~10-15 GB (configurable via `--query-memory`) |
+---
 
-Total disk footprint is approximately 600-800 GB (ZIPs + merged TTL + index + working space).
+## Quick start
 
-### Memory management
+After [installing](#installation):
 
-Each pipeline stage has explicit memory controls:
+```bash
+# Download the Europeana TTL dump (one-time, large download)
+rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10
 
-| Stage | Default | How memory is bounded |
-|-------|---------|----------------------|
-| **Merge** | adaptive | Workers stream line-by-line to temp files; `AdaptiveThrottle` dynamically adjusts concurrency based on CPU and memory pressure (starts at `workers // 2`, scales between 2 and `workers`). Invalid TTL entries are validated inline via rdflib and skipped |
-| **Index** | 8 GB stxxl | Configurable via `--stxxl-memory` |
-| **Query serving** | 10 GB query / 5 GB cache | Configurable via `--query-memory` / `--cache-size` |
-| **Parquet export (Phase 1)** | bounded | TSV-to-Parquet conversion uses parallel rdflib parsing with bounded submission (at most `workers * 2` batches in-flight), keeping memory constant regardless of file size |
-| **Parquet export (Phase 2)** | 75% available RAM | DuckDB composition uses 75% of available RAM (min 4 GB). Spills to disk when memory limit is exceeded. Configurable via `--duckdb-memory` |
+# Run the full pipeline end-to-end
+uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL
+```
 
-A background **resource monitor** runs throughout the pipeline, sampling RSS, available memory, disk space, and CPU usage every 1-2 seconds. Samples are logged as structured JSONL events to `<work-dir>/telemetry.jsonl`. Console warnings appear when system memory exceeds 80% (warning) or 90% (critical). During merge, an **adaptive throttle** dynamically adjusts worker concurrency based on CPU and memory pressure, using hysteresis to avoid jitter.
+The `pipeline` command runs every stage (merge → index → start → views → export → stop) and **resumes automatically** from a checkpoint if interrupted. Use `--force` to start fresh.
 
-A **live dashboard** (Rich-based terminal UI) displays real-time system resources (CPU, memory, disk), pipeline stage progress, and a scrolling log tail during the full `pipeline` command.
+Once that's done you can:
+
+```bash
+# Open the browser explorer
+uv run europeana-qlever -d /data/europeana explore
+
+# Ask a natural-language question
+uv run europeana-qlever -d /data/europeana ask "How many openly-reusable images are there?"
+
+# Generate a quality/coverage report
+uv run europeana-qlever -d /data/europeana report
+```
+
+---
 
 ## Prerequisites
 
 - **Python 3.11+**
-- **[uv](https://docs.astral.sh/uv/)** -- Python project manager
-- **[QLever](https://github.com/ad-freiburg/qlever)** -- either compiled from source or installed via package
-- **qlever CLI** -- install with `uv tool install qlever` or `pip install qlever`
-- **[rclone](https://rclone.org/)** -- for downloading the Europeana FTP dump
+- **[uv](https://docs.astral.sh/uv/)** — Python project manager (always use `uv run`, not bare `python` or `pip`)
+- **[QLever](https://github.com/ad-freiburg/qlever)** — the SPARQL engine, either pre-built or compiled from source
+- **qlever CLI** — `uv tool install qlever`
+- **[rclone](https://rclone.org/)** — for downloading the Europeana FTP dump
 
 ### Building QLever from source
 
-If pre-built packages are not available for your platform (e.g. ARM64), compile from source:
+If pre-built packages aren't available for your platform (e.g. ARM64):
 
 ```bash
 sudo apt install -y \
@@ -81,133 +103,66 @@ cmake -GNinja -DCMAKE_BUILD_TYPE=Release ..
 ninja -j$(nproc)
 ```
 
+---
+
 ## Installation
 
 ```bash
 git clone https://github.com/europeana/europeana-qlever.git
 cd europeana-qlever
 uv sync
-```
-
-Verify:
-
-```bash
 uv run europeana-qlever --help
 ```
 
-## Quick start
+Every command takes a **work directory** (`-d` / `--work-dir`, or the `EUROPEANA_QLEVER_WORK_DIR` env var) where all output is written.
 
-Run the full pipeline end-to-end with a single command:
-
-```bash
-uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL
-```
-
-This runs: merge -> write-qleverfile -> index -> start -> create-views -> export -> stop.
-
-Progress is checkpointed to `pipeline_state.json` so a failed or interrupted run resumes automatically when you re-run the same command. Use `--force` to clear the checkpoint and start fresh.
-
-```bash
-# Resume after interruption (automatic)
-uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL
-
-# Skip stages whose output already exists
-uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL --skip-merge --skip-index
-
-# Start fresh, ignoring checkpoint
-uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL --force
-```
+---
 
 ## Step-by-step usage
 
-Every command requires a **work directory** (`-d` / `--work-dir`), where all output is written. You can also set the `EUROPEANA_QLEVER_WORK_DIR` environment variable.
+If you'd rather run the stages individually instead of the all-in-one `pipeline` command:
 
-#### 1. Download the Europeana TTL dump
+### 1. Download the TTL dump
 
-The full dump lives at `ftp://download.europeana.eu/dataset/TTL/` (anonymous FTP, ~15,000+ ZIP files). Configure rclone with the Europeana remote, then download:
+The full dump lives at `ftp://download.europeana.eu/dataset/TTL/` (anonymous FTP, ~15,000+ ZIPs).
 
 ```bash
 rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10 --checkers=8
 ```
 
-#### 2. Merge TTL files
+> **MD5 checksums are skipped by default.** Europeana's `.md5sum` files are unreliable: as of March 2026, only ~7 % of them actually match the companion ZIP (stale checksums and stripped leading zeros). Override with `--checksum-policy=warn` or `=strict` on `merge`/`pipeline` if you want to verify them anyway.
 
-Merging discovers RDF prefixes (via rdflib sampling), extracts ZIPs in parallel into chunked TTL files (~5 GB each) with a unified prefix header, and validates each TTL entry inline via rdflib -- invalid entries are skipped and logged.
+### 2. Merge ZIPs into TTL chunks
+
+Extracts thousands of small ZIPs in parallel into a few large (~5 GB) TTL files with a unified prefix header. Each entry is validated inline with rdflib — invalid ones are skipped and logged.
 
 ```bash
 uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL
 ```
 
-Options:
-
-```bash
-uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL \
-  --chunk-size 5.0 \
-  --workers 4 \
-  --sample-size 100
-```
-
-##### MD5 checksum verification
-
-Europeana's FTP server provides `.md5sum` companion files for each ZIP. However, these files are **unreliable** -- as of March 2026, only 159 of 2,272 md5sum files (7%) match their companion ZIPs. Two issues exist on the FTP server:
-
-1. **Stale checksums** (2,104 files): md5sum files are periodically regenerated from freshly built ZIPs that are never published to the FTP, while the actual ZIP files retain older content.
-
-2. **Leading-zero stripping** (126 files): md5sum files contain 31 or 30 hex characters instead of the expected 32 -- leading zeros are stripped from the hash.
-
-MD5 verification is therefore **skipped by default**. To opt in:
-
-```bash
-europeana-qlever merge --checksum-policy=warn TTL_DIR   # log mismatches, continue
-europeana-qlever merge --checksum-policy=strict TTL_DIR  # skip mismatched ZIPs
-```
-
-You can also run prefix discovery standalone:
-
-```bash
-uv run europeana-qlever -d /data/europeana scan-prefixes ~/data/europeana/TTL \
-  --sample-size 100 --files-per-zip 5
-```
-
-#### Validate (optional)
-
-Run a read-only pre-flight check that parses every TTL entry with rdflib and optionally verifies MD5 checksums. No files are written.
+You can also run a read-only pre-flight check without writing anything:
 
 ```bash
 uv run europeana-qlever -d /data/europeana validate ~/data/europeana/TTL
-
-# Include checksum verification
-uv run europeana-qlever -d /data/europeana validate ~/data/europeana/TTL --no-checksums=false
 ```
 
-Note: validation is also performed inline during merge -- invalid entries are automatically skipped.
-
-#### 3. Generate the Qleverfile
+### 3. Generate the Qleverfile and build the index
 
 ```bash
 uv run europeana-qlever -d /data/europeana write-qleverfile --qlever-bin /path/to/qlever/build
-```
-
-This writes a `Qleverfile`, `settings.json`, and `Qleverfile-ui.yml` into `<work-dir>/index/` with EDM-optimised settings (all languages kept, external prefixes for long URIs, Unicode support). Memory settings are computed dynamically from available RAM.
-
-#### 4. Build the index
-
-```bash
 uv run europeana-qlever -d /data/europeana index
 ```
 
-This takes approximately 2-5 hours depending on hardware. Run in tmux or screen for long sessions. Extra arguments are forwarded to `qlever index` (e.g. `--overwrite-existing`).
+Indexing takes roughly **2–5 hours** on commodity hardware. Run it in `tmux` or `screen`. Memory settings (`--query-memory`, `--cache-size`, `--stxxl-memory`) are auto-tuned to your machine but can be overridden.
 
-#### 5. Start the SPARQL server
+### 4. Start the SPARQL server
 
 ```bash
-uv run europeana-qlever -d /data/europeana start
-
-# Also launch the QLever web UI
-uv run europeana-qlever -d /data/europeana start --ui
+uv run europeana-qlever -d /data/europeana start          # SPARQL only, port 7001
+uv run europeana-qlever -d /data/europeana start --ui     # also launch QLever's web UI
 ```
 
-The `start` command regenerates the Qleverfile with current resource budgets before launching. Add `--ui` to also start the QLever web interface. Verify with a basic query:
+Quick sanity check:
 
 ```bash
 curl -Gs http://localhost:7001 \
@@ -215,206 +170,169 @@ curl -Gs http://localhost:7001 \
   --data-urlencode 'action=tsv_export'
 ```
 
-#### 6. Create materialized views (optional but recommended)
+### 5. Create materialized views (recommended)
 
 ```bash
 uv run europeana-qlever -d /data/europeana create-views
 ```
 
-Creates the `open-items` QLever materialized view — a precomputed index of openly-licensed CHOs joined with their `edm:type`. This replaces expensive `STRSTARTS(STR(?rights), ...)` filters with instant indexed lookups via `SERVICE view:open-items { ... }` in SPARQL. Add `--sample-size 10000` to also create a `sample-items` view used by `export --sample-size` for coherent smoke tests. This step is invoked automatically by the full `pipeline` command.
+Creates the `open-items` view (precomputed list of openly-licensed CHOs joined with their `edm:type`), so SPARQL queries can use `SERVICE view:open-items { ... }` instead of expensive `STRSTARTS` filters. Add `--sample-size 10000` to also create a `sample-items` view used for coherent smoke tests.
 
-#### 7. Export to Parquet
+### 6. Export to Parquet
 
-Export runs SPARQL queries against the server and writes Parquet files (and Hive-partitioned directories for `links_*` tables) to `<work-dir>/exports/`:
+See [Parquet exports](#parquet-exports) below. The simplest call:
 
 ```bash
-# Export all pipeline exports
 uv run europeana-qlever -d /data/europeana export --all
-
-# Export only the raw layer (values_* + links_*)
-uv run europeana-qlever -d /data/europeana export --set raw
-
-# Export the fast-analytics group_items table (dependencies auto-exported)
-uv run europeana-qlever -d /data/europeana export group_items
-
-# Re-run a single partition of a Hive-partitioned links table
-uv run europeana-qlever -d /data/europeana export links_ore_Proxy --property dc_subject
 ```
 
-#### 8. Quality/coverage report
-
-After exporting, generate a Markdown report analysing data quality and coverage:
-
-```bash
-# Run all sections (questions are bundled with the package)
-uv run europeana-qlever -d /data/europeana report
-
-# Include live URL reachability probing
-uv run europeana-qlever -d /data/europeana report --probe-urls
-
-# Filtered report using the schema-driven filter grammar
-uv run europeana-qlever -d /data/europeana report -f "country=NL type=IMAGE"
-```
-
-Two bundled sections ship with the package: **Overview** (`overview.yml` — fast scalar volume / rights / providers / languages / content / media scan over `group_items` and `values_edm_WebResource`) and **External entity links** (`external_links.yml` — coverage and validity of `owl:sameAs` links from contextual entities, driven by `map_sameAs.x_well_formed` and `x_metis_known`). To customise, edit the YAMLs in `src/europeana_qlever/report_questions/` directly. Questions with a `query` field execute as static DuckDB SQL; questions without a query are answered by the ask agent. Requires `group_items.parquet` + the raw `values_*` / `links_*` exports.
-
-#### 9. Stop the server
+### 7. Stop the server
 
 ```bash
 uv run europeana-qlever -d /data/europeana stop
 ```
 
-## CLI commands
+---
 
-All commands require `-d <work-dir>` (or `EUROPEANA_QLEVER_WORK_DIR` env var).
+## Exploring the data
 
-```
-europeana-qlever -d WORK_DIR
-├── scan-prefixes TTL_DIR      Discover all RDF prefixes used across the TTL dump
-├── validate TTL_DIR           Read-only pre-flight check (rdflib parsing + optional checksums)
-├── merge TTL_DIR              Merge all Europeana TTL ZIPs into chunked TTL files
-├── write-qleverfile           Generate a Qleverfile configured for the Europeana dataset
-├── index                      Build the QLever index from merged TTL chunks
-├── start [--ui]               Start the QLever SPARQL server (and optionally the web UI)
-├── stop                       Stop the QLever SPARQL server
-├── create-views               Create QLever materialized views (open-items, sample-items)
-├── list-exports               List all exports (use --all-partitions for per-property link scans)
-├── analyze
-│   ├── qlever                 Profile SPARQL exports against a running QLever server
-│   └── static                 Offline structural analysis via SPARQL algebra
-├── export                     Export data as Parquet files (values_*, links_*, group_items, map_*)
-├── report                     Quality/coverage report over exported Parquet files
-├── ask QUESTION               NL query: --backend parquet (DuckDB, offline) or sparql (GRASP)
-├── benchmark                  Run the benchmark question set against parquet, sparql, or both
-├── explore                    Launch the browser-based DuckDB explorer over group_items.parquet (port 1378)
-├── write-grasp-config         Generate GRASP server config in <work-dir>/grasp/
-├── grasp-setup                Build GRASP search indices from QLever
-├── grasp-start / grasp-stop   Manage the GRASP NL→SPARQL server
-└── pipeline TTL_DIR           Run the full pipeline: merge → index → start → create-views → export → stop
-```
+### Parquet exports
 
-## Export system
+The export system produces 38 final Parquet tables in `<work-dir>/exports/`. They follow a simple two-layer architecture aligned with the **Europeana Data Model (EDM)**.
 
-Exports follow a raw-then-composed architecture aligned with EDM class boundaries.
+#### Naming convention
 
-**Table naming:** `values_` (wide, one row per EDM entity — scalar k_/v_ columns), `links_` (long, one row per value, Hive-partitioned by property), `group_` (scalar-only per-CHO table for fast analytics), `map_` (lookup / navigation tables).
+| Prefix    | Kind              | Shape                                           |
+| --------- | ----------------- | ----------------------------------------------- |
+| `values_` | wide              | one row per EDM entity, scalar columns          |
+| `links_`  | long, partitioned | one row per value, Hive-partitioned by property |
+| `group_`  | wide              | per-CHO scalar table for fast analytics         |
+| `map_`    | lookup            | static lookup / navigation tables               |
 
-**Column naming:** `k_` = identifier / foreign key, `v_` = scalar EDM property straight from the RDF, `x_` = extracted / computed / resolved / aggregated. Column names derive mechanically from EDM CURIEs, e.g. `dc:subject` → `v_dc_subject`.
+| Prefix | Column meaning                                       |
+| ------ | ---------------------------------------------------- |
+| `k_`   | identifier / foreign key                             |
+| `v_`   | scalar EDM property straight from the RDF            |
+| `x_`   | extracted, computed, resolved, or aggregated         |
 
-Exports are organized into named, non-exclusive **export sets**:
+Column names map mechanically from EDM CURIEs: `dc:subject` → `v_dc_subject`, `ebucore:fileByteSize` → `v_ebucore_fileByteSize`.
 
-| Set | Count | Description |
-|-----|-------|-------------|
-| **pipeline** | 38 | All final exports: raw + group + maps + explorer (the full pipeline output) |
-| **raw** | 26 | Raw `values_*` and `links_*` tables — one row per EDM entity (values) or one row per value (links, Hive-partitioned) |
-| **group** | 1 | Fast-analytics `group_items` table (categorical / boolean / integer columns only) |
-| **maps** | 5 | Static lookup tables: `map_rights`, `map_sameAs`, `map_cho_entities`, `map_edm_entities`, `map_cho_mimetypes` |
-| **explorer** | 15 | Everything the browser explorer needs: `group_items`, contextual `values_*` tables (Proxy, Agent, Place, Concept, TimeSpan, Organization), `links_ore_Proxy`, the 6 `explorer_*` derived tables, and `map_cho_mimetypes` |
+#### Export sets
 
-There are 38 final exports: 15 `values_*` tables (one per EDM class plus two for persistent identifiers and `values_publishing_tier`), 11 `links_*` Hive-partitioned directories, 5 `map_*` composite exports (`map_rights`, `map_sameAs`, `map_cho_entities`, `map_edm_entities`, `map_cho_mimetypes`), the per-CHO `group_items` table, and 6 `explorer_*` precomputed tables (`explorer_edm_entities`, `explorer_concepts`, `explorer_agents`, `explorer_places`, `explorer_timespans`, `explorer_facet_top_n`). Under the hood, the 11 `links_*` tables are made up of one per-property SPARQL scan per link property, each writing to `<table>/x_property=<col>/data.parquet`.
+Exports are grouped into named sets you can pass via `--set`:
 
-List all exports:
+| Set        | Count | What it contains                                                                                  |
+| ---------- | ----- | ------------------------------------------------------------------------------------------------- |
+| `pipeline` | 38    | All final exports (the full pipeline output)                                                      |
+| `raw`      | 26    | The `values_*` and `links_*` tables straight from SPARQL                                          |
+| `group`    | 1     | `group_items` — the fast per-CHO scalar table (categorical / boolean / integer)                   |
+| `maps`     | 5     | `map_rights`, `map_sameAs`, `map_cho_entities`, `map_edm_entities`, `map_cho_mimetypes`           |
+| `explorer` | 15    | Everything the browser explorer needs (`group_items`, contextual values, `explorer_*`, mimetypes) |
+
+#### How exports are built
+
+- **Phase 1 — QLever:** flat SPARQL scans (no `GROUP BY`, no `GROUP_CONCAT`, minimal `OPTIONAL`s) produce raw `values_*` and `links_*` Parquets. QLever does what it's best at: index scans over billions of triples.
+- **Phase 2 — DuckDB:** joins those raw Parquets via SQL to produce the per-CHO `group_items` table, the `map_*` lookups, and the `explorer_*` derived tables.
+
+Dependencies are resolved automatically — exporting `group_items` triggers everything it needs.
+
+#### Common export commands
 
 ```bash
-# Final tables only
-uv run europeana-qlever -d /data/europeana list-exports
-
-# Also show the per-property link partition scans that make up each links_* table
-uv run europeana-qlever -d /data/europeana list-exports --all-partitions
-```
-
-### Hybrid export architecture
-
-`group_items` and the `map_*` tables are built in two phases:
-
-- **Phase 1 (QLever):** `QueryExport` objects run simple, flat SPARQL scans (no GROUP BY, no GROUP_CONCAT, minimal OPTIONALs) — one per `values_*` table, plus one per link property per `links_*` table. QLever does what it's best at: index scans and triple pattern matching over billions of triples.
-- **Phase 2 (DuckDB):** `CompositeExport` joins the raw Parquets via `ComposeStep` sequences (8 steps for `group_items`, 1–3 for the maps), producing per-CHO scalar summaries and the navigation lookup tables.
-
-`group_items` is scalar-only: one row per CHO with categorical (v_edm_type, v_edm_country, v_edm_dataProvider, …), boolean (x_has_iiif, x_has_creator, …), and integer (v_edm_completeness, x_content_tier, x_metadata_tier) columns. A computed `x_reuse_level` column classifies `edm:rights` URIs into open/restricted/prohibited, and `x_rights_family` identifies the rights family. Multi-valued descriptive metadata (titles, subjects, creators, dates, …) is **not** denormalized into `group_items` — query `links_ore_Proxy` joined through `values_ore_Proxy.k_iri_cho` when you need those directly.
-
-Dependencies are resolved automatically — exporting `group_items` transparently exports all required `values_*`, `links_*`, and `map_*` tables first.
-
-### Export examples
-
-```bash
-# All pipeline exports
+# Full pipeline output
 uv run europeana-qlever -d /data/europeana export --all
 
-# Fast-analytics per-CHO scalar table (dependencies auto-exported)
-uv run europeana-qlever -d /data/europeana export group_items
-
-# Only the raw layer (values_* + links_*)
+# Only the raw SPARQL layer
 uv run europeana-qlever -d /data/europeana export --set raw
 
-# Every registered export
-uv run europeana-qlever -d /data/europeana export --set all
+# A single composite (dependencies auto-exported)
+uv run europeana-qlever -d /data/europeana export group_items
 
-# Re-run a single link partition (e.g. after one failed scan)
+# Re-run a single link partition
 uv run europeana-qlever -d /data/europeana export links_ore_Proxy --property dc_subject
 
-# Filtered export: openly-licensed images from the Netherlands
+# Filtered export: open-rights images from the Netherlands
 uv run europeana-qlever -d /data/europeana export group_items \
   --country Netherlands --type IMAGE --reuse-level open
 
-# Coherent smoke test: sample 10,000 items via the sample-items view
+# Coherent smoke test on a 10,000-CHO sample
 uv run europeana-qlever -d /data/europeana create-views --sample-size 10000
 uv run europeana-qlever -d /data/europeana export --all --sample-size 10000
 ```
 
-### Filter options
+List everything with `list-exports` (add `--all-partitions` to see per-property scans).
 
-All filter options apply to SPARQL-based exports:
+#### Filter options (apply to SPARQL exports)
 
-| Option | Description |
-|--------|-------------|
-| `--country` | Filter by country (repeatable) |
-| `--type` | Filter by edm:type: TEXT, IMAGE, SOUND, VIDEO, 3D (repeatable) |
-| `--reuse-level` | Filter by reuse level: open, restricted, prohibited |
-| `--institution` | Filter by edm:dataProvider (repeatable) |
-| `--aggregator` | Filter by edm:provider (repeatable) |
-| `--min-completeness` | Minimum completeness score (1-10) |
-| `--year-from` / `--year-to` | edm:year range |
-| `--language` | Additional language(s) for label resolution, beyond English and the item's own language. Repeatable |
-| `--dataset-name` | Filter by datasetName (repeatable) |
-| `--limit` | LIMIT clause for SPARQL exports |
-| `--sample-size` | Restrict every export to the same sample of N CHO items via the `sample-items` materialized view (coherent smoke test) |
+| Option                       | Description                                                |
+| ---------------------------- | ---------------------------------------------------------- |
+| `--country`                  | Filter by country (repeatable)                             |
+| `--type`                     | `TEXT`, `IMAGE`, `SOUND`, `VIDEO`, `3D` (repeatable)       |
+| `--reuse-level`              | `open`, `restricted`, `prohibited`                         |
+| `--institution`              | Filter by `edm:dataProvider` (repeatable)                  |
+| `--aggregator`               | Filter by `edm:provider` (repeatable)                      |
+| `--min-completeness`         | Minimum completeness score (1–10)                          |
+| `--year-from` / `--year-to`  | `edm:year` range                                           |
+| `--language`                 | Extra label languages, beyond English and the item's own   |
+| `--dataset-name`             | Filter by `datasetName` (repeatable)                       |
+| `--limit`                    | Apply a SPARQL `LIMIT`                                     |
+| `--sample-size`              | Restrict every export to N CHOs via the `sample-items` view |
 
-### Export control options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--skip-existing` | off | Skip exports whose `.parquet` already exists |
-| `--keep-base / --no-keep-base` | keep | Retain or delete intermediate raw Parquets after composition |
-| `--reuse-tsv` | off | Skip SPARQL download if the `.tsv` file already exists (useful for re-testing Parquet conversion) |
-| `--duckdb-memory` | auto (75% RAM) | DuckDB memory budget for Phase 2 composition (e.g. `4GB` or `auto`) |
-| `--timeout` | 3600 | Per-export timeout in seconds |
-| `--property` | — | For a `links_*` table, export only a single partition (e.g. `--property dc_subject`) |
-
-### Export analysis
-
-The `analyze` command profiles SPARQL-based exports (composite exports are skipped):
+#### Profiling exports
 
 ```bash
-# Runtime profiling against a running QLever server (collects execution tree metadata)
+# Runtime profile against a running server
 uv run europeana-qlever -d /data/europeana analyze qlever values_ore_Proxy --limit 1000
 
-# Offline structural analysis (no server needed, uses SPARQL algebra)
-uv run europeana-qlever -d /data/europeana analyze static values_ore_Proxy
-
-# Analyze all raw exports (values_* + links_*)
+# Offline structural analysis (uses SPARQL algebra)
 uv run europeana-qlever -d /data/europeana analyze static --set raw
 ```
 
-Both modes produce Markdown reports in `<work-dir>/analysis/`. The `qlever` mode identifies runtime bottlenecks from the execution tree; the `static` mode identifies structural complexity (OPTIONAL nesting depth, triple pattern count, aggregate cost).
+Reports go into `<work-dir>/analysis/`.
 
-## Natural-language querying
+### Quality & coverage report
 
-Two backends share the same CLI interface and benchmark harness:
+After exporting, generate a Markdown + JSON report covering volume, rights, providers, languages, content tiers, media, and external entity links:
 
-- **`parquet`** (default) — `AskParquet` translates natural language to DuckDB SQL over the exported Parquet files using OpenAI function calling. Offline, no servers required.
-- **`sparql`** — `AskSPARQL` translates natural language to SPARQL via [GRASP](https://github.com/ad-freiburg/grasp) (Graph Retrieval Augmented Structured Prompting) running against the QLever endpoint. Requires both the QLever and GRASP servers to be running.
+```bash
+# Run all bundled sections
+uv run europeana-qlever -d /data/europeana report
 
-### Ask a one-off question
+# Run specific sections or questions
+uv run europeana-qlever -d /data/europeana report -s overview
+uv run europeana-qlever -d /data/europeana report -q total_items
+
+# Filter the data
+uv run europeana-qlever -d /data/europeana report -f "country=NL,FR type=IMAGE"
+
+# Probe URL liveness
+uv run europeana-qlever -d /data/europeana report --probe-urls
+```
+
+Report definitions are YAML files in `src/europeana_qlever/report_questions/`. Questions with a `query:` field run as static DuckDB SQL; questions without one are answered by the NL agent. Edit the YAMLs in place to customise.
+
+### Browser explorer
+
+A local browser-based explorer over `group_items.parquet` with interactive faceting, charts, and IRI-label resolution. Backed by a small threaded Python HTTP server and a shared DuckDB connection; the SPA (Preact + htm + Chart.js) is fully vendored and works offline.
+
+```bash
+# Make sure the explorer set is exported first
+uv run europeana-qlever -d /data/europeana export --set explorer
+
+# Launch (binds to port 1378, opens browser automatically)
+uv run europeana-qlever -d /data/europeana explore
+
+# Or point at a remote Parquet (e.g. on Hugging Face)
+uv run europeana-qlever -d /data/europeana explore \
+  --data-url https://huggingface.co/.../group_items.parquet
+```
+
+### Natural-language querying
+
+Two backends share the same CLI and benchmark harness:
+
+- **`parquet`** *(default)* — `AskParquet` translates NL → DuckDB SQL over the exported Parquets via OpenAI function calling. **Offline**, no servers required (just `OPENAI_API_KEY`).
+- **`sparql`** — `AskSPARQL` translates NL → SPARQL via [GRASP](https://github.com/ad-freiburg/grasp) running against the QLever endpoint. Requires both QLever **and** GRASP servers running.
 
 ```bash
 # DuckDB-backed (default) — needs exported Parquets
@@ -428,162 +346,172 @@ uv run europeana-qlever -d /data/europeana ask -f "type=IMAGE country=NL" \
 uv run europeana-qlever -d /data/europeana ask --backend sparql \
   "How many open images are there?"
 
-# Verbose: show the full agent trace (tool calls, intermediate results)
+# Show the full agent trace
 uv run europeana-qlever -d /data/europeana ask -v "Top 10 subjects?"
 ```
 
-The parquet backend requires `OPENAI_API_KEY` in the environment. Both backends default to `gpt-4.1-mini`; override with `--model`.
+Both backends default to `gpt-4.1-mini`; override with `--model`.
 
-### Running GRASP
+#### Running GRASP
 
-GRASP is managed by the CLI like QLever — no manual `bash setup.sh` or `cd grasp` needed. Resources are bundled in `src/europeana_qlever/grasp/`; runtime config lives in `<work-dir>/grasp/`.
+GRASP is managed by the CLI just like QLever. Resources are bundled in the package; runtime config is generated into `<work-dir>/grasp/`.
 
 ```bash
-# Generate server config + EDM domain notes
-uv run europeana-qlever -d /data/europeana write-grasp-config
-
-# Build entity/property search indices from QLever (requires QLever on :7001)
-uv run europeana-qlever -d /data/europeana grasp-setup
-
-# Start / stop the GRASP server (port 6789)
-uv run europeana-qlever -d /data/europeana grasp-start
+uv run europeana-qlever -d /data/europeana write-grasp-config   # generate config + EDM notes
+uv run europeana-qlever -d /data/europeana grasp-setup          # build entity/property indices
+uv run europeana-qlever -d /data/europeana grasp-start          # start GRASP server (port 6789)
 uv run europeana-qlever -d /data/europeana grasp-stop
 ```
 
-The domain notes are rendered from the structured `EdmNote` knowledge base (`src/europeana_qlever/ask/notes.py`), so the same EDM knowledge is reused by both the parquet and sparql backends.
+#### Benchmarks
 
-### Benchmarking
-
-A curated benchmark of questions about the Europeana AI data offering — multi-page items, cultural heritage filtering, licensing, geographic coverage, content quality — lives in `src/europeana_qlever/ask/benchmark.yml`. Run it against either backend (or both) via the CLI:
+A curated set of test questions ships in `src/europeana_qlever/ask/benchmark.yml`:
 
 ```bash
-# All questions against the parquet backend (default)
-uv run europeana-qlever -d /data/europeana benchmark
-
-# All questions against the GRASP/SPARQL backend
-uv run europeana-qlever -d /data/europeana benchmark --backend sparql
-
-# Compare both backends side by side
-uv run europeana-qlever -d /data/europeana benchmark --backend both
-
-# A single question
+uv run europeana-qlever -d /data/europeana benchmark                    # parquet (default)
+uv run europeana-qlever -d /data/europeana benchmark --backend sparql   # GRASP
+uv run europeana-qlever -d /data/europeana benchmark --backend both     # compare side by side
 uv run europeana-qlever -d /data/europeana benchmark --question 5
-
-# Re-run only previously failed questions (timeouts / server errors)
 uv run europeana-qlever -d /data/europeana benchmark --retry-failed
-
-# Start fresh
-uv run europeana-qlever -d /data/europeana benchmark --overwrite
 ```
 
-The runner streams agent traces live (model reasoning, tool calls, SQL or SPARQL execution), grades each response (PASS/EMPTY/TIMEOUT/ERROR), and produces a summary table with pass rate, token usage, and latency percentiles. Results are appended to `<work-dir>/benchmark-results.jsonl`.
+The runner streams agent traces live, grades each answer (PASS/EMPTY/TIMEOUT/ERROR), and writes results to `<work-dir>/benchmark-results.jsonl`.
 
-### Bundled GRASP resources
+---
 
-Files in `src/europeana_qlever/grasp/`:
+## How big is it?
 
-| File | Purpose |
-|------|---------|
-| `europeana-entity.sparql` | SPARQL for extracting entity labels during index setup |
-| `europeana-property.sparql` | SPARQL for extracting property URIs during index setup |
-| `entities-info.sparql` | Runtime entity detail lookup template |
-| `properties-info.sparql` | Runtime property detail lookup template |
-| `prefixes.json` | RDF namespace mappings for the search index |
+| Metric                | Estimate                                |
+| --------------------- | --------------------------------------- |
+| Records               | ~66 million                             |
+| Triples per record    | ~30–80                                  |
+| Total triples         | ~2–5 billion                            |
+| Compressed TTL on FTP | ~50–120 GB                              |
+| Uncompressed TTL      | ~200–500 GB                             |
+| QLever index size     | ~100–250 GB                             |
+| RAM for indexing      | ~8–15 GB (`--stxxl-memory`)             |
+| RAM for query serving | ~10–15 GB (`--query-memory`)            |
 
-## Browser-based explorer
+**Total disk footprint:** ~600–800 GB (ZIPs + merged TTL + index + working space).
 
-`europeana-qlever explore` launches a local browser-based explorer over `group_items.parquet` — interactive faceting, charts, and IRI-label resolution backed by a small threaded Python HTTP server and a shared DuckDB connection.
+### Memory management
+
+Each stage has explicit memory controls:
+
+| Stage              | Default              | How it's bounded                                                                                                   |
+| ------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Merge              | adaptive             | Workers stream line-by-line to temp files; `AdaptiveThrottle` scales concurrency between 2 and `workers` based on CPU/memory pressure |
+| Index              | 8 GB stxxl           | `--stxxl-memory`                                                                                                   |
+| Query serving      | 10 GB query / 5 GB cache | `--query-memory` / `--cache-size`                                                                              |
+| Export — Phase 1   | bounded              | TSV→Parquet uses parallel rdflib parsing with bounded submission (memory stays constant regardless of file size)   |
+| Export — Phase 2   | 75 % of available RAM | DuckDB composition; spills to disk past the limit. `--duckdb-memory`                                              |
+
+A background **resource monitor** samples RSS, free memory, disk, and CPU every 1–2 s and writes structured events to `<work-dir>/telemetry.jsonl`. Console warnings fire at 80 % (warn) and 90 % (critical) system memory. A live **Rich-based dashboard** shows resources, stage progress, and a log tail throughout `pipeline`.
+
+---
+
+## CLI reference
+
+All commands require `-d <work-dir>` (or `EUROPEANA_QLEVER_WORK_DIR`).
+
+```
+europeana-qlever -d WORK_DIR
+├── Data preparation
+│   ├── scan-prefixes TTL_DIR      Discover RDF prefixes used across the dump
+│   ├── validate TTL_DIR           Read-only pre-flight check (rdflib + optional checksums)
+│   └── merge TTL_DIR              Merge all TTL ZIPs into chunked TTL files
+│
+├── QLever
+│   ├── write-qleverfile           Generate a Qleverfile + settings.json
+│   ├── index                      Build the QLever index from merged TTL
+│   ├── start [--ui]               Start the SPARQL server (port 7001)
+│   ├── stop                       Stop the server
+│   └── create-views               Create materialized views (open-items, sample-items)
+│
+├── Exports & analysis
+│   ├── list-exports               List all exports (--all-partitions for per-property scans)
+│   ├── analyze qlever NAME        Runtime profile against a running server
+│   ├── analyze static NAME        Offline structural analysis via SPARQL algebra
+│   └── export [NAMES...]          Export Parquet tables (values_*, links_*, group_items, map_*)
+│
+├── Insights
+│   ├── report                     Quality / coverage report over Parquet
+│   ├── ask QUESTION               NL query (--backend parquet | sparql)
+│   ├── benchmark                  Run the benchmark question set
+│   └── explore                    Browser-based DuckDB explorer (port 1378)
+│
+├── GRASP (NL → SPARQL)
+│   ├── write-grasp-config         Generate GRASP config + EDM domain notes
+│   ├── grasp-setup                Build entity/property search indices
+│   ├── grasp-start / grasp-stop   Manage the GRASP server (port 6789)
+│
+└── pipeline TTL_DIR               Run everything: merge → index → start → views → export → stop
+```
+
+---
+
+## Project layout
+
+### Repository
+
+| Path                                        | Purpose                                                                                                                |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `src/europeana_qlever/`                     | Python CLI source                                                                                                      |
+| `src/europeana_qlever/schema/edm.yaml`      | EDM base schema — primary source of truth for the data model (12 classes, 242 attributes)                              |
+| `src/europeana_qlever/schema/edm_parquet.yaml` | Export schema — declares all 38 export tables as LinkML classes with SPARQL patterns and pipeline annotations       |
+| `src/europeana_qlever/ask/`                 | NL→SQL / NL→SPARQL agents, EDM domain notes, benchmark runner                                                          |
+| `src/europeana_qlever/explorer/`            | Browser explorer — threaded HTTP server + bundled SPA (vendored offline)                                               |
+| `src/europeana_qlever/grasp/`               | Bundled GRASP resource files (SPARQL templates, prefix mappings)                                                       |
+| `src/europeana_qlever/report_questions/`    | Bundled report YAML files (edit in place to customise)                                                                 |
+| `references/ontologies/`                    | Vendored upstream ontology files (metis-schema XSD/OWL + cached external ontologies)                                   |
+| `references/vocabularies/metis-vocabularies/` | Europeana's Metis vocabulary registry (authority URI patterns, source of truth for `x_authority`)                    |
+| `scripts/update-*.py`                       | Standalone uv scripts for regenerating schemas and syncing references                                                  |
+| `docs/europeana/`                           | Europeana KB exported from Confluence + `EDM.md` narrative reference                                                   |
+| `docs/qlever/docs/`                         | QLever documentation (mirrored from upstream)                                                                          |
+
+### Work directory (`-d <work-dir>`)
+
+| Path                  | Contents                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `ttl-merged/`         | Merged TTL chunks (~5 GB each)                                                                                    |
+| `index/`              | `Qleverfile`, `settings.json`, and the QLever index files                                                         |
+| `exports/`            | Parquet output — `<name>.parquet` for values/composites; `<name>/x_property=<col>/data.parquet` for links_* tables |
+| `analysis/`           | Query performance reports (Markdown)                                                                              |
+| `reports/`            | Quality/coverage report output (JSON + Markdown)                                                                  |
+| `grasp/`              | GRASP runtime config and search indices                                                                           |
+| `telemetry.jsonl`     | Structured JSONL log of command spans, resource samples, and stage events                                         |
+| `pipeline_state.json` | Pipeline checkpoint for resume-on-failure                                                                         |
+
+---
+
+## Updating schemas & docs
+
+The EDM schema, vendored ontologies, the Metis vocabulary registry, and the local doc sets are all kept fresh via standalone uv scripts:
 
 ```bash
-# Export the explorer set first (group_items + contextual values_* + links_ore_Proxy + explorer_* + map_cho_mimetypes)
-uv run europeana-qlever -d /data/europeana export --set explorer
-
-# Launch the explorer (binds to port 1378, opens browser automatically)
-uv run europeana-qlever -d /data/europeana explore
-
-# Don't auto-open the browser
-uv run europeana-qlever -d /data/europeana explore --no-open
-
-# Point at a remote Parquet (e.g. on HuggingFace) instead of the local file
-uv run europeana-qlever -d /data/europeana explore \
-  --data-url https://huggingface.co/.../group_items.parquet
+uv run scripts/update-all.py                    # everything, in dependency order
+uv run scripts/update-edm-schema.py             # regenerate schema/edm.yaml
+uv run scripts/update-metis-vocabularies.py     # sync Metis vocabulary registry
+uv run scripts/update-qlever-docs.py            # sync QLever docs from GitHub
+uv run scripts/update-europeana-docs.py         # sync Europeana KB from Confluence (incremental)
 ```
 
-The single-page app (Preact + htm + Chart.js, all vendored under `src/europeana_qlever/explorer/static/vendor/` for fully offline use) talks to JSON `POST /api/{schema,summary,top-values,sample,labels}` endpoints answered by `ExplorerEngine`. Facet selections combine semantically as AND. Top-values facets are precomputed into `explorer_facet_top_n` for fast initial rendering, and IRI labels are resolved on demand against the `explorer_*` entity tables. The `explore` command kills any prior listener on `EXPLORER_PORT` (1378) before binding and runs until Ctrl+C.
+`update-all.py` accepts `--only NAME [...]` and `--skip NAME [...]`.
 
-## Directory layout
-
-**Repository:**
-
-| Directory / File | Purpose |
-|-----------|---------|
-| `src/europeana_qlever/` | Python CLI source code |
-| `src/europeana_qlever/schema/edm.yaml` | EDM base schema — primary source of truth for the EDM data model (12 classes, 242 fully-described attributes) |
-| `src/europeana_qlever/schema/edm_parquet.yaml` | Export schema — declares all 38 export tables (15 values_* + 11 links_* + group_items + 5 map_* + 6 explorer_*) as LinkML classes with SPARQL patterns and pipeline annotations |
-| `src/europeana_qlever/ask/` | NL-to-SPARQL / NL-to-DuckDB agents, shared EDM domain notes, benchmark runner and question set |
-| `src/europeana_qlever/explorer/` | Browser-based DuckDB explorer — threaded HTTP server (`server.py`) plus the bundled single-page app (`static/`, with Preact/htm/Chart.js vendored offline) |
-| `src/europeana_qlever/grasp/` | Bundled GRASP resource files (SPARQL templates, prefix mappings) used by `write-grasp-config` and `grasp-setup` |
-| `src/europeana_qlever/report_questions/` | Bundled report question YAML files (read directly by `report`; edit in place to customise) |
-| `references/ontologies/metis-schema/` | Europeana metis-schema XSD + OWL source files (copied from GitHub) |
-| `references/ontologies/external/` | Cached external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, ODRL, etc.) |
-| `references/vocabularies/metis-vocabularies/` | Europeana's Metis vocabulary registry — authority URI patterns + XSL mappings (the source of truth for `x_authority` classification) |
-| `scripts/` | Standalone uv scripts for schema generation and reference sync |
-| `scripts/update-all.py` | Orchestrator — runs every `update-*.py` in dependency order |
-| `scripts/update-edm-schema.py` | Regenerate `schema/edm.yaml` from metis-schema XSD+OWL and external ontologies |
-| `scripts/update-metis-vocabularies.py` | Sync Europeana's Metis vocabulary registry |
-| `scripts/update-qlever-docs.py` | Sync QLever docs from upstream GitHub repo |
-| `scripts/update-europeana-docs.py` | Sync Europeana KB from Confluence (anonymous, incremental) |
-| `docs/europeana/EDM.md` | Europeana Data Model reference — narrative overview of EDM entities, namespaces, rights framework |
-| `docs/qlever/docs/` | QLever documentation (upstream MkDocs source) — Qleverfile format, SPARQL compliance, text/geo/path search, troubleshooting |
-| `docs/europeana/Europeana Knowledge Base/` | Europeana Knowledge Base — EDM mapping guidelines, publishing guides, semantic enrichments, API docs. Exported from Confluence with images referencing live remote URLs |
-
-**Work directory** (specified via `-d`):
-
-| Path | Purpose |
-|------|---------|
-| `ttl-merged/` | Merged chunk TTL files (~5 GB each) |
-| `index/` | Qleverfile, settings.json, Qleverfile-ui.yml, and QLever index files |
-| `exports/` | Parquet output files — `<name>.parquet` for values_* / composites, `<name>/x_property=<col>/data.parquet` directories for Hive-partitioned links_* tables (TSV intermediates are deleted) |
-| `analysis/` | Query performance analysis Markdown reports |
-| `reports/` | Report output (JSON + Markdown) |
-| `grasp/` | GRASP runtime config (`europeana-grasp.yaml`, `europeana-notes.json`, search indices) |
-| `telemetry.jsonl` | Structured JSONL telemetry log (command spans, resource samples, stage events) |
-| `pipeline_state.json` | Pipeline checkpoint for resume-on-failure |
-
-## Updating documentation and schemas
-
-The EDM schema, ontology sources, vocabulary registry, and documentation are updated via standalone uv scripts. Run them all at once or individually:
-
-```bash
-uv run scripts/update-all.py                   # Run every update-*.py in dependency order
-uv run scripts/update-edm-schema.py            # Regenerate schema/edm.yaml from ontology sources
-uv run scripts/update-metis-vocabularies.py    # Sync Europeana's Metis vocabulary registry
-uv run scripts/update-qlever-docs.py           # Sync QLever docs from GitHub (full replace)
-uv run scripts/update-europeana-docs.py        # Sync Europeana KB from Confluence (incremental)
-```
-
-`update-all.py` accepts `--only NAME [...]` and `--skip NAME [...]` to scope a run; e.g. `uv run scripts/update-all.py --only metis-vocabularies`.
-
-The `update-edm-schema.py` script clones the official [europeana/metis-schema](https://github.com/europeana/metis-schema) repository, copies XSD+OWL files to `references/ontologies/metis-schema/`, fetches external ontology files (DC, DCTERMS, SKOS, FOAF, ORE, etc.) to `references/ontologies/external/`, and generates `schema/edm.yaml` with descriptions from all sources. Use `--no-external-descriptions` to skip incorporating external ontology descriptions.
-
-The `update-metis-vocabularies.py` script clones [europeana/metis-vocabularies](https://github.com/europeana/metis-vocabularies) and copies the resources tree (47 YAML metadata files + 46 XSL mapping files) to `references/vocabularies/metis-vocabularies/`. This registry is Europeana's own canonical list of authority URI patterns used by Metis enrichment — the runtime helper `schema_loader.metis_vocabularies()` loads it on demand and is the source of truth for `x_authority` classification on `map_sameAs`.
-
-The Europeana script uses `confluence-markdown-exporter` with anonymous access. A lockfile (`docs/europeana/confluence-lock.json`) tracks Confluence page version numbers so subsequent runs only re-export changed pages. Local attachment references are rewritten to remote Confluence download URLs so no binary files are committed.
+---
 
 ## Refreshing the data
 
-Europeana refreshes the FTP dump weekly. To update:
+Europeana refreshes the FTP dump weekly. To update locally:
 
-1. Re-download changed ZIPs: `rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10`
-2. Re-run the pipeline: `uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL`
+```bash
+rclone -P copy europeana:dataset/TTL/ ~/data/europeana/TTL/ --transfers=10
+uv run europeana-qlever -d /data/europeana pipeline ~/data/europeana/TTL
+```
 
-Or step by step (QLever does not support incremental updates; full re-index is needed):
+QLever does not support incremental updates, so a refresh is a full re-merge + re-index. The `pipeline` checkpoint will skip stages whose output already exists; pass `--force` to start from scratch.
 
-1. Re-merge: `uv run europeana-qlever -d /data/europeana merge ~/data/europeana/TTL`
-2. Re-index: `uv run europeana-qlever -d /data/europeana index`
-3. Restart: `uv run europeana-qlever -d /data/europeana start`
-4. Re-export: `uv run europeana-qlever -d /data/europeana export --all`
-
+---
 
 ## License
 
