@@ -1,0 +1,372 @@
+name: Knowledge graph enrichment coverage
+description: >-
+  Coverage of Europeana's knowledge-graph enrichment layer on the
+  strictly-open subset (x_reuse_level = 'open'). Europeana's enrichment
+  goes far beyond dc:subject → skos:Concept: provider properties
+  including dc:creator, dc:format, dcterms:spatial, dcterms:temporal
+  (and more) are linked into typed entities — edm:Agent, edm:Place,
+  skos:Concept, edm:TimeSpan — each carrying multilingual prefLabels.
+  This is the structural advantage that distinguishes Europeana's data
+  offer from any web-scraped image dataset, and the right characterisation
+  cuts the matrix in two directions: by entity class (what kind of node
+  the link points at) and by source property (which provider-proxy field
+  triggered the enrichment). The headline source is map_cho_entities
+  (one row per CHO–entity pair, with x_entity_class + x_property),
+  joined back to the four values_* entity tables to surface multilingual
+  depth.
+
+questions:
+  - id: overall_coverage
+    question: "Open items with any entity-graph link, broken down by entity class"
+    backend: parquet
+    rationale: >-
+      Headline coverage. How many open items have at least one
+      enrichment edge into the knowledge graph at all, and how does
+      that decompose across the four typed entity classes (Agent,
+      Place, Concept, TimeSpan). Items can appear in multiple
+      class-columns simultaneously.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      linked AS (
+          SELECT m.k_iri_cho, m.x_entity_class
+          FROM map_cho_entities m
+          JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+      )
+      SELECT
+          (SELECT count(*) FROM open_items)                                                               AS total_open_items,
+          count(DISTINCT k_iri_cho)                                                                       AS with_any_entity,
+          round(count(DISTINCT k_iri_cho) * 100.0
+                / (SELECT count(*) FROM open_items), 2)                                                   AS pct_with_any,
+          count(DISTINCT k_iri_cho) FILTER (WHERE x_entity_class = 'skos_Concept')                        AS with_concept,
+          round(count(DISTINCT k_iri_cho) FILTER (WHERE x_entity_class = 'skos_Concept') * 100.0
+                / (SELECT count(*) FROM open_items), 2)                                                   AS pct_concept,
+          count(DISTINCT k_iri_cho) FILTER (WHERE x_entity_class = 'edm_Place')                           AS with_place,
+          round(count(DISTINCT k_iri_cho) FILTER (WHERE x_entity_class = 'edm_Place') * 100.0
+                / (SELECT count(*) FROM open_items), 2)                                                   AS pct_place,
+          count(DISTINCT k_iri_cho) FILTER (WHERE x_entity_class = 'edm_Agent')                           AS with_agent,
+          round(count(DISTINCT k_iri_cho) FILTER (WHERE x_entity_class = 'edm_Agent') * 100.0
+                / (SELECT count(*) FROM open_items), 2)                                                   AS pct_agent,
+          count(DISTINCT k_iri_cho) FILTER (WHERE x_entity_class = 'edm_TimeSpan')                        AS with_timespan,
+          round(count(DISTINCT k_iri_cho) FILTER (WHERE x_entity_class = 'edm_TimeSpan') * 100.0
+                / (SELECT count(*) FROM open_items), 2)                                                   AS pct_timespan
+      FROM linked
+
+  - id: class_property_matrix
+    question: "Open items linked, by entity class × source property"
+    backend: parquet
+    rationale: >-
+      The cross-product matrix. Reveals which provider-proxy properties
+      drive each entity class — e.g. dc:subject → Concept, dcterms:spatial
+      and dc:coverage → Place, dc:creator and dc:contributor → Agent,
+      dcterms:temporal → TimeSpan. Confirms the enrichment is broad
+      across properties, not just dc:subject.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      open_total AS (SELECT count(*) AS n FROM open_items)
+      SELECT m.x_entity_class                                                AS entity_class,
+             m.x_property                                                    AS property,
+             count(DISTINCT m.k_iri_cho)                                     AS items_linked,
+             round(count(DISTINCT m.k_iri_cho) * 100.0
+                   / (SELECT n FROM open_total), 2)                          AS pct_of_open
+      FROM map_cho_entities m
+      JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+      GROUP BY m.x_entity_class, m.x_property
+      ORDER BY items_linked DESC
+
+  - id: multi_class_items
+    question: "Distribution of open items by number of distinct entity classes linked"
+    backend: parquet
+    rationale: >-
+      The richness of an item's knowledge-graph footprint. An item
+      linked to a Concept, a Place AND an Agent simultaneously is a
+      richer training signal than one linked only via dc:subject. This
+      distribution tells us how dense the multimodal enrichment is.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      per_cho AS (
+          SELECT m.k_iri_cho,
+                 count(DISTINCT m.x_entity_class) AS class_count
+          FROM map_cho_entities m
+          JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+          GROUP BY m.k_iri_cho
+      ),
+      total AS (SELECT count(*) AS n FROM open_items),
+      buckets AS (
+          SELECT 0 AS class_count,
+                 (SELECT n FROM total) - (SELECT count(*) FROM per_cho) AS items
+          UNION ALL
+          SELECT class_count, count(*) FROM per_cho GROUP BY class_count
+      )
+      SELECT class_count AS distinct_entity_classes,
+             items,
+             round(items * 100.0 / (SELECT n FROM total), 2) AS pct_of_open
+      FROM buckets
+      ORDER BY class_count
+
+  - id: entity_density
+    question: "Distribution of open items by total entity-link count"
+    backend: parquet
+    rationale: >-
+      Per-item density: how many entity edges does each open item
+      have. Long-tail items with 10+ links are typically heavily
+      enriched archival objects (named places, multiple creators,
+      multiple subject concepts).
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      per_cho AS (
+          SELECT m.k_iri_cho, count(*) AS link_count
+          FROM map_cho_entities m
+          JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+          GROUP BY m.k_iri_cho
+      ),
+      buckets AS (
+          SELECT CASE
+                     WHEN link_count = 1 THEN '1'
+                     WHEN link_count BETWEEN 2 AND 3 THEN '2-3'
+                     WHEN link_count BETWEEN 4 AND 5 THEN '4-5'
+                     WHEN link_count BETWEEN 6 AND 10 THEN '6-10'
+                     WHEN link_count BETWEEN 11 AND 20 THEN '11-20'
+                     ELSE '20+'
+                 END AS bucket,
+                 CASE
+                     WHEN link_count = 1 THEN 1
+                     WHEN link_count BETWEEN 2 AND 3 THEN 2
+                     WHEN link_count BETWEEN 4 AND 5 THEN 3
+                     WHEN link_count BETWEEN 6 AND 10 THEN 4
+                     WHEN link_count BETWEEN 11 AND 20 THEN 5
+                     ELSE 6
+                 END AS sort_key
+          FROM per_cho
+      )
+      SELECT bucket AS links_per_item,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY bucket, sort_key
+      ORDER BY sort_key
+
+  - id: multilingual_depth_by_class
+    question: "Multilingual prefLabel depth on enriched entities, per entity class"
+    backend: parquet
+    rationale: >-
+      Extends the open_images.yml#enrichment_layer claim — "96% to
+      20+ language concepts" — to all four entity classes. For each
+      class, what fraction of open-item enrichment links land on
+      entities with prefLabels in 5+ / 10+ / 20+ languages. Places
+      and Agents typically have shallower multilingual depth than
+      Concepts (geographic gazetteers and authority files are
+      typically labelled in one or two languages).
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      links AS (
+          SELECT DISTINCT m.k_iri_cho, m.x_entity_class, m.k_iri_entity
+          FROM map_cho_entities m
+          JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+      ),
+      entity_depth AS (
+          SELECT 'skos_Concept' AS class, k_iri AS k_iri_entity,
+                 count(DISTINCT x_prefLabel_lang) AS lang_depth
+          FROM values_skos_Concept
+          WHERE x_prefLabel_lang IS NOT NULL AND x_prefLabel_lang != ''
+          GROUP BY k_iri
+          UNION ALL
+          SELECT 'edm_Place', k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_edm_Place
+          WHERE x_prefLabel_lang IS NOT NULL AND x_prefLabel_lang != ''
+          GROUP BY k_iri
+          UNION ALL
+          SELECT 'edm_Agent', k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_edm_Agent
+          WHERE x_prefLabel_lang IS NOT NULL AND x_prefLabel_lang != ''
+          GROUP BY k_iri
+          UNION ALL
+          SELECT 'edm_TimeSpan', k_iri, count(DISTINCT x_prefLabel_lang)
+          FROM values_edm_TimeSpan
+          WHERE x_prefLabel_lang IS NOT NULL AND x_prefLabel_lang != ''
+          GROUP BY k_iri
+      ),
+      cho_class_max_depth AS (
+          -- One row per (cho, entity_class), with the max language depth across
+          -- all entities of that class that the CHO links to. Reduces the
+          -- final aggregation from billions of (cho, entity) rows to tens of
+          -- millions of (cho, class) rows and lets the per-class FILTER use
+          -- COUNT(*) instead of COUNT(DISTINCT k_iri_cho).
+          SELECT l.k_iri_cho, l.x_entity_class,
+                 max(coalesce(d.lang_depth, 0)) AS max_depth
+          FROM links l
+          LEFT JOIN entity_depth d
+            ON d.class = l.x_entity_class
+           AND d.k_iri_entity = l.k_iri_entity
+          GROUP BY l.k_iri_cho, l.x_entity_class
+      )
+      SELECT x_entity_class                                                       AS entity_class,
+             count(*)                                                             AS items_linked,
+             count(*) FILTER (WHERE max_depth >= 5)                               AS with_5plus_langs,
+             round(count(*) FILTER (WHERE max_depth >= 5) * 100.0 / count(*), 2)  AS pct_5plus_langs,
+             count(*) FILTER (WHERE max_depth >= 10)                              AS with_10plus_langs,
+             round(count(*) FILTER (WHERE max_depth >= 10) * 100.0 / count(*), 2) AS pct_10plus_langs,
+             count(*) FILTER (WHERE max_depth >= 20)                              AS with_20plus_langs,
+             round(count(*) FILTER (WHERE max_depth >= 20) * 100.0 / count(*), 2) AS pct_20plus_langs
+      FROM cho_class_max_depth
+      GROUP BY x_entity_class
+      ORDER BY items_linked DESC
+
+  - id: top_concepts
+    question: "Top 50 most-cited skos:Concept entities among open items"
+    backend: parquet
+    rationale: >-
+      The 50 most-referenced subject concepts on the open subset, with
+      English prefLabel and language-depth. Provides concrete examples
+      of the multilingual concept layer — a generic reader can see what
+      the enrichment vocabulary actually looks like.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      ranked AS (
+          SELECT m.k_iri_entity, count(DISTINCT m.k_iri_cho) AS items_linked
+          FROM map_cho_entities m
+          JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+          WHERE m.x_entity_class = 'skos_Concept'
+          GROUP BY m.k_iri_entity
+          ORDER BY items_linked DESC
+          LIMIT 50
+      )
+      SELECT r.k_iri_entity AS concept_iri,
+             max(c.v_skos_prefLabel) FILTER (WHERE c.x_prefLabel_lang = 'en') AS preferred_label_en,
+             count(DISTINCT c.x_prefLabel_lang)                              AS prefLabel_languages,
+             r.items_linked
+      FROM ranked r
+      LEFT JOIN values_skos_Concept c ON c.k_iri = r.k_iri_entity
+      GROUP BY r.k_iri_entity, r.items_linked
+      ORDER BY r.items_linked DESC
+
+  - id: top_places
+    question: "Top 50 most-cited edm:Place entities among open items"
+    backend: parquet
+    rationale: >-
+      The 50 most-referenced places. Useful for both checking the
+      enrichment vocabulary's reach (are top European cities and
+      countries here?) and as a leaderboard of geographic salience
+      across the open corpus.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      ranked AS (
+          SELECT m.k_iri_entity, count(DISTINCT m.k_iri_cho) AS items_linked
+          FROM map_cho_entities m
+          JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+          WHERE m.x_entity_class = 'edm_Place'
+          GROUP BY m.k_iri_entity
+          ORDER BY items_linked DESC
+          LIMIT 50
+      )
+      SELECT r.k_iri_entity AS place_iri,
+             max(p.v_skos_prefLabel) FILTER (WHERE p.x_prefLabel_lang = 'en') AS preferred_label_en,
+             count(DISTINCT p.x_prefLabel_lang)                              AS prefLabel_languages,
+             r.items_linked
+      FROM ranked r
+      LEFT JOIN values_edm_Place p ON p.k_iri = r.k_iri_entity
+      GROUP BY r.k_iri_entity, r.items_linked
+      ORDER BY r.items_linked DESC
+
+  - id: top_agents
+    question: "Top 50 most-cited edm:Agent entities among open items"
+    backend: parquet
+    rationale: >-
+      The 50 most-referenced agents (creators, contributors, subjects
+      who-are-people). Spot-check that the leaderboard is plausible
+      (well-known figures emerge), and quantify the multilingual
+      authority-file depth on names.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      ranked AS (
+          SELECT m.k_iri_entity, count(DISTINCT m.k_iri_cho) AS items_linked
+          FROM map_cho_entities m
+          JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+          WHERE m.x_entity_class = 'edm_Agent'
+          GROUP BY m.k_iri_entity
+          ORDER BY items_linked DESC
+          LIMIT 50
+      )
+      SELECT r.k_iri_entity AS agent_iri,
+             max(a.v_skos_prefLabel) FILTER (WHERE a.x_prefLabel_lang = 'en') AS preferred_label_en,
+             count(DISTINCT a.x_prefLabel_lang)                              AS prefLabel_languages,
+             r.items_linked
+      FROM ranked r
+      LEFT JOIN values_edm_Agent a ON a.k_iri = r.k_iri_entity
+      GROUP BY r.k_iri_entity, r.items_linked
+      ORDER BY r.items_linked DESC
+
+  - id: by_edm_type
+    question: "Enrichment rate per edm:type (open subset)"
+    backend: parquet
+    rationale: >-
+      Are open IMAGE items enriched at the same rate as open TEXT?
+      What about SOUND, VIDEO, 3D? Useful for understanding whether
+      the enrichment layer is concentrated on documentary content
+      (where dc:subject is fielded richly) or genuinely cross-modal.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri, v_edm_type FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      enriched AS (
+          SELECT DISTINCT m.k_iri_cho
+          FROM map_cho_entities m
+          JOIN open_items oi ON m.k_iri_cho = oi.k_iri
+      )
+      SELECT oi.v_edm_type AS type,
+             count(*)                                                            AS open_items,
+             count(*) FILTER (WHERE oi.k_iri IN (SELECT k_iri_cho FROM enriched))  AS enriched_items,
+             round(count(*) FILTER (WHERE oi.k_iri IN (SELECT k_iri_cho FROM enriched))
+                   * 100.0 / count(*), 2)                                          AS pct_enriched
+      FROM open_items oi
+      GROUP BY oi.v_edm_type
+      ORDER BY open_items DESC
+
+  - id: by_data_provider
+    question: "Top 25 data providers by open-item enrichment rate (≥10K open items)"
+    backend: parquet
+    rationale: >-
+      Which institutions ship the most heavily-enriched data, and
+      which lag. Filtered to providers with ≥10K open items so a
+      single highly-enriched outlier doesn't crowd the leaderboard.
+      Actionable for outreach: a provider with high item count but
+      low enrichment % is a candidate for help with metadata.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri, v_edm_dataProvider FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      enriched AS (
+          SELECT DISTINCT k_iri_cho FROM map_cho_entities
+      ),
+      per_provider AS (
+          SELECT oi.v_edm_dataProvider                                                  AS provider_iri,
+                 count(*)                                                               AS open_items,
+                 count(*) FILTER (WHERE oi.k_iri IN (SELECT k_iri_cho FROM enriched))   AS enriched_items
+          FROM open_items oi
+          WHERE oi.v_edm_dataProvider IS NOT NULL
+          GROUP BY oi.v_edm_dataProvider
+          HAVING count(*) >= 10000
+      )
+      SELECT COALESCE(o.name, pp.provider_iri) AS data_provider,
+             pp.open_items,
+             pp.enriched_items,
+             round(pp.enriched_items * 100.0 / pp.open_items, 2) AS pct_enriched
+      FROM per_provider pp
+      LEFT JOIN orgs o ON pp.provider_iri = o.k_iri
+      ORDER BY pct_enriched DESC, pp.open_items DESC
+      LIMIT 25
