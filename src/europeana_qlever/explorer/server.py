@@ -23,6 +23,7 @@ import socketserver
 import threading
 import traceback
 import urllib.parse
+from collections import OrderedDict
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
@@ -153,6 +154,37 @@ _ENTITY_FACETS = (
 _FACET_TOP_N_PARQUET = "explorer_facet_top_n.parquet"
 _FACET_TOP_N_ANY_PROPERTY = "*"
 
+# Result-cache sizes. The data is read-only for the lifetime of the
+# explorer process so cached results never go stale; the only risk is
+# memory pressure from unbounded growth, which the LRU bounds.
+_TOP_VALUES_CACHE_SIZE = 200
+_LABELS_CACHE_SIZE = 100
+
+
+class _LRUCache:
+    """Tiny FIFO/LRU cache for memoising query results.
+
+    Backs the explorer's response caches (top_values, resolve_labels).
+    Single-thread-safe by virtue of the engine's outer lock.
+    """
+
+    def __init__(self, maxsize: int) -> None:
+        self.maxsize = maxsize
+        self._data: OrderedDict[Any, Any] = OrderedDict()
+
+    def get(self, key: Any) -> Any:
+        if key not in self._data:
+            return None
+        self._data.move_to_end(key)
+        return self._data[key]
+
+    def put(self, key: Any, value: Any) -> None:
+        if key in self._data:
+            self._data.move_to_end(key)
+        self._data[key] = value
+        if len(self._data) > self.maxsize:
+            self._data.popitem(last=False)
+
 
 class ExplorerEngine:
     """Holds the long-lived DuckDB connection and answers API requests."""
@@ -169,11 +201,21 @@ class ExplorerEngine:
         self.con = duckdb.connect()
         self.con.execute(f"SET memory_limit = '{memory_limit}'")
         self.con.execute(f"SET threads = {int(threads)}")
+        # Keep Parquet footers / row-group statistics cached across
+        # reads — the explorer queries the same files (values_<class>,
+        # explorer_<class>, map_cho_mimetypes, etc.) repeatedly.
+        self.con.execute("PRAGMA enable_object_cache=true")
         # Cache key for the materialised filtered_chos temp table —
         # see _ensure_filter_cache. Lets every facet's top-values
         # reuse the (potentially expensive) filter evaluation that
         # the first call in a batch performs.
         self._filter_cache_key: str | None = None
+        # Result caches — bounded LRUs keyed by (col, filter_json) for
+        # top_values and by the dedup'd IRI tuple for resolve_labels.
+        # The same query under the same filter state is common during
+        # back-and-forth filter exploration, so caching pays off.
+        self._top_values_cache = _LRUCache(_TOP_VALUES_CACHE_SIZE)
+        self._labels_cache = _LRUCache(_LABELS_CACHE_SIZE)
         # DuckDB doesn't accept parameters in DDL — escape quotes manually.
         # The source string is either a resolved local path or a --data-url
         # supplied by the CLI user; neither is untrusted in the usual sense.
@@ -440,6 +482,16 @@ class ExplorerEngine:
         if not unique:
             return {"labels": {}}
 
+        # Result cache: same set of unique IRIs → reuse prior labels.
+        # The frontend's label fetcher already dedupes against its own
+        # known set, but on page reload (or repeated filter cycling
+        # that re-shows previously-seen IRIs) the same batch comes in
+        # again — caching turns those into instant lookups.
+        cache_key = tuple(sorted(unique))
+        cached = self._labels_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         # Partition by source prefix; IRIs that don't match any source
         # are silently dropped (returned absent).
         partitions: dict[str, list[str]] = {}
@@ -461,7 +513,9 @@ class ExplorerEngine:
                 for iri, label in rows:
                     if label:
                         out[iri] = label
-        return {"labels": out}
+        result = {"labels": out}
+        self._labels_cache.put(cache_key, result)
+        return result
 
     def summary(self, filters: dict, group_by: str) -> dict:
         gb_def = self.column_set.get(group_by)
@@ -536,6 +590,21 @@ class ExplorerEngine:
         col_def = self.column_set[col]
         limit = max(1, min(int(limit), 1000))
 
+        # Result cache: same (col, filter, limit) → reuse prior result.
+        # Helps when the user toggles filters back to a previously-seen
+        # state during exploratory clicking.
+        cache_key = (col, json.dumps(filters or {}, sort_keys=True), limit)
+        cached_result = self._top_values_cache.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+
+        result = self._compute_top_values(col, col_def, filters, limit)
+        self._top_values_cache.put(cache_key, result)
+        return result
+
+    def _compute_top_values(
+        self, col: str, col_def: dict, filters: dict, limit: int
+    ) -> dict:
         with self.lock:
             cached = self._ensure_filter_cache(filters)
 
