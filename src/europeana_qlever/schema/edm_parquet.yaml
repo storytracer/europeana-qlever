@@ -1408,19 +1408,19 @@ classes:
 
   ExplorerEdmEntities:
     description: >-
-      Explorer-optimised view of map_edm_entities. One row per
-      (CHO, Europeana entity) pair, denormalised with the entity's
-      English prefLabel inline so the explorer renders facets in a
-      single round-trip. Built on top of map_edm_entities; do not
-      consume this for analytics — use map_edm_entities for the
-      canonical lean edges and join values_<class> for labels when
-      needed.
+      Explorer-optimised view of CHO ↔ Europeana entity edges. Sourced
+      from map_cho_entities (which retains the originating proxy
+      property), filtered to the four data.europeana.eu/{class}/
+      namespaces, denormalised with the entity's English prefLabel
+      inline so the explorer renders facets in a single round-trip.
+      Do not consume this for canonical analytics — use map_edm_entities
+      for the lean (CHO, entity) edge table.
     annotations:
       table_name: explorer_edm_entities
       export_type: map
       export_sets: "pipeline,explorer"
       depends_on: >-
-        map_edm_entities, values_edm_Agent, values_edm_Place,
+        map_cho_entities, values_edm_Agent, values_edm_Place,
         values_skos_Concept, values_edm_TimeSpan
     attributes:
       k_iri_cho:
@@ -1431,6 +1431,13 @@ classes:
         required: true
       x_entity_class:
         range: EntityClass
+      x_property:
+        range: string
+        required: true
+        description: >-
+          The proxy property column that linked this CHO to the
+          entity (e.g. v_dc_subject, v_dc_type, v_dcterms_medium).
+          Lets the explorer offer property-specific facets.
       x_label:
         range: string
         required: true
@@ -1446,15 +1453,17 @@ classes:
   # Four physical partitions of explorer_edm_entities, one per EDM
   # contextual class. The explorer registers each as its own DuckDB
   # TABLE at startup so synthetic-facet queries don't need a
-  # WHERE x_entity_class = ? clause and Parquet row groups are
-  # already sorted by k_iri_entity for fast filtered scans.
+  # WHERE x_entity_class = ? clause. Sorted by (x_property,
+  # k_iri_entity) so property-specific facets get row-group pruning
+  # on the property filter as well as fast scans by entity.
 
-  ExplorerTopics:
+  ExplorerConcepts:
     description: >-
-      Per-class slice of explorer_edm_entities for skos:Concept
-      ("Topics" facet). Sorted by k_iri_entity for row-group pruning.
+      Per-class slice of explorer_edm_entities for skos:Concept.
+      Backs the dc:subject, dc:type, dcterms:medium and dc:format
+      facets, which differ only in the x_property predicate.
     annotations:
-      table_name: explorer_topics
+      table_name: explorer_concepts
       export_type: map
       export_sets: "pipeline,explorer"
       depends_on: "explorer_edm_entities"
@@ -1465,14 +1474,17 @@ classes:
       k_iri_entity:
         range: uri
         required: true
+      x_property:
+        range: string
+        required: true
       x_label:
         range: string
         required: true
 
   ExplorerAgents:
     description: >-
-      Per-class slice of explorer_edm_entities for edm:Agent
-      ("Agents" facet). Sorted by k_iri_entity for row-group pruning.
+      Per-class slice of explorer_edm_entities for edm:Agent.
+      Backs the edm:Agent facet (across all linking properties).
     annotations:
       table_name: explorer_agents
       export_type: map
@@ -1485,14 +1497,17 @@ classes:
       k_iri_entity:
         range: uri
         required: true
+      x_property:
+        range: string
+        required: true
       x_label:
         range: string
         required: true
 
   ExplorerPlaces:
     description: >-
-      Per-class slice of explorer_edm_entities for edm:Place
-      ("Places" facet). Sorted by k_iri_entity for row-group pruning.
+      Per-class slice of explorer_edm_entities for edm:Place.
+      Backs the edm:Place facet (across all linking properties).
     annotations:
       table_name: explorer_places
       export_type: map
@@ -1505,17 +1520,19 @@ classes:
       k_iri_entity:
         range: uri
         required: true
+      x_property:
+        range: string
+        required: true
       x_label:
         range: string
         required: true
 
-  ExplorerPeriods:
+  ExplorerTimeSpans:
     description: >-
-      Per-class slice of explorer_edm_entities for edm:TimeSpan
-      ("Time periods" facet). Sorted by k_iri_entity for row-group
-      pruning.
+      Per-class slice of explorer_edm_entities for edm:TimeSpan.
+      Backs the edm:TimeSpan facet (across all linking properties).
     annotations:
-      table_name: explorer_periods
+      table_name: explorer_timespans
       export_type: map
       export_sets: "pipeline,explorer"
       depends_on: "explorer_edm_entities"
@@ -1525,6 +1542,9 @@ classes:
         required: true
       k_iri_entity:
         range: uri
+        required: true
+      x_property:
+        range: string
         required: true
       x_label:
         range: string
@@ -1536,10 +1556,12 @@ classes:
 
   ExplorerFacetTopN:
     description: >-
-      Precomputed top-N entities per class, ranked by unfiltered CHO
-      count. Used by the explorer to render the initial (unfiltered)
-      facet view instantly — short-circuiting the live aggregation
-      against explorer_<class> when no other filters are active.
+      Precomputed top-N entities per (class, property), ranked by
+      unfiltered CHO count. Used by the explorer to render the initial
+      (unfiltered) facet view instantly — short-circuiting live
+      aggregation against explorer_<class> when no other filters are
+      active. Class-aggregate facets (no specific property) use the
+      sentinel x_property = '*'.
     annotations:
       table_name: explorer_facet_top_n
       export_type: map
@@ -1549,10 +1571,17 @@ classes:
       x_entity_class:
         range: EntityClass
         required: true
+      x_property:
+        range: string
+        required: true
+        description: >-
+          Proxy property the top-N is computed for (e.g.
+          v_dc_subject, v_dc_type) or the sentinel '*' for the
+          class-aggregate (any property).
       x_rank:
         range: integer
         required: true
-        description: 1-indexed rank within x_entity_class.
+        description: 1-indexed rank within (x_entity_class, x_property).
       k_iri_entity:
         range: uri
         required: true

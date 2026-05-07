@@ -124,17 +124,28 @@ _CHO_PROXIES = "values_ore_Proxy.parquet"
 _CHO_TITLES = "links_ore_Proxy/x_property=v_dc_title/data.parquet"
 _CHO_PREFIX = "http://data.europeana.eu/item/"
 
-# Synthetic facets backed by per-class explorer Parquets. User-facing
-# names match Europeana's own docs (Semantic enrichments page uses
-# "places, concepts, agents, time periods").
+# Synthetic facets backed by per-class explorer Parquets. Labels are
+# the EDM properties / class names so the user can see exactly what
+# they're filtering. The four skos:Concept-backed facets all read from
+# the same `explorer_concepts` table — they differ only in which
+# `x_property` they constrain to.
+#
+# `property` = None → class-aggregate facet (any property), uses the
+# top-N sentinel '*' for cold-open lookup.
 _ENTITY_FACETS = (
-    # (facet name, entity class enum value, parquet filename, DuckDB table)
-    ("Topics",       "skos_Concept", "explorer_topics.parquet",  "explorer_topics"),
-    ("Agents",       "edm_Agent",    "explorer_agents.parquet",  "explorer_agents"),
-    ("Places",       "edm_Place",    "explorer_places.parquet",  "explorer_places"),
-    ("Time periods", "edm_TimeSpan", "explorer_periods.parquet", "explorer_periods"),
+    # facet label, entity_class, parquet, table, property (or None)
+    ("dc:subject",      "skos_Concept", "explorer_concepts.parquet",  "explorer_concepts",  "v_dc_subject"),
+    ("dc:type",         "skos_Concept", "explorer_concepts.parquet",  "explorer_concepts",  "v_dc_type"),
+    ("dcterms:medium",  "skos_Concept", "explorer_concepts.parquet",  "explorer_concepts",  "v_dcterms_medium"),
+    ("dc:format",       "skos_Concept", "explorer_concepts.parquet",  "explorer_concepts",  "v_dc_format"),
+    ("dc:creator",      "edm_Agent",    "explorer_agents.parquet",    "explorer_agents",    "v_dc_creator"),
+    ("edm:Agent",       "edm_Agent",    "explorer_agents.parquet",    "explorer_agents",    None),
+    ("dcterms:spatial", "edm_Place",    "explorer_places.parquet",    "explorer_places",    "v_dcterms_spatial"),
+    ("edm:Place",       "edm_Place",    "explorer_places.parquet",    "explorer_places",    None),
+    ("edm:TimeSpan",    "edm_TimeSpan", "explorer_timespans.parquet", "explorer_timespans", None),
 )
 _FACET_TOP_N_PARQUET = "explorer_facet_top_n.parquet"
+_FACET_TOP_N_ANY_PROPERTY = "*"
 
 
 class ExplorerEngine:
@@ -217,27 +228,28 @@ class ExplorerEngine:
     def _register_entity_facet_tables(self, exports_dir: Path) -> None:
         """Register the per-class explorer tables and the top-N view.
 
-        Each facet (Topics / Agents / Places / Time periods) is backed by
-        its own Parquet (``explorer_<facet>.parquet``) — these are
-        physical partitions of ``explorer_edm_entities`` produced by the
-        compose pipeline, sorted by ``k_iri_entity`` so DuckDB row-group
-        statistics can prune filtered scans. Each is materialised as a
-        DuckDB TABLE so the SEMI JOIN hot path scans an in-memory
-        columnar layout.
+        The four EDM contextual classes each have one Parquet
+        (``explorer_<class>.parquet``) — physical partitions of
+        ``explorer_edm_entities`` carrying ``x_property`` so multiple
+        property-specific facets can read from the same per-class
+        table. Sorted by (x_property, k_iri_entity) for row-group
+        pruning on both axes.
 
         The precomputed top-N table (``explorer_facet_top_n``) is
-        registered as a view; ``top_values`` short-circuits to it when
-        no other filters are active, turning a multi-million-row
-        aggregation into a 500-row sorted lookup.
+        keyed by (x_entity_class, x_property) — including the
+        sentinel ``'*'`` for class-aggregate facets — so cold-open
+        of every facet short-circuits to a ~500-row sorted lookup.
         """
-        per_class_paths = [exports_dir / fn for _, _, fn, _ in _ENTITY_FACETS]
+        # Distinct per-class tables (4 facets share explorer_concepts).
+        unique_tables = {table: filename for _, _, filename, table, _ in _ENTITY_FACETS}
+        per_class_paths = [exports_dir / fn for fn in unique_tables.values()]
         top_n_path = exports_dir / _FACET_TOP_N_PARQUET
         if not all(p.exists() for p in per_class_paths) or not top_n_path.exists():
             return
 
         # DuckDB doesn't accept prepared parameters in DDL; escape quotes
         # manually (same convention as the items view above).
-        for _, _, filename, table in _ENTITY_FACETS:
+        for table, filename in unique_tables.items():
             escaped = str(exports_dir / filename).replace("'", "''")
             self.con.execute(
                 f"CREATE TABLE {table} AS SELECT * FROM read_parquet("
@@ -250,7 +262,7 @@ class ExplorerEngine:
         )
         self.entity_facets_enabled = True
 
-        for name, cls, _, table in _ENTITY_FACETS:
+        for name, cls, _, table, prop in _ENTITY_FACETS:
             col = {
                 "name": name,
                 "type": "ENTITY_IRI",
@@ -259,6 +271,7 @@ class ExplorerEngine:
                 "synthetic": True,
                 "entity_class": cls,
                 "facet_table": table,
+                "facet_property": prop,  # None → class-aggregate
             }
             self.columns.append(col)
             self.column_set[name] = col
@@ -299,7 +312,9 @@ class ExplorerEngine:
             # must reference EVERY selected entity, not just any of
             # them. GROUP BY k_iri_cho + HAVING COUNT(DISTINCT
             # k_iri_entity) = N picks only CHOs that hit all N
-            # selected values.
+            # selected values. For property-specific facets (e.g.
+            # dc:type) an extra `AND x_property = ?` confines the
+            # match to edges of that proxy property.
             if col_def.get("synthetic"):
                 if kind != "in":
                     continue
@@ -307,14 +322,22 @@ class ExplorerEngine:
                 if not isinstance(values, list) or not values:
                     continue
                 table = col_def["facet_table"]
+                facet_property = col_def.get("facet_property")
                 placeholders = ", ".join(["?"] * len(values))
+                prop_clause = (
+                    "AND x_property = ? "
+                    if facet_property else ""
+                )
                 parts.append(
                     f"\"k_iri\" IN (SELECT k_iri_cho FROM {table} "
                     f"WHERE k_iri_entity IN ({placeholders}) "
+                    f"{prop_clause}"
                     "GROUP BY k_iri_cho "
                     "HAVING COUNT(DISTINCT k_iri_entity) = ?)"
                 )
                 params.extend(values)
+                if facet_property:
+                    params.append(facet_property)
                 params.append(len(values))
                 continue
             q = f'"{col}"'
@@ -446,32 +469,39 @@ class ExplorerEngine:
 
         if col_def.get("synthetic"):
             table = col_def["facet_table"]
+            facet_property = col_def.get("facet_property")
             # No other filters active → short-circuit to the precomputed
-            # top-N table (instant cold open, no aggregation cost).
-            # The frontend's CategoricalFacet already strips the current
-            # facet's own selection from `filters` before calling, so an
-            # empty `filters` here means "unfiltered everywhere".
+            # top-N. Property-specific facets look up rows for their
+            # property; class-aggregate facets use the '*' sentinel.
             if not filters:
+                top_n_property = facet_property or _FACET_TOP_N_ANY_PROPERTY
                 sql = (
                     "SELECT k_iri_entity AS v, x_label AS label,"
                     " x_item_count AS n\n"
                     "FROM facet_top_n\n"
-                    "WHERE x_entity_class = ?\n"
+                    "WHERE x_entity_class = ? AND x_property = ?\n"
                     "ORDER BY x_rank LIMIT ?"
                 )
-                args = [col_def["entity_class"], limit + 1]
+                args = [col_def["entity_class"], top_n_property, limit + 1]
             else:
                 # Live aggregation against the per-class table.
                 # ANY_VALUE(x_label) is safe — x_label is functionally
                 # determined by k_iri_entity by construction.
+                prop_clause = (
+                    "  AND x_property = ?\n" if facet_property else ""
+                )
                 sql = (
                     "SELECT k_iri_entity AS v, ANY_VALUE(x_label) AS label,"
                     " COUNT(*) AS n\n"
                     f"FROM {table}\n"
                     f"WHERE k_iri_cho IN (SELECT k_iri FROM items {where})\n"
+                    f"{prop_clause}"
                     "GROUP BY 1 ORDER BY 3 DESC LIMIT ?"
                 )
-                args = [*params, limit + 1]
+                args = list(params)
+                if facet_property:
+                    args.append(facet_property)
+                args.append(limit + 1)
             with self.lock:
                 rows = self.con.execute(sql, args).fetchall()
             truncated = len(rows) > limit
