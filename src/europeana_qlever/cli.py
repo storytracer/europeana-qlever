@@ -2260,21 +2260,44 @@ def grasp_stop(ctx: click.Context):
 # ---------------------------------------------------------------------------
 
 def _kill_listener_on(port: int) -> None:
-    """Terminate any process currently listening on ``port``."""
+    """Terminate any process currently listening on ``port``.
+
+    Uses ``lsof`` rather than ``psutil.net_connections()`` because the latter
+    requires root on macOS (it calls ``proc_pidinfo(PROC_PIDLISTFDS)`` against
+    every process on the system).
+    """
+    import shutil
+    import subprocess
+
     import psutil
 
+    lsof = shutil.which("lsof")
+    if not lsof:
+        display.console.print(
+            f"[yellow]lsof not found; cannot check for existing listener on :{port}[/yellow]"
+        )
+        return
+
+    try:
+        result = subprocess.run(
+            [lsof, "-tiTCP:" + str(port), "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as e:
+        display.console.print(
+            f"[yellow]Failed to run lsof to check :{port}: {e}[/yellow]"
+        )
+        return
+
+    pids = [int(line) for line in result.stdout.split() if line.strip().isdigit()]
     victims: list[psutil.Process] = []
-    for conn in psutil.net_connections(kind="inet"):
-        if (
-            conn.status == psutil.CONN_LISTEN
-            and conn.laddr
-            and conn.laddr.port == port
-            and conn.pid
-        ):
-            try:
-                victims.append(psutil.Process(conn.pid))
-            except psutil.NoSuchProcess:
-                pass
+    for pid in pids:
+        try:
+            victims.append(psutil.Process(pid))
+        except psutil.NoSuchProcess:
+            pass
 
     for proc in victims:
         try:
@@ -2285,6 +2308,9 @@ def _kill_listener_on(port: int) -> None:
             proc.terminate()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
+
+    if not victims:
+        return
 
     gone, alive = psutil.wait_procs(victims, timeout=3)
     for proc in alive:
