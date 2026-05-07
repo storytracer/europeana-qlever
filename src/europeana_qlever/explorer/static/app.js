@@ -265,81 +265,6 @@ function CategoricalFacet({ col, filters, setFilters, labels, requestLabels }) {
   `;
 }
 
-function BooleanFacet({ col, filters, setFilters }) {
-  const active = filters[col.name];
-  const cls = (kind) => {
-    if (kind === "any") return !active ? "active" : "";
-    if (kind === "true") return active && active.value === true ? "active" : "";
-    return active && active.value === false ? "active" : "";
-  };
-  function set(kind) {
-    const f = { ...filters };
-    if (kind === "any") delete f[col.name];
-    else f[col.name] = { kind: "bool", value: kind === "true" };
-    setFilters(f);
-  }
-  return html`
-    <div class="facet">
-      <h4>${col.name}</h4>
-      <div class="toggle">
-        <button class=${cls("any")} onClick=${() => set("any")}>Any</button>
-        <button class=${cls("true")} onClick=${() => set("true")}>True</button>
-        <button class=${cls("false")} onClick=${() => set("false")}>False</button>
-      </div>
-    </div>
-  `;
-}
-
-function NumericFacet({ col, filters, setFilters }) {
-  const active = filters[col.name];
-  const [lo, setLo] = useState(active?.min ?? col.min ?? 0);
-  const [hi, setHi] = useState(active?.max ?? col.max ?? 0);
-
-  // Reset local inputs when the filter is cleared from outside.
-  useEffect(() => {
-    if (!active) {
-      setLo(col.min ?? 0);
-      setHi(col.max ?? 0);
-    }
-  }, [active, col.min, col.max]);
-
-  function commit() {
-    const min = lo === "" ? null : Number(lo);
-    const max = hi === "" ? null : Number(hi);
-    const f = { ...filters };
-    if (min == null && max == null) delete f[col.name];
-    else f[col.name] = { kind: "range", min, max };
-    setFilters(f);
-  }
-
-  return html`
-    <div class="facet">
-      <h4>${col.name}</h4>
-      <div class="range">
-        <span class="muted">min</span>
-        <input
-          type="number"
-          class="min"
-          value=${lo}
-          onInput=${(e) => setLo(e.target.value)}
-          onChange=${commit}
-        />
-        <span class="muted">max</span>
-        <input
-          type="number"
-          class="max"
-          value=${hi}
-          onInput=${(e) => setHi(e.target.value)}
-          onChange=${commit}
-        />
-      </div>
-      <div class="muted" style="margin-top:4px">
-        Data range ${fmtN(col.min)}–${fmtN(col.max)}
-      </div>
-    </div>
-  `;
-}
-
 function FacetSidebar({ schema, filters, setFilters, labels, requestLabels }) {
   return html`
     <aside id="facets">
@@ -350,33 +275,19 @@ function FacetSidebar({ schema, filters, setFilters, labels, requestLabels }) {
       ${schema.columns
         .filter((c) => c.category !== "skip")
         .map((col) => {
-          if (col.category === "categorical") {
-            return html`<${CategoricalFacet}
-              key=${col.name}
-              col=${col}
-              filters=${filters}
-              setFilters=${setFilters}
-              labels=${labels}
-              requestLabels=${requestLabels}
-            />`;
-          }
-          if (col.category === "boolean") {
-            return html`<${BooleanFacet}
-              key=${col.name}
-              col=${col}
-              filters=${filters}
-              setFilters=${setFilters}
-            />`;
-          }
-          if (col.category === "numeric") {
-            return html`<${NumericFacet}
-              key=${col.name}
-              col=${col}
-              filters=${filters}
-              setFilters=${setFilters}
-            />`;
-          }
-          return null;
+          // Every type — categorical, boolean, low-cardinality
+          // numeric — renders as a count-list facet. High-cardinality
+          // numerics fall through here too: their top-N values still
+          // make a useful distribution view, and they're rare in
+          // practice (group_items is scalar/categorical by design).
+          return html`<${CategoricalFacet}
+            key=${col.name}
+            col=${col}
+            filters=${filters}
+            setFilters=${setFilters}
+            labels=${labels}
+            requestLabels=${requestLabels}
+          />`;
         })}
     </aside>
   `;
@@ -655,22 +566,17 @@ function View({
       if (!summary || !summary.chart[idx]) return;
       const value = summary.chart[idx].value;
       const col = groupBy;
-      const colDef = schema.columns.find((c) => c.name === col);
       const f = { ...filters };
-      if (colDef?.category === "boolean") {
-        f[col] = { kind: "bool", value: !!value };
-      } else {
-        const cur = f[col]?.values ?? [];
-        const exists = cur.some((x) => x === value);
-        const next = exists
-          ? cur.filter((x) => x !== value)
-          : [...cur, value];
-        if (next.length === 0) delete f[col];
-        else f[col] = { kind: "in", values: next };
-      }
+      const cur = f[col]?.values ?? [];
+      const exists = cur.some((x) => x === value);
+      const next = exists
+        ? cur.filter((x) => x !== value)
+        : [...cur, value];
+      if (next.length === 0) delete f[col];
+      else f[col] = { kind: "in", values: next };
       setFilters(f);
     },
-    [summary, groupBy, filters, schema, setFilters]
+    [summary, groupBy, filters, setFilters]
   );
 
   return html`

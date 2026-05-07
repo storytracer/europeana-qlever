@@ -177,7 +177,6 @@ class ExplorerEngine:
             self.con.execute("SELECT COUNT(*) FROM items").fetchone()[0]
         )
 
-        self._load_numeric_ranges()
         self._load_low_cardinality_flags()
 
         self.iri_sources: list[_IRISource] = []
@@ -267,10 +266,14 @@ class ExplorerEngine:
     # -- startup ---------------------------------------------------------
 
     def _load_low_cardinality_flags(self) -> None:
-        # Probe each categorical/boolean column for its distinct count, capped
-        # at the threshold via LIMIT so DuckDB stops scanning early.
+        # Probe categorical / boolean / numeric columns for distinct
+        # count, capped at the threshold via LIMIT so DuckDB stops
+        # scanning early. Booleans are inherently low-cardinality;
+        # small-domain integers (e.g. x_content_tier with values 0–4)
+        # and similar enums benefit from the same count-list UI as
+        # categoricals.
         for c in self.columns:
-            if c["category"] not in ("categorical", "boolean"):
+            if c["category"] not in ("categorical", "boolean", "numeric"):
                 continue
             q = f'"{c["name"]}"'
             distinct = int(self.con.execute(
@@ -281,22 +284,6 @@ class ExplorerEngine:
                 ") AS d"
             ).fetchone()[0])
             c["low_cardinality"] = distinct < _LOW_CARDINALITY_THRESHOLD
-
-    def _load_numeric_ranges(self) -> None:
-        numerics = [c for c in self.columns if c["category"] == "numeric"]
-        if not numerics:
-            return
-        selects = []
-        for i, c in enumerate(numerics):
-            q = f'"{c["name"]}"'
-            selects.append(f"MIN({q}) AS mn{i}")
-            selects.append(f"MAX({q}) AS mx{i}")
-        row = self.con.execute(
-            f"SELECT {', '.join(selects)} FROM items"
-        ).fetchone()
-        for i, c in enumerate(numerics):
-            c["min"] = _to_num(row[i * 2])
-            c["max"] = _to_num(row[i * 2 + 1])
 
     # -- filter → SQL -----------------------------------------------------
 
@@ -332,17 +319,6 @@ class ExplorerEngine:
                     continue
                 parts.append(f"{q} IN ({', '.join(['?'] * len(values))})")
                 params.extend(values)
-            elif kind == "bool":
-                parts.append(f"{q} = ?")
-                params.append(bool(f.get("value")))
-            elif kind == "range":
-                mn, mx = f.get("min"), f.get("max")
-                if mn is not None:
-                    parts.append(f"{q} >= ?")
-                    params.append(mn)
-                if mx is not None:
-                    parts.append(f"{q} <= ?")
-                    params.append(mx)
         where = ("WHERE " + " AND ".join(parts)) if parts else ""
         return where, params
 
@@ -567,16 +543,6 @@ def _json_scalar(v):
     if v is None or isinstance(v, (str, int, float, bool)):
         return v
     return str(v)
-
-
-def _to_num(v):
-    if v is None:
-        return None
-    if isinstance(v, bool):
-        return int(v)
-    if isinstance(v, int):
-        return int(v)
-    return float(v)
 
 
 # ---------------------------------------------------------------------------
