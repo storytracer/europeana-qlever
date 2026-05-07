@@ -295,9 +295,11 @@ class ExplorerEngine:
                 continue  # silently drop unknown / malformed filters
             col_def = self.column_set[col]
             kind = f.get("kind")
-            # Synthetic facets resolve via SEMI JOIN to the per-class
-            # explorer table (no x_entity_class clause needed — the
-            # table is already pre-filtered to that class).
+            # Synthetic facets: AND-within-facet semantics. The CHO
+            # must reference EVERY selected entity, not just any of
+            # them. GROUP BY k_iri_cho + HAVING COUNT(DISTINCT
+            # k_iri_entity) = N picks only CHOs that hit all N
+            # selected values.
             if col_def.get("synthetic"):
                 if kind != "in":
                     continue
@@ -308,9 +310,12 @@ class ExplorerEngine:
                 placeholders = ", ".join(["?"] * len(values))
                 parts.append(
                     f"\"k_iri\" IN (SELECT k_iri_cho FROM {table} "
-                    f"WHERE k_iri_entity IN ({placeholders}))"
+                    f"WHERE k_iri_entity IN ({placeholders}) "
+                    "GROUP BY k_iri_cho "
+                    "HAVING COUNT(DISTINCT k_iri_entity) = ?)"
                 )
                 params.extend(values)
+                params.append(len(values))
                 continue
             q = f'"{col}"'
             if kind == "in":

@@ -293,6 +293,37 @@ def _provider_proxy_properties_step(*, chunk_filter: bool = False) -> ComposeSte
     return ComposeStep(name="provider_proxy_properties", sql=sql)
 
 
+def _proxy_title_languages_step(*, chunk_filter: bool = False) -> ComposeStep:
+    """Distinct language-tag count per CHO from dc:title literals.
+
+    Reads the v_dc_title partition of links_ore_Proxy (provider proxy
+    only) and counts distinct non-empty x_value_lang tags per CHO.
+    The result is a coarse measure of the item's metadata
+    multilinguality. CHOs with no language-tagged title literals are
+    absent here and pick up 0 via the LEFT JOIN COALESCE in the final
+    step.
+    """
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON pc.k_iri_cho = cc.k_iri\n"
+        if chunk_filter else ""
+    )
+    sql = (
+        f"{create} proxy_title_languages AS\n"
+        "SELECT pc.k_iri_cho AS k_iri,\n"
+        "       COUNT(DISTINCT l.x_value_lang) AS x_title_languages\n"
+        "FROM read_parquet('{exports_dir}/links_ore_Proxy/"
+        "x_property=v_dc_title/**/*.parquet') l\n"
+        "JOIN proxy_cho pc ON l.k_iri = pc.k_iri\n"
+        f"{chunk_join}"
+        "WHERE pc.proxy_type = 'provider'\n"
+        "  AND l.x_value_lang IS NOT NULL\n"
+        "  AND l.x_value_lang != ''\n"
+        "GROUP BY 1"
+    )
+    return ComposeStep(name="proxy_title_languages", sql=sql)
+
+
 def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
     """Build the final assembly step for group_items.
 
@@ -316,6 +347,7 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
         f"{duckdb_family_case('agg.v_edm_rights')} AS x_rights_family",
         "TRY_CAST(REGEXP_EXTRACT(tier.x_content_tier_uri, 'contentTier([0-9])$', 1) AS INTEGER) AS x_content_tier",
         "NULLIF(REGEXP_EXTRACT(tier.x_metadata_tier_uri, 'metadataTier([0A-C])$', 1), '') AS x_metadata_tier",
+        "COALESCE(tlang.x_title_languages, 0) AS x_title_languages",
     ]
     select_parts.sort(key=lambda s: s.rsplit(" AS ", 1)[1] if " AS " in s else s)
     select_str = ",\n  ".join(select_parts)
@@ -339,7 +371,8 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
         "LEFT JOIN (SELECT k_iri FROM provider_proxy_properties "
         "WHERE x_property = 'v_dc_description') hd ON hd.k_iri = cho.k_iri\n"
         "LEFT JOIN (SELECT k_iri FROM provider_proxy_properties "
-        "WHERE x_property = 'v_dc_subject') hs ON hs.k_iri = cho.k_iri"
+        "WHERE x_property = 'v_dc_subject') hs ON hs.k_iri = cho.k_iri\n"
+        "LEFT JOIN proxy_title_languages tlang ON tlang.k_iri = cho.k_iri"
     )
 
     return ComposeStep(name="group_items_final", sql=final_sql, is_final=True)
@@ -374,6 +407,7 @@ def group_items_chunk_steps() -> list[ComposeStep]:
         _proxy_cho_step(chunk_filter=True),
         _publishing_tier_step(chunk_filter=True),
         _provider_proxy_properties_step(chunk_filter=True),
+        _proxy_title_languages_step(chunk_filter=True),
         _europeana_proxy_scalars_step(chunk_filter=True),
         _group_items_final_step(chunk_filter=True),
     ]
@@ -391,6 +425,7 @@ def group_items_steps() -> list[ComposeStep]:
         _publishing_tier_step(),
         _primary_wr_step(),
         _provider_proxy_properties_step(),
+        _proxy_title_languages_step(),
         _europeana_proxy_scalars_step(),
         _group_items_final_step(),
     ]

@@ -1258,6 +1258,13 @@ classes:
           Europeana Metadata Tier (0, A, B, C) for this item, derived from
           the provider aggregation's epf:metadataTierX quality annotation.
           NULL when the annotation is missing.
+      x_title_languages:
+        range: integer
+        description: >-
+          Number of distinct language tags present on this CHO's
+          dc:title literals (provider proxy only). A coarse proxy for
+          how internationalised the item's metadata is. 0 when the
+          item has no language-tagged titles.
 
   # =================================================================
   # map_rights — distinct rights URIs with classification

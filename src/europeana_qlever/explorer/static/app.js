@@ -162,21 +162,17 @@ function CategoricalFacet({ col, filters, setFilters, labels, requestLabels }) {
   const [search, setSearch] = useState("");
   const [error, setError] = useState(null);
 
-  // Top values for this column should reflect every *other* facet's filter.
-  const otherFilters = useMemo(() => {
-    const o = {};
-    for (const k of Object.keys(filters)) {
-      if (k !== col.name) o[k] = filters[k];
-    }
-    return o;
-  }, [filters, col.name]);
-
+  // Counts reflect the FULL active filter — including this facet's own
+  // selection. Combined with AND-within-facet semantics on synthetic
+  // facets, every visible count is a co-occurrence count against the
+  // currently filtered set, so each click consistently narrows the
+  // view.
   useEffect(() => {
     const ctrl = new AbortController();
     setError(null);
     api(
       "/api/top-values",
-      { col: col.name, filters: otherFilters, limit: TOP_VALUES_PER_FACET },
+      { col: col.name, filters, limit: TOP_VALUES_PER_FACET },
       ctrl.signal
     )
       .then((res) => setData({ rows: res.values, truncated: !!res.truncated }))
@@ -184,7 +180,7 @@ function CategoricalFacet({ col, filters, setFilters, labels, requestLabels }) {
         if (e.name !== "AbortError") setError(e.message);
       });
     return () => ctrl.abort();
-  }, [col.name, otherFilters]);
+  }, [col.name, filters]);
 
   useEffect(() => {
     if (!data) return;
@@ -203,8 +199,17 @@ function CategoricalFacet({ col, filters, setFilters, labels, requestLabels }) {
     const lab = (row.label || labels[row.value] || "").toLowerCase();
     return v.includes(q) || (lab && lab.includes(q));
   };
+  // Pin checked rows to the top, count-descending within each group.
+  // This way the user's current selection is always visible at a glance,
+  // even if the selected value isn't among the highest-count items.
   const visible = data
-    ? data.rows.filter((r) => matches(search.toLowerCase(), r))
+    ? data.rows
+        .filter((r) => matches(search.toLowerCase(), r))
+        .sort((a, b) => {
+          const aSel = selected.has(a.value) ? 0 : 1;
+          const bSel = selected.has(b.value) ? 0 : 1;
+          return aSel - bSel || (b.count - a.count);
+        })
     : [];
 
   function toggle(value, checked) {
