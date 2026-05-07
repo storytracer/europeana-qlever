@@ -1,0 +1,373 @@
+name: Open PDF documents (Dataset 4 candidate)
+description: >-
+  Survey of openly licensed PDF documents in Europeana — newspapers,
+  books, manuscripts, diaries and other born-as-PDF cultural heritage
+  content. Scope: every question filters to WebResources where
+  v_ebucore_hasMimeType = 'application/pdf' on items with
+  x_reuse_level = 'open'. PDFs are the documentary core of Europeana —
+  77% of all multi-page text content lands here, and the underlying
+  dc:type signal is much cleaner than for image objects (Newspaper,
+  Periodical, Book, Manuscript directly visible). Targets: characterise
+  the open PDF corpus by volume, total bytes, content type, provider
+  geography, multi-volume coverage, and IIIF / content-tier quality
+  signals.
+
+questions:
+  - id: volume
+    question: "Volume — total open PDF resources, distinct items, average size, total bytes"
+    backend: parquet
+    rationale: >-
+      Headline scale. Total PDF resources (one row per WebResource),
+      distinct CHOs (since some items have multiple PDF volumes), average
+      file size in MB, and total corpus size in TB — the latter is the
+      relevant number for any partner planning to mirror the content.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      )
+      SELECT
+          count(*)                                                              AS total_pdf_resources,
+          count(DISTINCT wr.k_iri_cho)                                          AS distinct_items,
+          round(avg(wr.v_ebucore_fileByteSize) / (1024 * 1024.0), 1)            AS avg_size_mb,
+          round(sum(wr.v_ebucore_fileByteSize::BIGINT)
+                / (1024.0 * 1024 * 1024 * 1024), 1)                             AS total_size_tb
+      FROM values_edm_WebResource wr
+      JOIN open_items oi ON wr.k_iri_cho = oi.k_iri
+      WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+
+  - id: by_type
+    question: "Open PDF items by edm:type"
+    backend: parquet
+    rationale: >-
+      Verifies that PDFs are overwhelmingly TEXT-typed (newspapers,
+      books, manuscripts) but surfaces the long tail of non-TEXT items
+      (IMAGE objects with PDF info sheets, occasional 3D documentation,
+      etc.) — useful for catalogue-quality QA.
+    query: |
+      WITH open_pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN group_items g ON g.k_iri = wr.k_iri_cho
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND g.x_reuse_level = 'open'
+      )
+      SELECT g.v_edm_type AS type,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM open_pdf_items op
+      JOIN group_items g ON g.k_iri = op.k_iri_cho
+      GROUP BY g.v_edm_type
+      ORDER BY items DESC
+
+  - id: by_rights_family
+    question: "Open PDF items by rights family (PDM / CC0 / CC-BY / CC-BY-SA)"
+    backend: parquet
+    rationale: >-
+      Rights tier breakdown for the open PDF corpus. Useful for
+      deciding which legal profile to ship first — the PDM+CC0 zero-
+      friction tier is the cleanest base for AI training, while the
+      CC-BY tier needs attribution plumbing.
+    query: |
+      WITH open_pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN group_items g ON g.k_iri = wr.k_iri_cho
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND g.x_reuse_level = 'open'
+      )
+      SELECT g.x_rights_family AS rights_family,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM open_pdf_items op
+      JOIN group_items g ON g.k_iri = op.k_iri_cho
+      GROUP BY g.x_rights_family
+      ORDER BY items DESC
+
+  - id: by_dc_type
+    question: "Top 25 dc:type values among open PDF items (Newspaper / Book / Manuscript / …)"
+    backend: parquet
+    rationale: >-
+      The single cleanest content-type signal for PDFs. Verifies the
+      explorer-observed pattern (Periodical, Newspaper, Diary, Book,
+      Advertisement, Manuscript, Monograph, Letter, Deed, Pamphlet,
+      Photograph, …). Restricted to provider-proxy literal values to
+      avoid concept-IRI noise.
+    query: |
+      WITH open_pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN group_items g ON g.k_iri = wr.k_iri_cho
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND g.x_reuse_level = 'open'
+      )
+      SELECT l.x_value AS dc_type,
+             count(DISTINCT p.k_iri_cho) AS items
+      FROM links_ore_Proxy l
+      JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+      JOIN open_pdf_items op ON p.k_iri_cho = op.k_iri_cho
+      WHERE l.x_property = 'v_dc_type'
+        AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+        AND l.x_value_is_iri = false
+        AND l.x_value IS NOT NULL
+        AND l.x_value != ''
+      GROUP BY l.x_value
+      ORDER BY items DESC
+      LIMIT 25
+
+  - id: by_country
+    question: "Top 25 countries by open PDF items"
+    backend: parquet
+    rationale: >-
+      Geographic distribution of the open PDF corpus. Heavily skewed
+      toward countries with mature national-library digitisation
+      programmes (newspapers, gazettes, parliamentary records).
+    query: |
+      WITH open_pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN group_items g ON g.k_iri = wr.k_iri_cho
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND g.x_reuse_level = 'open'
+      )
+      SELECT g.v_edm_country AS country,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM open_pdf_items op
+      JOIN group_items g ON g.k_iri = op.k_iri_cho
+      WHERE g.v_edm_country IS NOT NULL
+      GROUP BY g.v_edm_country
+      ORDER BY items DESC
+      LIMIT 25
+
+  - id: top_data_providers
+    question: "Top 25 data providers of open PDF items"
+    backend: parquet
+    rationale: >-
+      Verifies the explorer-observed top: Virtual Library of Historical
+      Press (~1.47M), KB Netherlands, National Library of Finland,
+      Jagiellonian Library, Silesian Digital Library, etc. National
+      libraries dominate; this is the actionable list for partner
+      outreach if we want to bundle.
+    query: |
+      WITH open_pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN group_items g ON g.k_iri = wr.k_iri_cho
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND g.x_reuse_level = 'open'
+      )
+      SELECT COALESCE(o.name, g.v_edm_dataProvider) AS data_provider,
+             count(*) AS items
+      FROM open_pdf_items op
+      JOIN group_items g ON g.k_iri = op.k_iri_cho
+      LEFT JOIN orgs o ON g.v_edm_dataProvider = o.k_iri
+      WHERE g.v_edm_dataProvider IS NOT NULL
+      GROUP BY 1
+      ORDER BY items DESC
+      LIMIT 25
+
+  - id: top_datasets
+    question: "Top 25 datasets of open PDF items"
+    backend: parquet
+    rationale: >-
+      Per-dataset view, finer than provider. Datasets are the natural
+      unit of bulk re-ingestion — a single institution may have
+      multiple PDF datasets with very different content profiles
+      (e.g. newspapers vs digitised monographs).
+    query: |
+      WITH open_pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN group_items g ON g.k_iri = wr.k_iri_cho
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND g.x_reuse_level = 'open'
+      )
+      SELECT g.v_edm_datasetName AS dataset,
+             count(*) AS items
+      FROM open_pdf_items op
+      JOIN group_items g ON g.k_iri = op.k_iri_cho
+      WHERE g.v_edm_datasetName IS NOT NULL
+      GROUP BY g.v_edm_datasetName
+      ORDER BY items DESC
+      LIMIT 25
+
+  - id: size_distribution
+    question: "File size distribution of open PDF resources"
+    backend: parquet
+    rationale: >-
+      Storage / harvesting cost characterisation. PDFs span a wide
+      size range (cover pages a few hundred KB; bound newspaper years
+      hundreds of MB). The ≥100 MB and ≥1 GB tiers are the relevant
+      ones for any partner sizing a mirror.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      pdf_resources AS (
+          SELECT wr.v_ebucore_fileByteSize AS size_bytes
+          FROM values_edm_WebResource wr
+          JOIN open_items oi ON wr.k_iri_cho = oi.k_iri
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND wr.v_ebucore_fileByteSize IS NOT NULL
+      ),
+      buckets AS (
+          SELECT CASE
+                     WHEN size_bytes < 100 * 1024              THEN '< 100 KB'
+                     WHEN size_bytes < 1024 * 1024             THEN '100 KB – 1 MB'
+                     WHEN size_bytes < 10 * 1024 * 1024        THEN '1 MB – 10 MB'
+                     WHEN size_bytes < 100 * 1024 * 1024       THEN '10 MB – 100 MB'
+                     WHEN size_bytes < 1024 * 1024 * 1024      THEN '100 MB – 1 GB'
+                     ELSE                                           '>= 1 GB'
+                 END AS size_bucket,
+                 CASE
+                     WHEN size_bytes < 100 * 1024              THEN 1
+                     WHEN size_bytes < 1024 * 1024             THEN 2
+                     WHEN size_bytes < 10 * 1024 * 1024        THEN 3
+                     WHEN size_bytes < 100 * 1024 * 1024       THEN 4
+                     WHEN size_bytes < 1024 * 1024 * 1024      THEN 5
+                     ELSE                                           6
+                 END AS sort_key
+          FROM pdf_resources
+      )
+      SELECT size_bucket,
+             count(*) AS resources,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY size_bucket, sort_key
+      ORDER BY sort_key
+
+  - id: multi_pdf_items
+    question: "Distribution of items by number of PDF resources"
+    backend: parquet
+    rationale: >-
+      Most PDF items are single-PDF (the whole publication in one
+      file). Multi-PDF items are typically multi-volume works or
+      year-sets of bound newspapers — interesting outliers and a
+      signal of how publishers chunk their content.
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      per_cho AS (
+          SELECT wr.k_iri_cho, count(*) AS pdf_count
+          FROM values_edm_WebResource wr
+          JOIN open_items oi ON wr.k_iri_cho = oi.k_iri
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+          GROUP BY wr.k_iri_cho
+      ),
+      buckets AS (
+          SELECT CASE
+                     WHEN pdf_count = 1 THEN '1 (single PDF)'
+                     WHEN pdf_count BETWEEN 2 AND 5 THEN '2-5'
+                     WHEN pdf_count BETWEEN 6 AND 10 THEN '6-10'
+                     WHEN pdf_count BETWEEN 11 AND 50 THEN '11-50'
+                     ELSE '50+'
+                 END AS bucket,
+                 CASE
+                     WHEN pdf_count = 1 THEN 1
+                     WHEN pdf_count BETWEEN 2 AND 5 THEN 2
+                     WHEN pdf_count BETWEEN 6 AND 10 THEN 3
+                     WHEN pdf_count BETWEEN 11 AND 50 THEN 4
+                     ELSE 5
+                 END AS sort_key
+          FROM per_cho
+      )
+      SELECT bucket AS pdfs_per_item,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY bucket, sort_key
+      ORDER BY sort_key
+
+  - id: pdf_plus_image
+    question: "Open items that ship both a PDF and an image WebResource"
+    backend: parquet
+    rationale: >-
+      Some publishers offer a PDF for full-text access AND an image
+      file for visual fidelity (cover thumbnails, illustrations).
+      These dual-delivery items are the most accessible content in
+      the catalogue and a rich seed for multimodal model training
+      (text + image grounded in the same object).
+    query: |
+      WITH open_items AS (
+          SELECT k_iri FROM group_items WHERE x_reuse_level = 'open'
+      ),
+      pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN open_items oi ON wr.k_iri_cho = oi.k_iri
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+      ),
+      image_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN open_items oi ON wr.k_iri_cho = oi.k_iri
+          WHERE wr.v_ebucore_hasMimeType LIKE 'image/%'
+      )
+      SELECT
+          (SELECT count(*) FROM pdf_items)                                            AS pdf_items,
+          (SELECT count(*) FROM image_items)                                          AS image_items,
+          (SELECT count(*) FROM (
+              SELECT k_iri_cho FROM pdf_items
+              INTERSECT
+              SELECT k_iri_cho FROM image_items
+          ))                                                                          AS pdf_and_image_items,
+          (SELECT count(*) FROM (
+              SELECT k_iri_cho FROM pdf_items
+              EXCEPT
+              SELECT k_iri_cho FROM image_items
+          ))                                                                          AS pdf_only_items
+
+  - id: iiif_and_content_tier
+    question: "IIIF service coverage and content-tier distribution on open PDF items"
+    backend: parquet
+    rationale: >-
+      Two quality signals at once. IIIF coverage on PDF items is
+      expected to be very low (IIIF is image-centric; PDFs are not
+      typically IIIF-wrapped). Content tier 4 dominates because
+      PDF-bearing items are usually newspaper/book digitisations
+      that meet Europeana's highest content-tier criteria.
+    query: |
+      WITH open_pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN group_items g ON g.k_iri = wr.k_iri_cho
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND g.x_reuse_level = 'open'
+      )
+      SELECT g.x_content_tier                                                       AS content_tier,
+             count(*)                                                               AS items,
+             count(*) FILTER (WHERE g.x_has_iiif)                                   AS with_iiif,
+             round(count(*) FILTER (WHERE g.x_has_iiif) * 100.0 / count(*), 2)      AS pct_iiif,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2)                     AS pct_of_pdf_items
+      FROM open_pdf_items op
+      JOIN group_items g ON g.k_iri = op.k_iri_cho
+      GROUP BY g.x_content_tier
+      ORDER BY items DESC
+
+  - id: top_languages
+    question: "Top 25 primary languages on open PDF items"
+    backend: parquet
+    rationale: >-
+      Language coverage of the open PDF corpus. National-library
+      newspaper / gazette digitisation gives a different language
+      profile than the broader image collection (Spanish, Polish,
+      Finnish, Catalan likely punching above their weight here vs
+      English / Latin in Dataset 1).
+    query: |
+      WITH open_pdf_items AS (
+          SELECT DISTINCT wr.k_iri_cho
+          FROM values_edm_WebResource wr
+          JOIN group_items g ON g.k_iri = wr.k_iri_cho
+          WHERE wr.v_ebucore_hasMimeType = 'application/pdf'
+            AND g.x_reuse_level = 'open'
+      )
+      SELECT g.x_primary_language AS language,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM open_pdf_items op
+      JOIN group_items g ON g.k_iri = op.k_iri_cho
+      WHERE g.x_primary_language IS NOT NULL
+      GROUP BY g.x_primary_language
+      ORDER BY items DESC
+      LIMIT 25
