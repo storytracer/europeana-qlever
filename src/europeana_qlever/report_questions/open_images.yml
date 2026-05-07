@@ -1,0 +1,458 @@
+name: Open cultural heritage images (Dataset 1)
+description: >-
+  Verification of the "Europeana Open Cultural Heritage Images" pilot
+  dataset claims (Section 4.1 of the AI briefing). Every question filters
+  to strictly-open IMAGE items with a content URL — that is, items where
+  v_edm_type='IMAGE', x_has_content_url=true, and x_reuse_level='open'
+  on group_items. Targets the headline numbers: 22.3M open images,
+  ~5.2M enriched, ~2.1M long captions, 404K premium image-caption-subject
+  triples across 20 European languages, and the multilingual concept
+  layer that distinguishes Europeana from generic web-scraped image
+  datasets. Multilingual title/description analysis filters to the
+  provider proxy (v_edm_europeanaProxy IS NULL OR != 'true') so that
+  Europeana's own enrichment proxies do not skew language counts.
+
+questions:
+  - id: tier_funnel
+    question: "Tiered subset funnel — total open images down to the premium triple"
+    backend: parquet
+    rationale: >-
+      Headline volume claims for Dataset 1: 22.3M open images, of which
+      a graduated funnel narrows down to long-caption subsets and the
+      404K premium image+caption+enriched-subject triple. Mirrors the
+      table in Section 4.1 of the briefing.
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      ),
+      provider_subjects AS (
+          SELECT DISTINCT p.k_iri_cho
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_subject'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+      ),
+      long_captions AS (
+          SELECT DISTINCT p.k_iri_cho
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_description'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+            AND length(l.x_value) >= 200
+      ),
+      enriched_subjects AS (
+          SELECT DISTINCT
+              REPLACE(l.k_iri, '/proxy/europeana/', '/item/') AS cho_iri
+          FROM links_ore_Proxy l
+          WHERE l.x_property = 'v_dc_subject'
+            AND l.k_iri LIKE '%/proxy/europeana/%'
+            AND l.x_value_is_iri = true
+      )
+      SELECT
+          count(*) AS total_open_images,
+          count(*) FILTER (WHERE oi.k_iri IN (SELECT k_iri_cho FROM provider_subjects))         AS with_any_subject,
+          count(*) FILTER (WHERE oi.k_iri IN (SELECT k_iri_cho FROM long_captions))             AS with_long_caption,
+          count(*) FILTER (WHERE oi.k_iri IN (SELECT k_iri_cho FROM long_captions)
+                              AND oi.k_iri IN (SELECT k_iri_cho FROM provider_subjects))        AS caption_plus_any_subject,
+          count(*) FILTER (WHERE oi.k_iri IN (SELECT cho_iri FROM enriched_subjects))           AS with_enriched_subject,
+          count(*) FILTER (WHERE oi.k_iri IN (SELECT k_iri_cho FROM long_captions)
+                              AND oi.k_iri IN (SELECT cho_iri FROM enriched_subjects))          AS caption_plus_enriched,
+          count(*) FILTER (WHERE oi.k_iri IN (SELECT k_iri_cho FROM long_captions)
+                              AND oi.k_iri IN (SELECT k_iri_cho FROM provider_subjects)
+                              AND oi.k_iri IN (SELECT cho_iri FROM enriched_subjects))          AS premium_triple_all_three
+      FROM open_images oi
+
+  - id: by_rights_family
+    question: "Open images by rights family (PDM / CC0 / CC-BY / CC-BY-SA), plus restricted-CC tier"
+    backend: parquet
+    rationale: >-
+      Verifies the rights-tier breakdown in Section 4.1: PDM 2.6M,
+      CC0 7.7M, CC-BY 7.6M, CC-BY-SA 4.4M for strictly open images,
+      plus the "additional 6.5M restricted-CC images" claim.
+    query: |
+      WITH all_image_with_url AS (
+          SELECT k_iri, x_rights_family, x_reuse_level
+          FROM group_items
+          WHERE v_edm_type = 'IMAGE' AND x_has_content_url = true
+      )
+      SELECT
+          x_rights_family AS rights_family,
+          x_reuse_level   AS reuse_level,
+          count(*)        AS image_items,
+          round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM all_image_with_url
+      GROUP BY x_rights_family, x_reuse_level
+      ORDER BY image_items DESC
+
+  - id: title_language_coverage
+    question: "Title-language coverage on strictly open images"
+    backend: parquet
+    rationale: >-
+      Migrated from briefing legacy Q1. For each open image, count the
+      number of distinct language tags on its dc:title literals on the
+      provider proxy. Reveals how multilingual the source metadata is
+      before any Europeana enrichment.
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      ),
+      title_langs AS (
+          SELECT p.k_iri_cho,
+                 l.x_value,
+                 l.x_value_lang
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_title'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+      ),
+      per_item AS (
+          SELECT oi.k_iri,
+                 count(DISTINCT tl.x_value_lang) FILTER (WHERE tl.x_value_lang IS NOT NULL AND tl.x_value_lang != '') AS tagged_lang_count,
+                 count(tl.x_value)              FILTER (WHERE tl.x_value_lang IS NULL OR tl.x_value_lang = '')        AS untagged_titles,
+                 count(tl.x_value)              AS total_titles
+          FROM open_images oi
+          LEFT JOIN title_langs tl ON oi.k_iri = tl.k_iri_cho
+          GROUP BY oi.k_iri
+      )
+      SELECT
+          count(*)                                                                  AS total_open_images,
+          count(*) FILTER (WHERE total_titles = 0)                                  AS no_title_at_all,
+          count(*) FILTER (WHERE total_titles > 0 AND tagged_lang_count = 0)        AS titles_but_no_lang_tag,
+          count(*) FILTER (WHERE tagged_lang_count = 1)                             AS exactly_1_language,
+          count(*) FILTER (WHERE tagged_lang_count = 2)                             AS exactly_2_languages,
+          count(*) FILTER (WHERE tagged_lang_count >= 3)                            AS three_plus_languages,
+          round(count(*) FILTER (WHERE tagged_lang_count >= 2) * 100.0 / count(*), 2) AS pct_multilingual
+      FROM per_item
+
+  - id: top_title_languages
+    question: "Top 20 title languages on strictly open images"
+    backend: parquet
+    rationale: >-
+      Migrated from briefing legacy Q2. Verifies the title-language
+      long tail: Latin (taxonomic specimens), untagged, Swedish, Dutch,
+      English, German, Finnish, Estonian, Norwegian, etc.
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      )
+      SELECT
+          COALESCE(NULLIF(l.x_value_lang, ''), '(untagged)') AS lang,
+          count(DISTINCT p.k_iri_cho) AS items,
+          round(count(DISTINCT p.k_iri_cho) * 100.0
+                / (SELECT count(*) FROM open_images), 2) AS pct
+      FROM links_ore_Proxy l
+      JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+      JOIN open_images oi    ON p.k_iri_cho = oi.k_iri
+      WHERE l.x_property = 'v_dc_title'
+        AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+      GROUP BY lang
+      ORDER BY items DESC
+      LIMIT 20
+
+  - id: description_language_coverage
+    question: "Description coverage and length on strictly open images"
+    backend: parquet
+    rationale: >-
+      Migrated from briefing legacy Q3. Verifies the 2.1M long-caption
+      claim and the language-tag coverage on dc:description literals.
+      A "long caption" is a description of >= 200 characters — the
+      threshold used in the briefing for vision-language pretraining
+      suitability.
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      ),
+      desc_langs AS (
+          SELECT p.k_iri_cho,
+                 l.x_value,
+                 l.x_value_lang,
+                 length(l.x_value) AS desc_len
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_description'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+      ),
+      per_item AS (
+          SELECT oi.k_iri,
+                 count(DISTINCT dl.x_value_lang) FILTER (WHERE dl.x_value_lang IS NOT NULL AND dl.x_value_lang != '') AS tagged_lang_count,
+                 max(dl.desc_len)                AS longest_desc,
+                 bool_or(dl.desc_len >= 200)     AS has_long_desc
+          FROM open_images oi
+          LEFT JOIN desc_langs dl ON oi.k_iri = dl.k_iri_cho
+          GROUP BY oi.k_iri
+      )
+      SELECT
+          count(*)                                                                       AS total_open_images,
+          count(*) FILTER (WHERE tagged_lang_count = 0 AND longest_desc IS NULL)         AS no_description,
+          count(*) FILTER (WHERE tagged_lang_count = 0 AND longest_desc IS NOT NULL)     AS desc_but_no_lang_tag,
+          count(*) FILTER (WHERE tagged_lang_count >= 1)                                 AS desc_with_lang_tag,
+          count(*) FILTER (WHERE tagged_lang_count >= 2)                                 AS desc_in_2plus_langs,
+          count(*) FILTER (WHERE has_long_desc)                                          AS has_long_desc_200plus_chars,
+          count(*) FILTER (WHERE has_long_desc AND tagged_lang_count >= 1)               AS long_desc_with_lang_tag
+      FROM per_item
+
+  - id: enrichment_layer
+    question: "Enrichment layer — open images linked to multilingual concepts"
+    backend: parquet
+    rationale: >-
+      Migrated from briefing legacy Q4. The enrichment layer is
+      Europeana's unique value-add: a Europeana-proxy enrichment links
+      an item's dc:subject to a skos:Concept, and that concept carries
+      prefLabels in many languages. This question reports how many open
+      images have such links and the language depth of the concepts.
+      Verifies the "5.2M enriched, 96% to 20+ language concepts" claim.
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      ),
+      enriched_subjects AS (
+          SELECT DISTINCT
+              REPLACE(l.k_iri, '/proxy/europeana/', '/item/') AS cho_iri,
+              l.x_value AS concept_iri
+          FROM links_ore_Proxy l
+          WHERE l.x_property = 'v_dc_subject'
+            AND l.k_iri LIKE '%/proxy/europeana/%'
+            AND l.x_value_is_iri = true
+      ),
+      concept_lang_depth AS (
+          SELECT k_iri AS concept_iri,
+                 count(DISTINCT x_prefLabel_lang) AS label_lang_count
+          FROM values_skos_Concept
+          WHERE x_prefLabel_lang IS NOT NULL AND x_prefLabel_lang != ''
+          GROUP BY k_iri
+      )
+      SELECT
+          count(DISTINCT oi.k_iri)                                              AS open_images_total,
+          count(DISTINCT es.cho_iri)                                            AS images_with_enriched_subject,
+          round(count(DISTINCT es.cho_iri) * 100.0
+                / count(DISTINCT oi.k_iri), 2)                                  AS pct_enriched,
+          count(DISTINCT es.cho_iri) FILTER (WHERE cld.label_lang_count >= 5)   AS images_linked_to_5plus_lang_concept,
+          count(DISTINCT es.cho_iri) FILTER (WHERE cld.label_lang_count >= 10)  AS images_linked_to_10plus_lang_concept,
+          count(DISTINCT es.cho_iri) FILTER (WHERE cld.label_lang_count >= 20)  AS images_linked_to_20plus_lang_concept
+      FROM open_images oi
+      LEFT JOIN enriched_subjects es  ON oi.k_iri = es.cho_iri
+      LEFT JOIN concept_lang_depth cld ON es.concept_iri = cld.concept_iri
+
+  - id: triple_funnel
+    question: "Image-caption-subject triples on strictly open images (detailed)"
+    backend: parquet
+    rationale: >-
+      Migrated from briefing legacy Q5. A more detailed version of
+      tier_funnel that separately tracks any-subject vs enriched-subject
+      and exposes the pairwise overlaps that produce the headline 404K
+      premium triple count.
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      ),
+      long_captions AS (
+          SELECT DISTINCT p.k_iri_cho
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_description'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+            AND length(l.x_value) >= 200
+      ),
+      enriched_items AS (
+          SELECT DISTINCT
+              REPLACE(l.k_iri, '/proxy/europeana/', '/item/') AS cho_iri
+          FROM links_ore_Proxy l
+          WHERE l.x_property = 'v_dc_subject'
+            AND l.k_iri LIKE '%/proxy/europeana/%'
+            AND l.x_value_is_iri = true
+      ),
+      any_subject AS (
+          SELECT DISTINCT p.k_iri_cho
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_subject'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+      )
+      SELECT
+          count(*)                                                                                 AS total_open_images,
+          count(*) FILTER (WHERE lc.k_iri_cho IS NOT NULL)                                         AS has_long_caption,
+          count(*) FILTER (WHERE ei.cho_iri IS NOT NULL)                                           AS has_enriched_subject,
+          count(*) FILTER (WHERE subj.k_iri_cho IS NOT NULL)                                       AS has_any_subject,
+          count(*) FILTER (WHERE lc.k_iri_cho IS NOT NULL AND ei.cho_iri IS NOT NULL)              AS caption_plus_enriched,
+          count(*) FILTER (WHERE lc.k_iri_cho IS NOT NULL AND subj.k_iri_cho IS NOT NULL)          AS caption_plus_any_subject,
+          count(*) FILTER (WHERE lc.k_iri_cho IS NOT NULL
+                              AND ei.cho_iri IS NOT NULL
+                              AND subj.k_iri_cho IS NOT NULL)                                      AS all_three
+      FROM open_images oi
+      LEFT JOIN long_captions lc   ON oi.k_iri = lc.k_iri_cho
+      LEFT JOIN enriched_items ei  ON oi.k_iri = ei.cho_iri
+      LEFT JOIN any_subject subj   ON oi.k_iri = subj.k_iri_cho
+
+  - id: triple_languages
+    question: "Top 20 caption languages on the premium image-caption-enriched triple subset"
+    backend: parquet
+    rationale: >-
+      Migrated from briefing legacy Q6. Verifies the 20-language spread
+      claim: Swedish 102K, Romanian 65K, German 60K, English 55K, Dutch
+      27K, Finnish 20K, Lithuanian 17K, French 7K, Hungarian 7K,
+      Estonian 6K, etc. — human-authored cultural-heritage captions, not
+      machine-translated.
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      ),
+      long_captions AS (
+          SELECT p.k_iri_cho,
+                 l.x_value_lang
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_description'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+            AND length(l.x_value) >= 200
+      ),
+      enriched_items AS (
+          SELECT DISTINCT
+              REPLACE(l.k_iri, '/proxy/europeana/', '/item/') AS cho_iri
+          FROM links_ore_Proxy l
+          WHERE l.x_property = 'v_dc_subject'
+            AND l.k_iri LIKE '%/proxy/europeana/%'
+            AND l.x_value_is_iri = true
+      ),
+      triple_items AS (
+          SELECT DISTINCT oi.k_iri
+          FROM open_images oi
+          JOIN long_captions lc  ON oi.k_iri = lc.k_iri_cho
+          JOIN enriched_items ei ON oi.k_iri = ei.cho_iri
+      )
+      SELECT
+          COALESCE(NULLIF(lc.x_value_lang, ''), '(untagged)') AS caption_lang,
+          count(DISTINCT lc.k_iri_cho) AS items,
+          round(count(DISTINCT lc.k_iri_cho) * 100.0
+                / (SELECT count(*) FROM triple_items), 2) AS pct
+      FROM triple_items ti
+      JOIN long_captions lc ON ti.k_iri = lc.k_iri_cho
+      GROUP BY caption_lang
+      ORDER BY items DESC
+      LIMIT 20
+
+  - id: top_countries
+    question: "Top 25 countries among strictly open images"
+    backend: parquet
+    rationale: >-
+      Geographic distribution of the open image corpus. Useful context
+      for the multilingual claims and for partner outreach planning.
+    query: |
+      SELECT v_edm_country AS country,
+             count(*) AS open_images,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items
+      WHERE v_edm_type = 'IMAGE'
+        AND x_has_content_url = true
+        AND x_reuse_level = 'open'
+        AND v_edm_country IS NOT NULL
+      GROUP BY v_edm_country
+      ORDER BY open_images DESC
+      LIMIT 25
+
+  - id: top_data_providers
+    question: "Top 25 data providers among strictly open images"
+    backend: parquet
+    rationale: >-
+      The institutions contributing the most strictly-open images.
+      Resolved via the orgs view to human-readable names where available.
+    query: |
+      SELECT COALESCE(o.name, g.v_edm_dataProvider) AS data_provider,
+             count(*) AS open_images
+      FROM group_items g
+      LEFT JOIN orgs o ON g.v_edm_dataProvider = o.k_iri
+      WHERE g.v_edm_type = 'IMAGE'
+        AND g.x_has_content_url = true
+        AND g.x_reuse_level = 'open'
+        AND g.v_edm_dataProvider IS NOT NULL
+      GROUP BY 1
+      ORDER BY open_images DESC
+      LIMIT 25
+
+  - id: top_mime_types
+    question: "Top 25 MIME types among WebResources of strictly open images"
+    backend: parquet
+    rationale: >-
+      Format distribution of the open image corpus — verifies the
+      JPEG/PNG/TIFF/WebP shape claimed in the briefing (which is taken
+      over all images; this gives the open-only equivalent).
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      )
+      SELECT w.v_ebucore_hasMimeType AS mime_type,
+             count(*) AS resources,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM values_edm_WebResource w
+      JOIN open_images oi ON w.k_iri_cho = oi.k_iri
+      WHERE w.v_ebucore_hasMimeType IS NOT NULL
+      GROUP BY w.v_ebucore_hasMimeType
+      ORDER BY resources DESC
+      LIMIT 25
+
+  - id: image_resolution
+    question: "Image resolution distribution across WebResources of strictly open images"
+    backend: parquet
+    rationale: >-
+      Resolution buckets for the open image corpus. >=1 MP is a rough
+      threshold for modern computer-vision training; 16+ MP is suitable
+      for fine-grained tasks. Restricted to image MIME types.
+    query: |
+      WITH open_images AS (
+          SELECT k_iri FROM group_items
+          WHERE v_edm_type = 'IMAGE'
+            AND x_has_content_url = true
+            AND x_reuse_level = 'open'
+      ),
+      buckets AS (
+          SELECT CASE
+                     WHEN w.v_ebucore_width IS NULL OR w.v_ebucore_height IS NULL THEN 'unknown'
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 100000   THEN '< 0.1 MP'
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 500000   THEN '0.1-0.5 MP'
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 1000000  THEN '0.5-1 MP'
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 4000000  THEN '1-4 MP'
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 16000000 THEN '4-16 MP'
+                     ELSE '>= 16 MP'
+                 END AS resolution_bucket,
+                 CASE
+                     WHEN w.v_ebucore_width IS NULL OR w.v_ebucore_height IS NULL THEN 0
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 100000   THEN 1
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 500000   THEN 2
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 1000000  THEN 3
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 4000000  THEN 4
+                     WHEN w.v_ebucore_width * w.v_ebucore_height < 16000000 THEN 5
+                     ELSE 6
+                 END AS sort_key
+          FROM values_edm_WebResource w
+          JOIN open_images oi ON w.k_iri_cho = oi.k_iri
+          WHERE w.v_ebucore_hasMimeType LIKE 'image/%'
+      )
+      SELECT resolution_bucket,
+             count(*) AS resources,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY resolution_bucket, sort_key
+      ORDER BY sort_key

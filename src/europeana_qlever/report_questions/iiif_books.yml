@@ -1,0 +1,402 @@
+name: IIIF books and manuscripts (Dataset 2)
+description: >-
+  Verification of the "Europeana IIIF Books & Manuscripts Collection"
+  pilot dataset claims (Section 4.2 of the AI briefing). Scope: every
+  question filters to open-rights multi-page items only — CHOs with
+  count(WebResource) > 1 AND group_items.x_reuse_level = 'open'. The
+  IIIF check is "any WebResource on the CHO has a svcs:Service whose
+  dcterms:conformsTo starts with http://iiif.io/api/image" — that is
+  the conformance URI mandated by the EDM IIIF profile spec and what
+  is actually populated in volume across Europeana data. Targets the
+  headline numbers: ~11.9M open multi-page items, ~45.8M total pages,
+  ~839K IIIF-accessible items, ~9.6M IIIF-accessible pages, with the
+  Top 13 IIIF providers (Austrian National Library, State & University
+  Library Hamburg, Berlin State Library, Veria Central Public Library,
+  National Library of Estonia, Teßmann Library, etc.).
+
+questions:
+  - id: volume
+    question: "Volume — open multi-page items, total pages, IIIF coverage and page totals"
+    backend: parquet
+    rationale: >-
+      Headline scale claims for Dataset 2. Verifies the 11.9M open
+      multi-page items, 45.8M pages, 839K IIIF-accessible items and
+      9.6M IIIF-accessible pages numbers.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      open_multi_page AS (
+          SELECT pc.k_iri_cho, pc.wr_count
+          FROM per_cho pc
+          JOIN group_items g ON g.k_iri = pc.k_iri_cho
+          WHERE pc.wr_count > 1 AND g.x_reuse_level = 'open'
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      iiif_open_mp AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr ipw ON ipw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      )
+      SELECT
+          count(*)                                                                       AS open_multi_page_items,
+          sum(wr_count)                                                                  AS open_multi_page_pages,
+          count(*) FILTER (WHERE k_iri_cho IN (SELECT k_iri_cho FROM iiif_open_mp))      AS iiif_items,
+          round(count(*) FILTER (WHERE k_iri_cho IN (SELECT k_iri_cho FROM iiif_open_mp))
+                * 100.0 / count(*), 2)                                                   AS pct_iiif,
+          sum(wr_count) FILTER (WHERE k_iri_cho IN (SELECT k_iri_cho FROM iiif_open_mp)) AS iiif_pages,
+          quantile_cont(wr_count, 0.5) FILTER (WHERE k_iri_cho IN (SELECT k_iri_cho FROM iiif_open_mp)) AS iiif_median_pages,
+          max(wr_count) FILTER (WHERE k_iri_cho IN (SELECT k_iri_cho FROM iiif_open_mp))                AS iiif_max_pages
+      FROM open_multi_page
+
+  - id: by_type
+    question: "Open multi-page items and total pages by edm:type, with IIIF share"
+    backend: parquet
+    rationale: >-
+      Modality breakdown of Dataset 2: verifies TEXT 5.8M items / 26.6M
+      pages, IMAGE 5.5M / 17.1M, SOUND 675K / 2.0M, VIDEO 18K / 55K.
+      TEXT (books, manuscripts, newspapers) is the documentary core but
+      SOUND and IMAGE multi-asset objects also benefit from IIIF reader
+      support.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      open_multi_page AS (
+          SELECT pc.k_iri_cho, pc.wr_count
+          FROM per_cho pc
+          JOIN group_items g ON g.k_iri = pc.k_iri_cho
+          WHERE pc.wr_count > 1 AND g.x_reuse_level = 'open'
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      iiif_open_mp AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr ipw ON ipw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      )
+      SELECT g.v_edm_type AS type,
+             count(*)                                                                  AS items,
+             sum(omp.wr_count)                                                         AS pages,
+             quantile_cont(omp.wr_count, 0.5)                                          AS median_pages,
+             count(*) FILTER (WHERE omp.k_iri_cho IN (SELECT k_iri_cho FROM iiif_open_mp))           AS iiif_items,
+             sum(omp.wr_count) FILTER (WHERE omp.k_iri_cho IN (SELECT k_iri_cho FROM iiif_open_mp)) AS iiif_pages,
+             round(count(*) FILTER (WHERE omp.k_iri_cho IN (SELECT k_iri_cho FROM iiif_open_mp))
+                   * 100.0 / count(*), 2)                                              AS pct_iiif
+      FROM open_multi_page omp
+      JOIN group_items g ON g.k_iri = omp.k_iri_cho
+      GROUP BY g.v_edm_type
+      ORDER BY items DESC
+
+  - id: iiif_top_providers
+    question: "Top 25 data providers among IIIF-accessible open multi-page items"
+    backend: parquet
+    rationale: >-
+      The institutions doing the heavy lifting for IIIF-accessible
+      paginated content. Verifies briefing's Top 13 IIIF providers
+      table — Austrian National Library 295K / 3.3M / 8 median, State
+      & University Library Hamburg 262K / 3.2M / 10, Berlin State
+      Library 212K / 2.5M / 8, etc.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      open_multi_page AS (
+          SELECT pc.k_iri_cho, pc.wr_count
+          FROM per_cho pc
+          JOIN group_items g ON g.k_iri = pc.k_iri_cho
+          WHERE pc.wr_count > 1 AND g.x_reuse_level = 'open'
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      iiif_open_mp AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr ipw ON ipw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      )
+      SELECT COALESCE(o.name, g.v_edm_dataProvider) AS data_provider,
+             count(*)                                AS items,
+             sum(omp.wr_count)                       AS pages,
+             quantile_cont(omp.wr_count, 0.5)        AS median_pages,
+             max(omp.wr_count)                       AS max_pages
+      FROM open_multi_page omp
+      JOIN iiif_open_mp iom ON iom.k_iri_cho = omp.k_iri_cho
+      JOIN group_items g    ON g.k_iri = omp.k_iri_cho
+      LEFT JOIN orgs o      ON g.v_edm_dataProvider = o.k_iri
+      WHERE g.v_edm_dataProvider IS NOT NULL
+      GROUP BY 1
+      ORDER BY items DESC
+      LIMIT 25
+
+  - id: iiif_top_datasets
+    question: "Top 25 datasets among IIIF-accessible open multi-page items"
+    backend: parquet
+    rationale: >-
+      Per-dataset view of the IIIF books and manuscripts corpus. A
+      dataset is the unit of bulk re-ingestion, so this is the unit
+      data partners think about when planning IIIF upgrades.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      open_multi_page AS (
+          SELECT pc.k_iri_cho, pc.wr_count
+          FROM per_cho pc
+          JOIN group_items g ON g.k_iri = pc.k_iri_cho
+          WHERE pc.wr_count > 1 AND g.x_reuse_level = 'open'
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      iiif_open_mp AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr ipw ON ipw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      )
+      SELECT g.v_edm_datasetName            AS dataset,
+             count(*)                       AS items,
+             sum(omp.wr_count)              AS pages,
+             quantile_cont(omp.wr_count, 0.5) AS median_pages
+      FROM open_multi_page omp
+      JOIN iiif_open_mp iom ON iom.k_iri_cho = omp.k_iri_cho
+      JOIN group_items g    ON g.k_iri = omp.k_iri_cho
+      WHERE g.v_edm_datasetName IS NOT NULL
+      GROUP BY g.v_edm_datasetName
+      ORDER BY items DESC
+      LIMIT 25
+
+  - id: iiif_by_country
+    question: "Top 25 countries by IIIF-accessible open multi-page items"
+    backend: parquet
+    rationale: >-
+      Geographic distribution of IIIF-mature multi-page content. Reveals
+      which national digitisation programmes have invested in IIIF
+      infrastructure for paginated objects.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      open_multi_page AS (
+          SELECT pc.k_iri_cho, pc.wr_count
+          FROM per_cho pc
+          JOIN group_items g ON g.k_iri = pc.k_iri_cho
+          WHERE pc.wr_count > 1 AND g.x_reuse_level = 'open'
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      iiif_open_mp AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr ipw ON ipw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      )
+      SELECT g.v_edm_country AS country,
+             count(*) AS iiif_items,
+             sum(omp.wr_count) AS iiif_pages
+      FROM open_multi_page omp
+      JOIN iiif_open_mp iom ON iom.k_iri_cho = omp.k_iri_cho
+      JOIN group_items g    ON g.k_iri = omp.k_iri_cho
+      WHERE g.v_edm_country IS NOT NULL
+      GROUP BY g.v_edm_country
+      ORDER BY iiif_items DESC
+      LIMIT 25
+
+  - id: title_languages
+    question: "Open multi-page items by title language, with total page counts"
+    backend: parquet
+    rationale: >-
+      Verifies the multi-page title-language distribution claim:
+      untagged 4.4M items / 20.8M pages, Latin 1.9M / 5.4M, Polish
+      949K / 6.0M, Swedish 946K / 2.6M, Spanish 845K / 1.7M, English
+      604K / 2.7M, Norwegian 440K / 1.0M, German 390K / 1.1M.
+      Uses provider-proxy titles only.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      open_multi_page AS (
+          SELECT pc.k_iri_cho, pc.wr_count
+          FROM per_cho pc
+          JOIN group_items g ON g.k_iri = pc.k_iri_cho
+          WHERE pc.wr_count > 1 AND g.x_reuse_level = 'open'
+      ),
+      title_first AS (
+          -- For each open multi-page CHO, take any one provider-proxy
+          -- title language tag (DISTINCT collapses to one row per CHO).
+          SELECT DISTINCT p.k_iri_cho,
+                          COALESCE(NULLIF(l.x_value_lang, ''), '(untagged)') AS lang
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_title'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+            AND p.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      )
+      SELECT t.lang,
+             count(DISTINCT t.k_iri_cho) AS items,
+             sum(omp.wr_count)           AS pages
+      FROM title_first t
+      JOIN open_multi_page omp ON omp.k_iri_cho = t.k_iri_cho
+      GROUP BY t.lang
+      ORDER BY items DESC
+      LIMIT 25
+
+  - id: presentation_diagnostic
+    question: "IIIF Presentation API and doap:implements diagnostic on open multi-page items"
+    backend: parquet
+    rationale: >-
+      Diagnostic for tracking IIIF Presentation API adoption over time.
+      The EDM IIIF profile mandates dcterms:conformsTo with the Image
+      API URI, so Presentation declarations are sparse today; this
+      question keeps a counter so that as more providers ship Presentation
+      manifests we can see them appear. Includes a doap:implements check
+      for completeness.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      open_multi_page AS (
+          SELECT pc.k_iri_cho
+          FROM per_cho pc
+          JOIN group_items g ON g.k_iri = pc.k_iri_cho
+          WHERE pc.wr_count > 1 AND g.x_reuse_level = 'open'
+      ),
+      pres_conformsTo_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/presentation%'
+      ),
+      doap_iiif_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_doap_implements'
+           AND lower(ls.x_value) LIKE '%iiif%'
+      ),
+      mp_pres AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN pres_conformsTo_wr p ON p.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      ),
+      mp_doap AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN doap_iiif_wr d ON d.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      )
+      SELECT
+          (SELECT count(*) FROM open_multi_page)                              AS open_multi_page_items,
+          (SELECT count(*) FROM mp_pres)                                      AS with_presentation_conformsTo,
+          (SELECT count(*) FROM mp_doap)                                      AS with_doap_iiif,
+          (SELECT count(DISTINCT k_iri_cho) FROM (
+              SELECT k_iri_cho FROM mp_pres
+              UNION
+              SELECT k_iri_cho FROM mp_doap
+          ))                                                                  AS with_either_signal
+
+  - id: iiif_largest
+    question: "Top 50 IIIF-accessible open multi-page items by page count"
+    backend: parquet
+    rationale: >-
+      The thickest IIIF-accessible open objects in the catalogue —
+      flagship digitised books and manuscripts. Useful as a sanity
+      check (max pages should be in the low thousands) and as a list
+      of marketing-grade exemplars.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      open_multi_page AS (
+          SELECT pc.k_iri_cho, pc.wr_count
+          FROM per_cho pc
+          JOIN group_items g ON g.k_iri = pc.k_iri_cho
+          WHERE pc.wr_count > 1 AND g.x_reuse_level = 'open'
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      iiif_open_mp AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr ipw ON ipw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM open_multi_page)
+      )
+      SELECT omp.k_iri_cho                          AS cho,
+             omp.wr_count                           AS pages,
+             g.v_edm_type                           AS type,
+             g.v_edm_country                        AS country,
+             COALESCE(o.name, g.v_edm_dataProvider) AS data_provider,
+             g.v_edm_datasetName                    AS dataset
+      FROM open_multi_page omp
+      JOIN iiif_open_mp iom ON iom.k_iri_cho = omp.k_iri_cho
+      LEFT JOIN group_items g ON g.k_iri = omp.k_iri_cho
+      LEFT JOIN orgs o ON g.v_edm_dataProvider = o.k_iri
+      ORDER BY omp.wr_count DESC
+      LIMIT 50

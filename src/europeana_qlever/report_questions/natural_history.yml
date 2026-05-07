@@ -1,0 +1,351 @@
+name: Natural history collection (Dataset 3)
+description: >-
+  Verification of the "Europeana Natural History Collection" pilot
+  dataset claims (Section 4.3 of the AI briefing). Scope: open-rights
+  items from a hardcoded whitelist of known European natural-history
+  institutions — Naturalis Biodiversity Center, Meise Botanic Garden,
+  Natural History Museum London / Paris / Vienna, Royal Botanic Garden
+  Edinburgh, Royal Botanic Gardens Kew, Berlin-Dahlem Botanical Garden,
+  Biology Centre Linz, and the University of Tartu Natural History
+  Museum. Whitelist is matched against the orgs view (English-preferred
+  prefLabel from values_foaf_Organization). Targets the headline
+  numbers: 12.7M total, 11.4M specimen images, 662K Xeno-canto audio
+  recordings (via Naturalis, exposed as edm:type=SOUND), 100% content
+  URL coverage, 7.3M with taxonomic subjects, 3.1M with enriched
+  concept links, IIIF concentration in Royal Botanic Garden Edinburgh
+  and Berlin-Dahlem.
+
+questions:
+  - id: volume
+    question: "Volume — total NH items, content URL %, IIIF %"
+    backend: parquet
+    rationale: >-
+      Headline scale of Dataset 3. Verifies "12.7M openly licensed
+      natural history items, 100% content accessibility" claim.
+    query: |
+      WITH nh_providers AS (
+          SELECT k_iri FROM orgs
+          WHERE lower(name) LIKE 'naturalis biodiversity%'
+             OR lower(name) LIKE 'meise botanic garden%'
+             OR lower(name) LIKE '%natural history museum, london%'
+             OR lower(name) LIKE '%trustees of the natural history museum, london%'
+             OR lower(name) LIKE '%natural history museum, paris%'
+             OR lower(name) LIKE '%muséum national d''histoire naturelle%'
+             OR lower(name) LIKE 'royal botanic garden edinburgh%'
+             OR lower(name) LIKE 'royal botanic gardens%kew%'
+             OR lower(name) LIKE '%berlin-dahlem%'
+             OR lower(name) LIKE '%botanischer garten%berlin%'
+             OR lower(name) LIKE '%natural history museum, vienna%'
+             OR lower(name) LIKE '%naturhistorisches museum wien%'
+             OR lower(name) LIKE 'biology centre linz%'
+             OR lower(name) LIKE 'biologiezentrum%linz%'
+             OR lower(name) LIKE '%university of tartu natural history%'
+             OR lower(name) LIKE '%tartu%natural history%'
+      )
+      SELECT
+          count(*)                                                                  AS nh_items_open,
+          count(*) FILTER (WHERE x_has_content_url)                                 AS with_content_url,
+          round(count(*) FILTER (WHERE x_has_content_url) * 100.0 / count(*), 2)    AS pct_content_url,
+          count(*) FILTER (WHERE x_has_iiif)                                        AS with_iiif_service,
+          round(count(*) FILTER (WHERE x_has_iiif) * 100.0 / count(*), 2)           AS pct_iiif
+      FROM group_items g
+      JOIN nh_providers np ON g.v_edm_dataProvider = np.k_iri
+      WHERE g.x_reuse_level = 'open'
+
+  - id: by_modality
+    question: "Natural history items by edm:type (modality breakdown)"
+    backend: parquet
+    rationale: >-
+      Verifies the multimodal composition claim: 11.4M specimen images,
+      662K wildlife audio recordings, 285 video, 136 3D scans. Audio is
+      Naturalis's Xeno-canto contribution and lands here as v_edm_type
+      = 'SOUND'.
+    query: |
+      WITH nh_providers AS (
+          SELECT k_iri FROM orgs
+          WHERE lower(name) LIKE 'naturalis biodiversity%'
+             OR lower(name) LIKE 'meise botanic garden%'
+             OR lower(name) LIKE '%natural history museum, london%'
+             OR lower(name) LIKE '%trustees of the natural history museum, london%'
+             OR lower(name) LIKE '%natural history museum, paris%'
+             OR lower(name) LIKE '%muséum national d''histoire naturelle%'
+             OR lower(name) LIKE 'royal botanic garden edinburgh%'
+             OR lower(name) LIKE 'royal botanic gardens%kew%'
+             OR lower(name) LIKE '%berlin-dahlem%'
+             OR lower(name) LIKE '%botanischer garten%berlin%'
+             OR lower(name) LIKE '%natural history museum, vienna%'
+             OR lower(name) LIKE '%naturhistorisches museum wien%'
+             OR lower(name) LIKE 'biology centre linz%'
+             OR lower(name) LIKE 'biologiezentrum%linz%'
+             OR lower(name) LIKE '%university of tartu natural history%'
+             OR lower(name) LIKE '%tartu%natural history%'
+      )
+      SELECT g.v_edm_type AS modality,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct,
+             count(*) FILTER (WHERE g.x_has_content_url) AS with_content_url,
+             count(*) FILTER (WHERE g.x_has_iiif)         AS with_iiif_service
+      FROM group_items g
+      JOIN nh_providers np ON g.v_edm_dataProvider = np.k_iri
+      WHERE g.x_reuse_level = 'open'
+      GROUP BY g.v_edm_type
+      ORDER BY items DESC
+
+  - id: by_provider
+    question: "Natural history items per provider, with content URL and IIIF coverage"
+    backend: parquet
+    rationale: >-
+      Verifies the per-provider table in the briefing — Naturalis 4.8M
+      (0 IIIF), Meise 2.7M (0), NHM London 2.5M (0), NHM Paris 922K (0),
+      RBG Edinburgh 859K (859K IIIF), RBG Kew 595K (0), Berlin-Dahlem
+      422K (421K IIIF), NHM Vienna 254K (0), Biology Centre Linz 183K
+      (0), Tartu 129K (0).
+    query: |
+      WITH nh_providers AS (
+          SELECT k_iri, name FROM orgs
+          WHERE lower(name) LIKE 'naturalis biodiversity%'
+             OR lower(name) LIKE 'meise botanic garden%'
+             OR lower(name) LIKE '%natural history museum, london%'
+             OR lower(name) LIKE '%trustees of the natural history museum, london%'
+             OR lower(name) LIKE '%natural history museum, paris%'
+             OR lower(name) LIKE '%muséum national d''histoire naturelle%'
+             OR lower(name) LIKE 'royal botanic garden edinburgh%'
+             OR lower(name) LIKE 'royal botanic gardens%kew%'
+             OR lower(name) LIKE '%berlin-dahlem%'
+             OR lower(name) LIKE '%botanischer garten%berlin%'
+             OR lower(name) LIKE '%natural history museum, vienna%'
+             OR lower(name) LIKE '%naturhistorisches museum wien%'
+             OR lower(name) LIKE 'biology centre linz%'
+             OR lower(name) LIKE 'biologiezentrum%linz%'
+             OR lower(name) LIKE '%university of tartu natural history%'
+             OR lower(name) LIKE '%tartu%natural history%'
+      )
+      SELECT np.name AS data_provider,
+             count(*) AS items,
+             count(*) FILTER (WHERE g.x_has_content_url) AS with_content_url,
+             count(*) FILTER (WHERE g.x_has_iiif)         AS with_iiif_service,
+             round(count(*) FILTER (WHERE g.x_has_iiif) * 100.0 / count(*), 2) AS pct_iiif
+      FROM group_items g
+      JOIN nh_providers np ON g.v_edm_dataProvider = np.k_iri
+      WHERE g.x_reuse_level = 'open'
+      GROUP BY np.name
+      ORDER BY items DESC
+
+  - id: subject_coverage
+    question: "Subject coverage on natural history items (any subject vs enriched concept)"
+    backend: parquet
+    rationale: >-
+      Verifies "7.3M with taxonomic subjects (64%), 3.1M enriched
+      subject links". Provider subjects (any) come from the provider
+      proxy's dc:subject literal; enriched links come from the
+      Europeana proxy's dc:subject IRI references to skos:Concept.
+    query: |
+      WITH nh_providers AS (
+          SELECT k_iri FROM orgs
+          WHERE lower(name) LIKE 'naturalis biodiversity%'
+             OR lower(name) LIKE 'meise botanic garden%'
+             OR lower(name) LIKE '%natural history museum, london%'
+             OR lower(name) LIKE '%trustees of the natural history museum, london%'
+             OR lower(name) LIKE '%natural history museum, paris%'
+             OR lower(name) LIKE '%muséum national d''histoire naturelle%'
+             OR lower(name) LIKE 'royal botanic garden edinburgh%'
+             OR lower(name) LIKE 'royal botanic gardens%kew%'
+             OR lower(name) LIKE '%berlin-dahlem%'
+             OR lower(name) LIKE '%botanischer garten%berlin%'
+             OR lower(name) LIKE '%natural history museum, vienna%'
+             OR lower(name) LIKE '%naturhistorisches museum wien%'
+             OR lower(name) LIKE 'biology centre linz%'
+             OR lower(name) LIKE 'biologiezentrum%linz%'
+             OR lower(name) LIKE '%university of tartu natural history%'
+             OR lower(name) LIKE '%tartu%natural history%'
+      ),
+      nh_items AS (
+          SELECT g.k_iri
+          FROM group_items g
+          JOIN nh_providers np ON g.v_edm_dataProvider = np.k_iri
+          WHERE g.x_reuse_level = 'open'
+      ),
+      provider_subj AS (
+          SELECT DISTINCT p.k_iri_cho
+          FROM links_ore_Proxy l
+          JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+          WHERE l.x_property = 'v_dc_subject'
+            AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+      ),
+      enriched_subj AS (
+          SELECT DISTINCT
+              REPLACE(l.k_iri, '/proxy/europeana/', '/item/') AS cho_iri
+          FROM links_ore_Proxy l
+          WHERE l.x_property = 'v_dc_subject'
+            AND l.k_iri LIKE '%/proxy/europeana/%'
+            AND l.x_value_is_iri = true
+      )
+      SELECT
+          count(*)                                                                       AS nh_items,
+          count(*) FILTER (WHERE k_iri IN (SELECT k_iri_cho FROM provider_subj))         AS with_any_subject,
+          round(count(*) FILTER (WHERE k_iri IN (SELECT k_iri_cho FROM provider_subj))
+                * 100.0 / count(*), 2)                                                   AS pct_any_subject,
+          count(*) FILTER (WHERE k_iri IN (SELECT cho_iri FROM enriched_subj))           AS with_enriched_concept,
+          round(count(*) FILTER (WHERE k_iri IN (SELECT cho_iri FROM enriched_subj))
+                * 100.0 / count(*), 2)                                                   AS pct_enriched_concept
+      FROM nh_items
+
+  - id: top_datasets
+    question: "Top 25 datasets within the natural history scope"
+    backend: parquet
+    rationale: >-
+      The dataset axis catches Naturalis's three Xeno-canto Wildlife
+      Sounds batches (each ~220K) as separate datasets — useful sanity
+      check that the 662K audio total decomposes into the three
+      pipeline-ingested batches without baking that pattern into the
+      scope.
+    query: |
+      WITH nh_providers AS (
+          SELECT k_iri FROM orgs
+          WHERE lower(name) LIKE 'naturalis biodiversity%'
+             OR lower(name) LIKE 'meise botanic garden%'
+             OR lower(name) LIKE '%natural history museum, london%'
+             OR lower(name) LIKE '%trustees of the natural history museum, london%'
+             OR lower(name) LIKE '%natural history museum, paris%'
+             OR lower(name) LIKE '%muséum national d''histoire naturelle%'
+             OR lower(name) LIKE 'royal botanic garden edinburgh%'
+             OR lower(name) LIKE 'royal botanic gardens%kew%'
+             OR lower(name) LIKE '%berlin-dahlem%'
+             OR lower(name) LIKE '%botanischer garten%berlin%'
+             OR lower(name) LIKE '%natural history museum, vienna%'
+             OR lower(name) LIKE '%naturhistorisches museum wien%'
+             OR lower(name) LIKE 'biology centre linz%'
+             OR lower(name) LIKE 'biologiezentrum%linz%'
+             OR lower(name) LIKE '%university of tartu natural history%'
+             OR lower(name) LIKE '%tartu%natural history%'
+      )
+      SELECT g.v_edm_datasetName AS dataset,
+             g.v_edm_type        AS modality,
+             count(*) AS items
+      FROM group_items g
+      JOIN nh_providers np ON g.v_edm_dataProvider = np.k_iri
+      WHERE g.x_reuse_level = 'open'
+        AND g.v_edm_datasetName IS NOT NULL
+      GROUP BY g.v_edm_datasetName, g.v_edm_type
+      ORDER BY items DESC
+      LIMIT 25
+
+  - id: audio_subset
+    question: "Wildlife audio subset within natural history (edm:type = SOUND)"
+    backend: parquet
+    rationale: >-
+      Verifies the 662K Xeno-canto wildlife audio number — should be
+      dominated by Naturalis. Per-provider breakdown of audio items.
+    query: |
+      WITH nh_providers AS (
+          SELECT k_iri, name FROM orgs
+          WHERE lower(name) LIKE 'naturalis biodiversity%'
+             OR lower(name) LIKE 'meise botanic garden%'
+             OR lower(name) LIKE '%natural history museum, london%'
+             OR lower(name) LIKE '%trustees of the natural history museum, london%'
+             OR lower(name) LIKE '%natural history museum, paris%'
+             OR lower(name) LIKE '%muséum national d''histoire naturelle%'
+             OR lower(name) LIKE 'royal botanic garden edinburgh%'
+             OR lower(name) LIKE 'royal botanic gardens%kew%'
+             OR lower(name) LIKE '%berlin-dahlem%'
+             OR lower(name) LIKE '%botanischer garten%berlin%'
+             OR lower(name) LIKE '%natural history museum, vienna%'
+             OR lower(name) LIKE '%naturhistorisches museum wien%'
+             OR lower(name) LIKE 'biology centre linz%'
+             OR lower(name) LIKE 'biologiezentrum%linz%'
+             OR lower(name) LIKE '%university of tartu natural history%'
+             OR lower(name) LIKE '%tartu%natural history%'
+      )
+      SELECT np.name AS data_provider,
+             count(*) AS audio_items,
+             count(*) FILTER (WHERE g.x_has_content_url) AS with_content_url
+      FROM group_items g
+      JOIN nh_providers np ON g.v_edm_dataProvider = np.k_iri
+      WHERE g.x_reuse_level = 'open'
+        AND g.v_edm_type = 'SOUND'
+      GROUP BY np.name
+      ORDER BY audio_items DESC
+
+  - id: taxonomic_titles
+    question: "Title-language profile of natural history items (Latin specimen names)"
+    backend: parquet
+    rationale: >-
+      Specimen titles are predominantly Latin binomials — directly
+      usable as fine-grained taxonomic classification labels. This
+      question verifies the Latin / untagged dominance and exposes the
+      long tail of locally-tagged titles.
+    query: |
+      WITH nh_providers AS (
+          SELECT k_iri FROM orgs
+          WHERE lower(name) LIKE 'naturalis biodiversity%'
+             OR lower(name) LIKE 'meise botanic garden%'
+             OR lower(name) LIKE '%natural history museum, london%'
+             OR lower(name) LIKE '%trustees of the natural history museum, london%'
+             OR lower(name) LIKE '%natural history museum, paris%'
+             OR lower(name) LIKE '%muséum national d''histoire naturelle%'
+             OR lower(name) LIKE 'royal botanic garden edinburgh%'
+             OR lower(name) LIKE 'royal botanic gardens%kew%'
+             OR lower(name) LIKE '%berlin-dahlem%'
+             OR lower(name) LIKE '%botanischer garten%berlin%'
+             OR lower(name) LIKE '%natural history museum, vienna%'
+             OR lower(name) LIKE '%naturhistorisches museum wien%'
+             OR lower(name) LIKE 'biology centre linz%'
+             OR lower(name) LIKE 'biologiezentrum%linz%'
+             OR lower(name) LIKE '%university of tartu natural history%'
+             OR lower(name) LIKE '%tartu%natural history%'
+      ),
+      nh_items AS (
+          SELECT g.k_iri
+          FROM group_items g
+          JOIN nh_providers np ON g.v_edm_dataProvider = np.k_iri
+          WHERE g.x_reuse_level = 'open'
+      )
+      SELECT
+          COALESCE(NULLIF(l.x_value_lang, ''), '(untagged)') AS lang,
+          count(DISTINCT p.k_iri_cho) AS items,
+          round(count(DISTINCT p.k_iri_cho) * 100.0
+                / (SELECT count(*) FROM nh_items), 2) AS pct
+      FROM links_ore_Proxy l
+      JOIN values_ore_Proxy p ON l.k_iri = p.k_iri
+      JOIN nh_items nh        ON p.k_iri_cho = nh.k_iri
+      WHERE l.x_property = 'v_dc_title'
+        AND (p.v_edm_europeanaProxy IS NULL OR p.v_edm_europeanaProxy != 'true')
+      GROUP BY lang
+      ORDER BY items DESC
+      LIMIT 20
+
+  - id: top_countries
+    question: "Country distribution of natural history items"
+    backend: parquet
+    rationale: >-
+      Provenance distribution — useful for understanding the European
+      spread of natural-history digitisation infrastructure.
+    query: |
+      WITH nh_providers AS (
+          SELECT k_iri FROM orgs
+          WHERE lower(name) LIKE 'naturalis biodiversity%'
+             OR lower(name) LIKE 'meise botanic garden%'
+             OR lower(name) LIKE '%natural history museum, london%'
+             OR lower(name) LIKE '%trustees of the natural history museum, london%'
+             OR lower(name) LIKE '%natural history museum, paris%'
+             OR lower(name) LIKE '%muséum national d''histoire naturelle%'
+             OR lower(name) LIKE 'royal botanic garden edinburgh%'
+             OR lower(name) LIKE 'royal botanic gardens%kew%'
+             OR lower(name) LIKE '%berlin-dahlem%'
+             OR lower(name) LIKE '%botanischer garten%berlin%'
+             OR lower(name) LIKE '%natural history museum, vienna%'
+             OR lower(name) LIKE '%naturhistorisches museum wien%'
+             OR lower(name) LIKE 'biology centre linz%'
+             OR lower(name) LIKE 'biologiezentrum%linz%'
+             OR lower(name) LIKE '%university of tartu natural history%'
+             OR lower(name) LIKE '%tartu%natural history%'
+      )
+      SELECT g.v_edm_country AS country,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM group_items g
+      JOIN nh_providers np ON g.v_edm_dataProvider = np.k_iri
+      WHERE g.x_reuse_level = 'open'
+        AND g.v_edm_country IS NOT NULL
+      GROUP BY g.v_edm_country
+      ORDER BY items DESC

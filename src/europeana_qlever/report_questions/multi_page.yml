@@ -1,0 +1,450 @@
+name: Multi-page items
+description: >-
+  Statistics on Europeana CHOs that aggregate more than one edm:WebResource
+  (books, manuscripts, multi-image objects) and their IIIF coverage.
+  Multi-page is defined as any CHO with > 1 WebResource. The headline IIIF
+  check is "any WebResource on the CHO has a svcs:Service whose
+  dcterms:conformsTo starts with http://iiif.io/api/image" — this is what
+  the EDM IIIF profile mandates and what is actually present in Europeana
+  data. IIIF Presentation API conformance (manifest URI) is rarely
+  declared in dcterms:conformsTo; it is reported here as a diagnostic
+  only. All metrics are derived at query time from values_edm_WebResource,
+  values_svcs_Service, links_svcs_Service, and group_items.
+
+questions:
+  - id: overview
+    question: "Volume — total items, multi-page items, total pages, page-count stats"
+    backend: parquet
+    rationale: >-
+      Headline scale of the multi-page subset: how many CHOs have more
+      than one WebResource and how thick is the long tail.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      multi_page AS (
+          SELECT k_iri_cho, wr_count FROM per_cho WHERE wr_count > 1
+      )
+      SELECT (SELECT count(*) FROM group_items)        AS total_items,
+             (SELECT count(*) FROM per_cho)            AS items_with_web_resources,
+             count(*)                                  AS multi_page_items,
+             round(count(*) * 100.0
+                   / (SELECT count(*) FROM group_items), 2) AS pct_of_total,
+             sum(wr_count)                             AS pages_on_multi_page_items,
+             round(avg(wr_count), 2)                   AS avg_pages,
+             quantile_cont(wr_count, 0.5)              AS median_pages,
+             quantile_cont(wr_count, 0.95)             AS p95_pages,
+             max(wr_count)                             AS max_pages
+      FROM multi_page
+
+  - id: page_count_distribution
+    question: "Distribution of multi-page items by page count"
+    backend: parquet
+    rationale: >-
+      Where the mass of the multi-page population sits. Buckets restricted
+      to wr_count > 1 so the single-page majority does not drown the
+      signal.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      buckets AS (
+          SELECT CASE
+                     WHEN wr_count = 2 THEN '2'
+                     WHEN wr_count BETWEEN 3 AND 5 THEN '3-5'
+                     WHEN wr_count BETWEEN 6 AND 10 THEN '6-10'
+                     WHEN wr_count BETWEEN 11 AND 50 THEN '11-50'
+                     WHEN wr_count BETWEEN 51 AND 100 THEN '51-100'
+                     WHEN wr_count BETWEEN 101 AND 500 THEN '101-500'
+                     ELSE '500+'
+                 END AS pages_per_item,
+                 CASE
+                     WHEN wr_count = 2 THEN 1
+                     WHEN wr_count BETWEEN 3 AND 5 THEN 2
+                     WHEN wr_count BETWEEN 6 AND 10 THEN 3
+                     WHEN wr_count BETWEEN 11 AND 50 THEN 4
+                     WHEN wr_count BETWEEN 51 AND 100 THEN 5
+                     WHEN wr_count BETWEEN 101 AND 500 THEN 6
+                     ELSE 7
+                 END AS sort_key
+          FROM per_cho
+          WHERE wr_count > 1
+      )
+      SELECT pages_per_item,
+             count(*) AS items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2) AS pct
+      FROM buckets
+      GROUP BY pages_per_item, sort_key
+      ORDER BY sort_key
+
+  - id: iiif_compatibility
+    question: "IIIF coverage on multi-page items (Image API headline + Presentation diagnostic)"
+    backend: parquet
+    rationale: >-
+      Headline IIIF metric. Per the EDM IIIF profile spec, providers
+      declare IIIF support via dcterms:conformsTo = http://iiif.io/api/image
+      on a svcs:Service attached to the WebResource — that is the only
+      conformance URI mandated by the spec, and the only one populated
+      in volume across Europeana. IIIF Presentation API URIs are rarely
+      declared in dcterms:conformsTo and are reported as a diagnostic
+      column to track future improvements.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      multi_page AS (
+          SELECT k_iri_cho FROM per_cho WHERE wr_count > 1
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      iiif_pres_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/presentation%'
+      ),
+      mp_image AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr iiw ON iiw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM multi_page)
+      ),
+      mp_pres AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_pres_wr ipw ON ipw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM multi_page)
+      ),
+      mp_flags AS (
+          SELECT mp.k_iri_cho,
+                 mp.k_iri_cho IN (SELECT k_iri_cho FROM mp_image) AS has_image,
+                 mp.k_iri_cho IN (SELECT k_iri_cho FROM mp_pres)  AS has_pres
+          FROM multi_page mp
+      )
+      SELECT count(*)                                              AS multi_page_items,
+             count(*) FILTER (WHERE has_image)                     AS with_image_api,
+             round(count(*) FILTER (WHERE has_image)
+                   * 100.0 / count(*), 2)                          AS pct_image_api,
+             count(*) FILTER (WHERE has_pres)                      AS with_presentation_diagnostic,
+             round(count(*) FILTER (WHERE has_pres)
+                   * 100.0 / count(*), 2)                          AS pct_presentation_diagnostic,
+             count(*) FILTER (WHERE has_image AND has_pres)        AS with_both,
+             count(*) FILTER (WHERE NOT has_image)                 AS without_iiif,
+             round(count(*) FILTER (WHERE NOT has_image)
+                   * 100.0 / count(*), 2)                          AS pct_without_iiif
+      FROM mp_flags
+
+  - id: largest_items
+    question: "Top 50 largest multi-page items by page count"
+    backend: parquet
+    rationale: >-
+      The thickest items in the catalogue — usually full books or
+      multi-volume periodicals. Listing them with provider, type, and
+      IIIF Image-API flag highlights both data-quality outliers and
+      flagship digitisations.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      mp_image AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr iiw ON iiw.wr_iri = w.k_iri
+      )
+      SELECT pc.k_iri_cho                                     AS cho,
+             pc.wr_count                                      AS pages,
+             g.v_edm_type                                     AS type,
+             g.v_edm_country                                  AS country,
+             COALESCE(o.name, g.v_edm_dataProvider)           AS data_provider,
+             pc.k_iri_cho IN (SELECT k_iri_cho FROM mp_image) AS iiif_image_api
+      FROM per_cho pc
+      LEFT JOIN group_items g ON g.k_iri = pc.k_iri_cho
+      LEFT JOIN orgs o ON g.v_edm_dataProvider = o.k_iri
+      WHERE pc.wr_count > 1
+      ORDER BY pc.wr_count DESC
+      LIMIT 50
+
+  - id: sequencing
+    question: "Multi-page items with explicit page sequencing (edm:isNextInSequence)"
+    backend: parquet
+    rationale: >-
+      edm:isNextInSequence is the only EDM property that declares page
+      order. It is optional, so this metric reveals how many providers
+      actually ship machine-readable page order — important for any
+      reader UI that needs to render pages in sequence.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      multi_page AS (
+          SELECT k_iri_cho, wr_count FROM per_cho WHERE wr_count > 1
+      ),
+      seq_per_cho AS (
+          SELECT k_iri_cho, count(*) AS seq_links
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+            AND v_edm_isNextInSequence IS NOT NULL
+          GROUP BY k_iri_cho
+      )
+      SELECT count(*)                                          AS multi_page_items,
+             count(*) FILTER (WHERE s.seq_links IS NOT NULL)   AS items_with_sequencing,
+             round(count(*) FILTER (WHERE s.seq_links IS NOT NULL)
+                   * 100.0 / count(*), 2)                      AS pct_sequenced,
+             COALESCE(sum(s.seq_links), 0)                     AS total_sequence_links,
+             COALESCE(round(avg(s.seq_links)
+                            FILTER (WHERE s.seq_links IS NOT NULL), 2), 0) AS avg_seq_links_when_present
+      FROM multi_page mp
+      LEFT JOIN seq_per_cho s ON s.k_iri_cho = mp.k_iri_cho
+
+  - id: by_type
+    question: "Multi-page items by edm:type, with IIIF Image API share"
+    backend: parquet
+    rationale: >-
+      Multi-page is dominated by TEXT (books, manuscripts) but also
+      appears for IMAGE (multi-view photo objects) and 3D (multi-asset
+      models). IIIF Image API share by type tells us where the
+      community has invested in proper viewers.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      multi_page AS (
+          SELECT k_iri_cho FROM per_cho WHERE wr_count > 1
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      mp_image AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr iiw ON iiw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM multi_page)
+      )
+      SELECT g.v_edm_type AS type,
+             count(*)                                                AS multi_page_items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2)      AS pct_of_multi_page,
+             count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                                                                     AS with_image_api,
+             round(count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                   * 100.0 / count(*), 2)                            AS pct_image_api
+      FROM group_items g
+      WHERE g.k_iri IN (SELECT k_iri_cho FROM multi_page)
+      GROUP BY g.v_edm_type
+      ORDER BY multi_page_items DESC
+
+  - id: by_country
+    question: "Top 25 countries by multi-page items, with IIIF Image API share"
+    backend: parquet
+    rationale: >-
+      Geographic distribution of multi-page holdings and per-country
+      IIIF maturity. Reveals which national aggregators have invested
+      in IIIF infrastructure for paginated content.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      multi_page AS (
+          SELECT k_iri_cho FROM per_cho WHERE wr_count > 1
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      mp_image AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr iiw ON iiw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM multi_page)
+      )
+      SELECT g.v_edm_country AS country,
+             count(*) AS multi_page_items,
+             count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                                                                     AS with_image_api,
+             round(count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                   * 100.0 / count(*), 2)                            AS pct_image_api
+      FROM group_items g
+      WHERE g.k_iri IN (SELECT k_iri_cho FROM multi_page)
+        AND g.v_edm_country IS NOT NULL
+      GROUP BY g.v_edm_country
+      ORDER BY multi_page_items DESC
+      LIMIT 25
+
+  - id: top_data_providers
+    question: "Top 25 data providers by multi-page items, with IIIF Image API share"
+    backend: parquet
+    rationale: >-
+      The institutions doing the heavy lifting on multi-page content,
+      and which of them ship IIIF Image API services. Useful for
+      outreach: high item count + low IIIF % is a candidate for an
+      upgrade conversation.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      multi_page AS (
+          SELECT k_iri_cho FROM per_cho WHERE wr_count > 1
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      mp_image AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr iiw ON iiw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM multi_page)
+      )
+      SELECT COALESCE(o.name, g.v_edm_dataProvider) AS data_provider,
+             count(*) AS multi_page_items,
+             count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                                                                     AS with_image_api,
+             round(count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                   * 100.0 / count(*), 2)                            AS pct_image_api
+      FROM group_items g
+      LEFT JOIN orgs o ON g.v_edm_dataProvider = o.k_iri
+      WHERE g.k_iri IN (SELECT k_iri_cho FROM multi_page)
+        AND g.v_edm_dataProvider IS NOT NULL
+      GROUP BY 1
+      ORDER BY multi_page_items DESC
+      LIMIT 25
+
+  - id: top_datasets
+    question: "Top 25 datasets by multi-page items, with IIIF Image API share"
+    backend: parquet
+    rationale: >-
+      Per-dataset view, finer-grained than data provider. A single
+      institution may have multiple datasets with very different IIIF
+      maturity levels, and dataset is the unit of bulk re-ingestion.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      multi_page AS (
+          SELECT k_iri_cho FROM per_cho WHERE wr_count > 1
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      mp_image AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr iiw ON iiw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM multi_page)
+      )
+      SELECT g.v_edm_datasetName AS dataset,
+             count(*) AS multi_page_items,
+             count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                                                                     AS with_image_api,
+             round(count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                   * 100.0 / count(*), 2)                            AS pct_image_api
+      FROM group_items g
+      WHERE g.k_iri IN (SELECT k_iri_cho FROM multi_page)
+        AND g.v_edm_datasetName IS NOT NULL
+      GROUP BY g.v_edm_datasetName
+      ORDER BY multi_page_items DESC
+      LIMIT 25
+
+  - id: by_reuse_level
+    question: "Multi-page items by reuse level, with IIIF Image API share"
+    backend: parquet
+    rationale: >-
+      Open-rights multi-page content is the most useful for downstream
+      reuse (research, teaching, derivative works). Pairing reuse level
+      with IIIF Image API share shows whether the openly-licensed
+      multi-page corpus is actually viewable through IIIF readers.
+    query: |
+      WITH per_cho AS (
+          SELECT k_iri_cho, count(*) AS wr_count
+          FROM values_edm_WebResource
+          WHERE k_iri_cho IS NOT NULL
+          GROUP BY k_iri_cho
+      ),
+      multi_page AS (
+          SELECT k_iri_cho FROM per_cho WHERE wr_count > 1
+      ),
+      iiif_image_wr AS (
+          SELECT DISTINCT s.k_iri_webresource AS wr_iri
+          FROM values_svcs_Service s
+          JOIN links_svcs_Service ls
+            ON ls.k_iri = s.k_iri
+           AND ls.x_property = 'v_dcterms_conformsTo'
+           AND ls.x_value LIKE 'http://iiif.io/api/image%'
+      ),
+      mp_image AS (
+          SELECT DISTINCT w.k_iri_cho
+          FROM values_edm_WebResource w
+          JOIN iiif_image_wr iiw ON iiw.wr_iri = w.k_iri
+          WHERE w.k_iri_cho IN (SELECT k_iri_cho FROM multi_page)
+      )
+      SELECT g.x_reuse_level AS reuse_level,
+             count(*) AS multi_page_items,
+             round(count(*) * 100.0 / sum(count(*)) OVER (), 2)      AS pct_of_multi_page,
+             count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                                                                     AS with_image_api,
+             round(count(*) FILTER (WHERE g.k_iri IN (SELECT k_iri_cho FROM mp_image))
+                   * 100.0 / count(*), 2)                            AS pct_image_api
+      FROM group_items g
+      WHERE g.k_iri IN (SELECT k_iri_cho FROM multi_page)
+      GROUP BY g.x_reuse_level
+      ORDER BY multi_page_items DESC
