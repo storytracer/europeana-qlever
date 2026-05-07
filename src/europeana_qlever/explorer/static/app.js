@@ -28,18 +28,46 @@ const EUROPEANA_DATA = "http://data.europeana.eu/";
 const fmt = new Intl.NumberFormat();
 const fmtN = (n) => (n == null ? "—" : fmt.format(Number(n)));
 
+// In-flight request tracking. Every api() call bumps the counter and
+// notifies subscribers; useInflight() exposes the count to components
+// so they can show a spinner and disable interactive controls. The
+// try/finally guarantees the counter stays balanced even when fetch
+// rejects (incl. AbortError).
+let _inflight = 0;
+const _inflightListeners = new Set();
+function _bumpInflight(delta) {
+  _inflight += delta;
+  for (const fn of _inflightListeners) fn(_inflight);
+}
+
 async function api(path, body, signal) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body || {}),
-    signal,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`${path}: ${res.status} ${text}`);
+  _bumpInflight(+1);
+  try {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+      signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`${path}: ${res.status} ${text}`);
+    }
+    return await res.json();
+  } finally {
+    _bumpInflight(-1);
   }
-  return res.json();
+}
+
+function useInflight() {
+  const [count, setCount] = useState(_inflight);
+  useEffect(() => {
+    _inflightListeners.add(setCount);
+    return () => {
+      _inflightListeners.delete(setCount);
+    };
+  }, []);
+  return count;
 }
 
 function europeanaLinkFor(iri) {
@@ -687,6 +715,7 @@ function App() {
   const [groupBy, setGroupBy] = useState(null);
   const [summary, setSummary] = useState(null);
   const [labels, requestLabels] = useLabelFetcher();
+  const inflight = useInflight();
 
   // Load schema once.
   useEffect(() => {
@@ -746,30 +775,38 @@ function App() {
     `;
   }
 
+  const loading = inflight > 0;
   return html`
-    <header>
-      <div class="title">Europeana Data Explorer</div>
-      <${Cards} total=${schema.total} summary=${summary} />
-    </header>
-    <main>
-      <${FacetSidebar}
-        schema=${schema}
-        filters=${filters}
-        setFilters=${setFilters}
-        labels=${labels}
-        requestLabels=${requestLabels}
-      />
-      <${View}
-        schema=${schema}
-        summary=${summary}
-        groupBy=${groupBy}
-        setGroupBy=${setGroupBy}
-        filters=${filters}
-        setFilters=${setFilters}
-        labels=${labels}
-        requestLabels=${requestLabels}
-      />
-    </main>
+    <div class="app ${loading ? "app-loading" : ""}">
+      <header>
+        <div class="title">Europeana Data Explorer</div>
+        <${Cards} total=${schema.total} summary=${summary} />
+      </header>
+      <main aria-busy=${loading ? "true" : "false"}>
+        <${FacetSidebar}
+          schema=${schema}
+          filters=${filters}
+          setFilters=${setFilters}
+          labels=${labels}
+          requestLabels=${requestLabels}
+        />
+        <${View}
+          schema=${schema}
+          summary=${summary}
+          groupBy=${groupBy}
+          setGroupBy=${setGroupBy}
+          filters=${filters}
+          setFilters=${setFilters}
+          labels=${labels}
+          requestLabels=${requestLabels}
+        />
+      </main>
+      ${loading
+        ? html`<div class="app-loading-overlay" role="status" aria-label="Loading">
+            <div class="spinner-large"></div>
+          </div>`
+        : null}
+    </div>
   `;
 }
 
