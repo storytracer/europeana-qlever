@@ -682,6 +682,33 @@ def _explorer_per_class_steps(class_value: str) -> list[ComposeStep]:
 
 
 # ---------------------------------------------------------------------------
+# map_cho_mimetypes — canonical CHO ↔ MIME-type edges
+# ---------------------------------------------------------------------------
+
+
+def map_cho_mimetypes_steps() -> list[ComposeStep]:
+    """Return compose steps for map_cho_mimetypes.
+
+    Canonical (k_iri_cho, v_mime_type) edges sourced from
+    values_edm_WebResource.v_ebucore_hasMimeType. A CHO can have
+    multiple WebResources, so the same CHO can appear with several
+    MIME types. Used by both analytics consumers and the explorer
+    (the explorer registers it as a DuckDB TABLE with column renames
+    so the synthetic-facet SQL paths apply unchanged).
+    """
+    sql = (
+        "SELECT DISTINCT\n"
+        "  k_iri_cho,\n"
+        "  v_ebucore_hasMimeType AS v_mime_type\n"
+        "FROM read_parquet('{exports_dir}/values_edm_WebResource.parquet')\n"
+        "WHERE v_ebucore_hasMimeType IS NOT NULL\n"
+        "  AND v_ebucore_hasMimeType != ''\n"
+        "ORDER BY v_mime_type"
+    )
+    return [ComposeStep(name="map_cho_mimetypes_final", sql=sql, is_final=True)]
+
+
+# ---------------------------------------------------------------------------
 # explorer_facet_top_n — precomputed top-N per class for instant cold open
 # ---------------------------------------------------------------------------
 
@@ -770,6 +797,8 @@ def compose_steps_for(table_name: str) -> list[ComposeStep]:
             )
         if table_name == "explorer_facet_top_n":
             return explorer_facet_top_n_steps()
+        if table_name == "map_cho_mimetypes":
+            return map_cho_mimetypes_steps()
     return []
 
 

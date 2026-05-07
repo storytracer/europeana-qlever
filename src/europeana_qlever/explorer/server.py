@@ -143,6 +143,12 @@ _ENTITY_FACETS = (
     ("dcterms:spatial", "edm_Place",    "explorer_places.parquet",    "explorer_places",    "v_dcterms_spatial"),
     ("edm:Place",       "edm_Place",    "explorer_places.parquet",    "explorer_places",    None),
     ("edm:TimeSpan",    "edm_TimeSpan", "explorer_timespans.parquet", "explorer_timespans", None),
+    # MIME types: literal strings (not entity IRIs), no top-N
+    # precompute. entity_class=None signals the top-N short-circuit
+    # to skip and always do live aggregation. Sourced from the
+    # canonical map_cho_mimetypes; registration renames columns so the
+    # synthetic-facet SQL paths apply unchanged.
+    ("ebucore:hasMimeType", None,       "map_cho_mimetypes.parquet",  "explorer_mimetypes", None),
 )
 _FACET_TOP_N_PARQUET = "explorer_facet_top_n.parquet"
 _FACET_TOP_N_ANY_PROPERTY = "*"
@@ -163,6 +169,11 @@ class ExplorerEngine:
         self.con = duckdb.connect()
         self.con.execute(f"SET memory_limit = '{memory_limit}'")
         self.con.execute(f"SET threads = {int(threads)}")
+        # Cache key for the materialised filtered_chos temp table —
+        # see _ensure_filter_cache. Lets every facet's top-values
+        # reuse the (potentially expensive) filter evaluation that
+        # the first call in a batch performs.
+        self._filter_cache_key: str | None = None
         # DuckDB doesn't accept parameters in DDL — escape quotes manually.
         # The source string is either a resolved local path or a --data-url
         # supplied by the CLI user; neither is untrusted in the usual sense.
@@ -248,11 +259,22 @@ class ExplorerEngine:
             return
 
         # DuckDB doesn't accept prepared parameters in DDL; escape quotes
-        # manually (same convention as the items view above).
+        # manually (same convention as the items view above). The MIME
+        # source uses canonical analytics names (k_iri_cho, v_mime_type)
+        # — rename them in flight so the synthetic-facet SQL paths
+        # (which expect k_iri_entity, x_label) apply unchanged.
         for table, filename in unique_tables.items():
             escaped = str(exports_dir / filename).replace("'", "''")
+            if table == "explorer_mimetypes":
+                select_clause = (
+                    "SELECT k_iri_cho, "
+                    "v_mime_type AS k_iri_entity, "
+                    "v_mime_type AS x_label"
+                )
+            else:
+                select_clause = "SELECT *"
             self.con.execute(
-                f"CREATE TABLE {table} AS SELECT * FROM read_parquet("
+                f"CREATE TABLE {table} AS {select_clause} FROM read_parquet("
                 f"'{escaped}')"
             )
         top_n_escaped = str(top_n_path).replace("'", "''")
@@ -350,6 +372,48 @@ class ExplorerEngine:
         where = ("WHERE " + " AND ".join(parts)) if parts else ""
         return where, params
 
+    def _ensure_filter_cache(self, filters: dict | None) -> bool:
+        """Materialise `filtered_chos` once per filter-state change.
+
+        On every filter change the explorer fires up to ~12 parallel
+        API calls (one summary, one sample, plus one top_values per
+        facet). Each independently re-evaluates the filter — and when
+        the filter contains a synthetic AND-clause that does a SEMI
+        JOIN against millions of entity edges, that re-evaluation
+        dominates wall time.
+
+        Caching the evaluated CHO set as a temp table keyed by the
+        filter JSON lets the first call build it and the rest of the
+        batch reuse a tiny in-memory lookup. Returns True when the
+        cache is populated (filters non-empty), False otherwise.
+
+        Caller must hold ``self.lock``.
+        """
+        if not filters:
+            if self._filter_cache_key is not None:
+                self.con.execute("DROP TABLE IF EXISTS filtered_chos")
+                self._filter_cache_key = None
+            return False
+        filter_key = json.dumps(filters, sort_keys=True)
+        if self._filter_cache_key == filter_key:
+            return True
+        where, params = self._build_where(filters)
+        if not where:
+            # Filter dict is non-empty but yielded no real WHERE
+            # (all malformed) — treat as unfiltered.
+            if self._filter_cache_key is not None:
+                self.con.execute("DROP TABLE IF EXISTS filtered_chos")
+                self._filter_cache_key = None
+            return False
+        self.con.execute("DROP TABLE IF EXISTS filtered_chos")
+        self.con.execute(
+            f"CREATE TEMP TABLE filtered_chos AS "
+            f"SELECT k_iri FROM items {where}",
+            params,
+        )
+        self._filter_cache_key = filter_key
+        return True
+
     # -- endpoints -------------------------------------------------------
 
     def schema_payload(self) -> dict:
@@ -407,7 +471,6 @@ class ExplorerEngine:
             raise ValueError(
                 f"synthetic facet '{group_by}' cannot be used as group_by"
             )
-        where, params = self._build_where(filters)
         gb = f'"{group_by}"'
 
         country_col = (
@@ -430,15 +493,22 @@ class ExplorerEngine:
             )
 
         with self.lock:
+            cached = self._ensure_filter_cache(filters)
+            # When the filter cache is populated, every query that
+            # would otherwise re-evaluate the filter joins against the
+            # cached CHO set instead. Avoids redundant SEMI-JOIN work
+            # across the 12-ish queries fired by a single facet click.
+            from_clause = (
+                "items SEMI JOIN filtered_chos ON items.k_iri = filtered_chos.k_iri"
+                if cached else "items"
+            )
             summary_row = self.con.execute(
-                f"SELECT {', '.join(summary_selects)} FROM items {where}",
-                params,
+                f"SELECT {', '.join(summary_selects)} FROM {from_clause}"
             ).fetchone()
             chart_rows = self.con.execute(
                 f"SELECT {gb} AS v, COUNT(*) AS n "
-                f"FROM items {where} "
-                f"GROUP BY 1 ORDER BY 2 DESC LIMIT {_CHART_LIMIT}",
-                params,
+                f"FROM {from_clause} "
+                f"GROUP BY 1 ORDER BY 2 DESC LIMIT {_CHART_LIMIT}"
             ).fetchall()
 
         filtered = int(summary_row[0])
@@ -465,67 +535,87 @@ class ExplorerEngine:
             raise ValueError(f"unknown column: {col}")
         col_def = self.column_set[col]
         limit = max(1, min(int(limit), 1000))
-        where, params = self._build_where(filters)
 
-        if col_def.get("synthetic"):
-            table = col_def["facet_table"]
-            facet_property = col_def.get("facet_property")
-            # No other filters active → short-circuit to the precomputed
-            # top-N. Property-specific facets look up rows for their
-            # property; class-aggregate facets use the '*' sentinel.
-            if not filters:
-                top_n_property = facet_property or _FACET_TOP_N_ANY_PROPERTY
-                sql = (
-                    "SELECT k_iri_entity AS v, x_label AS label,"
-                    " x_item_count AS n\n"
-                    "FROM facet_top_n\n"
-                    "WHERE x_entity_class = ? AND x_property = ?\n"
-                    "ORDER BY x_rank LIMIT ?"
-                )
-                args = [col_def["entity_class"], top_n_property, limit + 1]
-            else:
-                # Live aggregation against the per-class table.
-                # ANY_VALUE(x_label) is safe — x_label is functionally
-                # determined by k_iri_entity by construction.
-                prop_clause = (
-                    "  AND x_property = ?\n" if facet_property else ""
-                )
-                sql = (
-                    "SELECT k_iri_entity AS v, ANY_VALUE(x_label) AS label,"
-                    " COUNT(*) AS n\n"
-                    f"FROM {table}\n"
-                    f"WHERE k_iri_cho IN (SELECT k_iri FROM items {where})\n"
-                    f"{prop_clause}"
-                    "GROUP BY 1 ORDER BY 3 DESC LIMIT ?"
-                )
-                args = list(params)
-                if facet_property:
-                    args.append(facet_property)
-                args.append(limit + 1)
-            with self.lock:
+        with self.lock:
+            cached = self._ensure_filter_cache(filters)
+
+            if col_def.get("synthetic"):
+                table = col_def["facet_table"]
+                facet_property = col_def.get("facet_property")
+                entity_class = col_def.get("entity_class")
+                # No filter active AND this facet has a precomputed
+                # top-N → short-circuit. Facets with entity_class=None
+                # (e.g. MIME types, which are literal strings) skip the
+                # precompute and do live aggregation; cardinality is
+                # small enough that the live path is instant.
+                if not cached and entity_class:
+                    top_n_property = (
+                        facet_property or _FACET_TOP_N_ANY_PROPERTY
+                    )
+                    sql = (
+                        "SELECT k_iri_entity AS v, x_label AS label,"
+                        " x_item_count AS n\n"
+                        "FROM facet_top_n\n"
+                        "WHERE x_entity_class = ? AND x_property = ?\n"
+                        "ORDER BY x_rank LIMIT ?"
+                    )
+                    args = [entity_class, top_n_property, limit + 1]
+                else:
+                    # Live aggregation against the per-class table.
+                    # ANY_VALUE(x_label) is safe — x_label is
+                    # functionally determined by k_iri_entity.
+                    prop_clause = (
+                        "  AND x_property = ?\n" if facet_property else ""
+                    )
+                    where_clause = (
+                        "WHERE k_iri_cho IN "
+                        "(SELECT k_iri FROM filtered_chos)\n"
+                        if cached else ""
+                    )
+                    if cached and facet_property:
+                        # Need an AND, not a leading AND
+                        prop_clause = "  AND x_property = ?\n"
+                    elif not cached and facet_property:
+                        # First clause: WHERE not AND
+                        prop_clause = "WHERE x_property = ?\n"
+                    sql = (
+                        "SELECT k_iri_entity AS v, ANY_VALUE(x_label) AS label,"
+                        " COUNT(*) AS n\n"
+                        f"FROM {table}\n"
+                        f"{where_clause}"
+                        f"{prop_clause}"
+                        "GROUP BY 1 ORDER BY 3 DESC LIMIT ?"
+                    )
+                    args = []
+                    if facet_property:
+                        args.append(facet_property)
+                    args.append(limit + 1)
                 rows = self.con.execute(sql, args).fetchall()
-            truncated = len(rows) > limit
-            rows = rows[:limit]
-            return {
-                "values": [
-                    {"value": _json_scalar(v), "label": lbl, "count": int(n)}
-                    for v, lbl, n in rows
-                ],
-                "truncated": truncated,
-            }
-        else:
+                truncated = len(rows) > limit
+                rows = rows[:limit]
+                return {
+                    "values": [
+                        {"value": _json_scalar(v), "label": lbl, "count": int(n)}
+                        for v, lbl, n in rows
+                    ],
+                    "truncated": truncated,
+                }
+
+            # Non-synthetic: GROUP BY a real items column. Use the
+            # cached filtered set when present, otherwise scan items.
             q = f'"{col}"'
-            predicate = f"{q} IS NOT NULL"
-            full_where = (
-                f"{where} AND {predicate}" if where else f"WHERE {predicate}"
+            from_clause = (
+                "items SEMI JOIN filtered_chos "
+                "ON items.k_iri = filtered_chos.k_iri"
+                if cached else "items"
             )
-            with self.lock:
-                rows = self.con.execute(
-                    f"SELECT {q} AS v, COUNT(*) AS n "
-                    f"FROM items {full_where} "
-                    f"GROUP BY 1 ORDER BY 2 DESC LIMIT ?",
-                    params + [limit + 1],  # +1 to detect truncation
-                ).fetchall()
+            rows = self.con.execute(
+                f"SELECT {q} AS v, COUNT(*) AS n "
+                f"FROM {from_clause} "
+                f"WHERE {q} IS NOT NULL "
+                f"GROUP BY 1 ORDER BY 2 DESC LIMIT ?",
+                [limit + 1],
+            ).fetchall()
 
         truncated = len(rows) > limit
         rows = rows[:limit]
@@ -538,16 +628,20 @@ class ExplorerEngine:
 
     def sample(self, filters: dict, n: int = 10) -> dict:
         n = max(1, min(int(n), 1000))
-        where, params = self._build_where(filters)
-        # USING SAMPLE applied to `items` directly samples BEFORE the WHERE,
-        # so a selective filter would yield an empty result. Wrap in a
-        # subquery so the reservoir samples from the filtered stream.
-        sql = (
-            f"SELECT * FROM (SELECT * FROM items {where}) "
-            f"USING SAMPLE {n} ROWS"
-        )
         with self.lock:
-            cur = self.con.execute(sql, params)
+            cached = self._ensure_filter_cache(filters)
+            # USING SAMPLE applied to `items` directly samples BEFORE
+            # the WHERE so a selective filter would yield an empty
+            # result. Wrap in a subquery so the reservoir samples
+            # from the filtered stream.
+            inner = (
+                "SELECT items.* FROM items "
+                "SEMI JOIN filtered_chos "
+                "ON items.k_iri = filtered_chos.k_iri"
+                if cached else "SELECT * FROM items"
+            )
+            sql = f"SELECT * FROM ({inner}) USING SAMPLE {n} ROWS"
+            cur = self.con.execute(sql)
             rows = cur.fetchall()
             col_names = [d[0] for d in cur.description]
         return {

@@ -1554,6 +1554,33 @@ classes:
   # explorer_facet_top_n — precomputed top-N entity per class
   # =================================================================
 
+  # =================================================================
+  # map_cho_mimetypes — CHO ↔ WebResource MIME-type edges
+  # =================================================================
+
+  MapChoMimetypes:
+    description: >-
+      Canonical (CHO, MIME type) edge table. One row per (CHO, MIME)
+      pair sourced from values_edm_WebResource.v_ebucore_hasMimeType.
+      A CHO can have multiple WebResources (primary edm:isShownBy
+      plus alternate edm:hasView resources), so the same CHO can
+      appear with several MIME types. General-purpose data product —
+      consumed both by explorer facets and by analytics / NL-agent
+      queries needing fast filtering by MIME.
+    annotations:
+      table_name: map_cho_mimetypes
+      export_type: map
+      export_sets: "pipeline,maps,explorer"
+      depends_on: "values_edm_WebResource"
+    attributes:
+      k_iri_cho:
+        range: uri
+        required: true
+      v_mime_type:
+        range: string
+        required: true
+        description: MIME-type string (e.g. "image/jpeg").
+
   ExplorerFacetTopN:
     description: >-
       Precomputed top-N entities per (class, property), ranked by
