@@ -4,15 +4,15 @@
 // AbortController cancels stale requests. Labels for any Europeana IRI are
 // resolved lazily via a shared, batched fetcher.
 
-import { h, render } from "https://esm.sh/preact@10";
+import { h, render } from "./vendor/preact.mjs";
 import {
   useState,
   useEffect,
   useRef,
   useMemo,
   useCallback,
-} from "https://esm.sh/preact@10/hooks";
-import htm from "https://esm.sh/htm@3";
+} from "./vendor/hooks.mjs";
+import htm from "./vendor/htm.mjs";
 
 const html = htm.bind(h);
 
