@@ -579,6 +579,47 @@ def map_edm_entities_steps() -> list[ComposeStep]:
 
 
 # ---------------------------------------------------------------------------
+# map_entity_vocab — per-entity vocabulary classification
+# ---------------------------------------------------------------------------
+
+
+_EUROPEANA_ENTITY_STEM = "edm"
+
+
+def map_entity_vocab_steps() -> list[ComposeStep]:
+    """Classify each distinct entity IRI in map_cho_entities by vocabulary.
+
+    ~8M distinct IRIs out of map_cho_entities' ~354M rows. x_vocabulary
+    is the Metis short stem (reusing authority_sql); the Europeana
+    Entity Collection is matched explicitly. x_is_metis is derived from
+    x_vocabulary so the two columns can never disagree.
+    """
+    auth_case = authority_sql("k_iri_entity")
+    sql = (
+        "WITH distinct_entities AS (\n"
+        "  SELECT DISTINCT k_iri_entity\n"
+        "  FROM read_parquet('{exports_dir}/map_cho_entities.parquet')\n"
+        "  WHERE k_iri_entity IS NOT NULL\n"
+        "),\n"
+        "classified AS (\n"
+        "  SELECT k_iri_entity,\n"
+        "         CASE\n"
+        "           WHEN regexp_matches(k_iri_entity, "
+        "'^https?://data\\.europeana\\.eu/')\n"
+        f"             THEN '{_EUROPEANA_ENTITY_STEM}'\n"
+        f"           ELSE {auth_case}\n"
+        "         END AS x_vocabulary\n"
+        "  FROM distinct_entities\n"
+        ")\n"
+        "SELECT k_iri_entity,\n"
+        "       (x_vocabulary IS NOT NULL) AS x_is_metis,\n"
+        "       x_vocabulary\n"
+        "FROM classified"
+    )
+    return [ComposeStep(name="map_entity_vocab_final", sql=sql, is_final=True)]
+
+
+# ---------------------------------------------------------------------------
 # explorer_edm_entities — UI-optimised edges with inline English label
 # ---------------------------------------------------------------------------
 
@@ -789,6 +830,8 @@ def compose_steps_for(table_name: str) -> list[ComposeStep]:
             return map_cho_entities_steps()
         if table_name == "map_edm_entities":
             return map_edm_entities_steps()
+        if table_name == "map_entity_vocab":
+            return map_entity_vocab_steps()
         if table_name == "explorer_edm_entities":
             return explorer_edm_entities_steps()
         if table_name in _EXPLORER_PER_CLASS_TABLES:

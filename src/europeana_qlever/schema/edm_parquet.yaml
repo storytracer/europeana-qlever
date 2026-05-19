@@ -1403,6 +1403,41 @@ classes:
         range: EntityClass
 
   # =================================================================
+  # map_entity_vocab — per-entity vocabulary classification
+  # =================================================================
+
+  MapEntityVocab:
+    description: >-
+      Vocabulary classification for each distinct entity IRI in
+      map_cho_entities. Matches k_iri_entity against URI prefixes
+      from the Metis vocabulary registry. Enables efficient quality
+      filtering at query time via JOIN instead of runtime prefix
+      matching on 354M rows.
+    annotations:
+      table_name: map_entity_vocab
+      export_type: map
+      export_sets: "pipeline,maps"
+      depends_on: "map_cho_entities"
+    attributes:
+      k_iri_entity:
+        range: uri
+        required: true
+        identifier: true
+        description: Distinct entity IRI from map_cho_entities.
+      x_is_metis:
+        range: boolean
+        description: >-
+          True when k_iri_entity starts with a prefix from the Metis
+          vocabulary registry or data.europeana.eu/. False for
+          provider-supplied entities from unvetted vocabularies.
+      x_vocabulary:
+        range: string
+        description: >-
+          Metis vocabulary short name (file stem, e.g. 'viaf', 'aat')
+          when x_is_metis is true; 'edm' for the Europeana Entity
+          Collection; NULL otherwise.
+
+  # =================================================================
   # explorer_edm_entities — UI-optimised edges with inline label
   # =================================================================
 
