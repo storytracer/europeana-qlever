@@ -324,6 +324,99 @@ def _proxy_title_languages_step(*, chunk_filter: bool = False) -> ComposeStep:
     return ComposeStep(name="proxy_title_languages", sql=sql)
 
 
+_SPECIMEN_CONCEPT = "http://data.europeana.eu/concept/167"
+_NEWSPAPER_CONCEPT = "http://data.europeana.eu/concept/18"
+
+
+def _cho_entity_enrichment_step(*, chunk_filter: bool = False) -> ComposeStep:
+    """Per-CHO contextual-entity enrichment flags (Metis vocabularies only).
+
+    Joins map_cho_entities to map_entity_vocab and keeps only entity
+    links whose target IRI comes from a Metis-recognised vocabulary
+    (``x_is_metis``). Collapses to one row per CHO with BOOL_OR flags
+    for each entity class plus the two thematic-slice concepts
+    (Biological specimen, Newspaper). CHOs with no Metis entity links
+    are absent here and pick up FALSE via the LEFT JOIN COALESCE in the
+    final step.
+    """
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON m.k_iri_cho = cc.k_iri\n"
+        if chunk_filter else ""
+    )
+    sql = (
+        f"{create} cho_entity_enrichment AS\n"
+        "SELECT m.k_iri_cho AS k_iri,\n"
+        "       BOOL_OR(m.x_entity_class = 'skos_Concept') AS x_has_concept_enrichment,\n"
+        "       BOOL_OR(m.x_entity_class = 'skos_Concept' "
+        "AND m.x_property = 'v_dc_subject') AS x_has_subject_enrichment,\n"
+        "       BOOL_OR(m.x_entity_class = 'edm_Place') AS x_has_place_enrichment,\n"
+        "       BOOL_OR(m.x_entity_class = 'edm_TimeSpan') AS x_has_time_enrichment,\n"
+        "       BOOL_OR(m.x_entity_class = 'edm_Agent') AS x_has_agent_enrichment,\n"
+        f"       BOOL_OR(m.k_iri_entity = '{_SPECIMEN_CONCEPT}') AS x_is_specimen,\n"
+        f"       BOOL_OR(m.k_iri_entity = '{_NEWSPAPER_CONCEPT}') AS x_news_concept\n"
+        "FROM read_parquet('{exports_dir}/map_cho_entities.parquet') m\n"
+        "JOIN read_parquet('{exports_dir}/map_entity_vocab.parquet') v\n"
+        "  ON m.k_iri_entity = v.k_iri_entity\n"
+        f"{chunk_join}"
+        "WHERE v.x_is_metis\n"
+        "GROUP BY m.k_iri_cho"
+    )
+    return ComposeStep(name="cho_entity_enrichment", sql=sql)
+
+
+def _cho_web_resources_step(*, chunk_filter: bool = False) -> ComposeStep:
+    """Per-CHO web-resource counts and PDF presence.
+
+    Aggregates values_edm_WebResource by CHO into total / distinct
+    counts and a PDF count. CHOs with no web resources are absent here
+    and pick up 0 / FALSE via the LEFT JOIN COALESCE in the final step.
+    """
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON w.k_iri_cho = cc.k_iri\n"
+        if chunk_filter else ""
+    )
+    sql = (
+        f"{create} cho_web_resources AS\n"
+        "SELECT w.k_iri_cho AS k_iri,\n"
+        "       COUNT(*) AS x_web_resource_count,\n"
+        "       COUNT(DISTINCT w.k_iri) AS x_distinct_web_resources,\n"
+        "       COUNT(*) FILTER (WHERE w.v_ebucore_hasMimeType = 'application/pdf') "
+        "AS x_pdf_count,\n"
+        "       COUNT(*) FILTER (WHERE w.v_ebucore_hasMimeType = 'application/pdf') > 0 "
+        "AS x_has_pdf\n"
+        "FROM read_parquet('{exports_dir}/values_edm_WebResource.parquet') w\n"
+        f"{chunk_join}"
+        "GROUP BY w.k_iri_cho"
+    )
+    return ComposeStep(name="cho_web_resources", sql=sql)
+
+
+def _cho_newspaper_partof_step(*, chunk_filter: bool = False) -> ComposeStep:
+    """CHOs whose dcterms:isPartOf mentions the Europeana Newspapers collection.
+
+    Reads the v_dcterms_isPartOf partition of links_ore_Proxy and
+    resolves the proxy URI to its CHO via ``proxy_cho``. One of the four
+    signals feeding ``x_is_newspaper``.
+    """
+    create = "CREATE OR REPLACE TEMP TABLE" if chunk_filter else "CREATE TEMP TABLE"
+    chunk_join = (
+        "SEMI JOIN chunk_chos cc ON pc.k_iri_cho = cc.k_iri\n"
+        if chunk_filter else ""
+    )
+    sql = (
+        f"{create} cho_newspaper_partof AS\n"
+        "SELECT DISTINCT pc.k_iri_cho AS k_iri, TRUE AS x_news_partof\n"
+        "FROM read_parquet('{exports_dir}/links_ore_Proxy/"
+        "x_property=v_dcterms_isPartOf/**/*.parquet') l\n"
+        "JOIN proxy_cho pc ON l.k_iri = pc.k_iri\n"
+        f"{chunk_join}"
+        "WHERE LOWER(l.x_value) LIKE '%europeana newspapers%'"
+    )
+    return ComposeStep(name="cho_newspaper_partof", sql=sql)
+
+
 def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
     """Build the final assembly step for group_items.
 
@@ -348,6 +441,25 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
         "TRY_CAST(REGEXP_EXTRACT(tier.x_content_tier_uri, 'contentTier([0-9])$', 1) AS INTEGER) AS x_content_tier",
         "NULLIF(REGEXP_EXTRACT(tier.x_metadata_tier_uri, 'metadataTier([0A-C])$', 1), '') AS x_metadata_tier",
         "COALESCE(tlang.x_title_languages, 0) AS x_title_languages",
+        "COALESCE(ent.x_is_specimen, false) AS x_is_specimen",
+        (
+            "COALESCE(\n"
+            "    COALESCE(np.x_news_partof, false)\n"
+            "    OR COALESCE(ent.x_news_concept, false)\n"
+            "    OR (LOWER(eagg.v_edm_datasetName) LIKE '%newspaper%')\n"
+            "    OR (SPLIT_PART(eagg.v_edm_datasetName, '_', 1) IN "
+            "('9200300','9200301','9200338','9200339','9200355','9200356','9200357','9200396')),\n"
+            "    false) AS x_is_newspaper"
+        ),
+        "COALESCE(wr.x_has_pdf, false) AS x_has_pdf",
+        "COALESCE(wr.x_pdf_count, 0) AS x_pdf_count",
+        "COALESCE(wr.x_web_resource_count, 0) AS x_web_resource_count",
+        "COALESCE(wr.x_distinct_web_resources, 0) AS x_distinct_web_resources",
+        "COALESCE(ent.x_has_concept_enrichment, false) AS x_has_concept_enrichment",
+        "COALESCE(ent.x_has_subject_enrichment, false) AS x_has_subject_enrichment",
+        "COALESCE(ent.x_has_place_enrichment, false) AS x_has_place_enrichment",
+        "COALESCE(ent.x_has_time_enrichment, false) AS x_has_time_enrichment",
+        "COALESCE(ent.x_has_agent_enrichment, false) AS x_has_agent_enrichment",
     ]
     select_parts.sort(key=lambda s: s.rsplit(" AS ", 1)[1] if " AS " in s else s)
     select_str = ",\n  ".join(select_parts)
@@ -372,7 +484,10 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
         "WHERE x_property = 'v_dc_description') hd ON hd.k_iri = cho.k_iri\n"
         "LEFT JOIN (SELECT k_iri FROM provider_proxy_properties "
         "WHERE x_property = 'v_dc_subject') hs ON hs.k_iri = cho.k_iri\n"
-        "LEFT JOIN proxy_title_languages tlang ON tlang.k_iri = cho.k_iri"
+        "LEFT JOIN proxy_title_languages tlang ON tlang.k_iri = cho.k_iri\n"
+        "LEFT JOIN cho_entity_enrichment ent ON ent.k_iri = cho.k_iri\n"
+        "LEFT JOIN cho_web_resources wr ON wr.k_iri = cho.k_iri\n"
+        "LEFT JOIN cho_newspaper_partof np ON np.k_iri = cho.k_iri"
     )
 
     return ComposeStep(name="group_items_final", sql=final_sql, is_final=True)
@@ -409,6 +524,9 @@ def group_items_chunk_steps() -> list[ComposeStep]:
         _provider_proxy_properties_step(chunk_filter=True),
         _proxy_title_languages_step(chunk_filter=True),
         _europeana_proxy_scalars_step(chunk_filter=True),
+        _cho_entity_enrichment_step(chunk_filter=True),
+        _cho_web_resources_step(chunk_filter=True),
+        _cho_newspaper_partof_step(chunk_filter=True),
         _group_items_final_step(chunk_filter=True),
     ]
 
@@ -427,6 +545,9 @@ def group_items_steps() -> list[ComposeStep]:
         _provider_proxy_properties_step(),
         _proxy_title_languages_step(),
         _europeana_proxy_scalars_step(),
+        _cho_entity_enrichment_step(),
+        _cho_web_resources_step(),
+        _cho_newspaper_partof_step(),
         _group_items_final_step(),
     ]
 

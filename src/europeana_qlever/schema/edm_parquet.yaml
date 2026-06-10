@@ -1214,7 +1214,8 @@ classes:
       depends_on: >-
         values_edm_ProvidedCHO, values_ore_Proxy, values_ore_Aggregation,
         values_edm_EuropeanaAggregation, values_edm_WebResource,
-        values_svcs_Service, values_publishing_tier, links_ore_Proxy
+        values_svcs_Service, values_publishing_tier, links_ore_Proxy,
+        map_cho_entities, map_entity_vocab
     attributes:
       k_iri:
         range: uri
@@ -1265,6 +1266,70 @@ classes:
           dc:title literals (provider proxy only). A coarse proxy for
           how internationalised the item's metadata is. 0 when the
           item has no language-tagged titles.
+      x_is_specimen:
+        range: boolean
+        description: >-
+          True when the item is linked (via a Metis-recognised
+          vocabulary) to the Europeana concept "Biological specimen"
+          (data.europeana.eu/concept/167). A thematic dataset slice.
+      x_is_newspaper:
+        range: boolean
+        description: >-
+          True when the item is identified as a newspaper by ANY of
+          four signals: a dcterms:isPartOf value mentioning "Europeana
+          Newspapers"; a Metis-recognised link to the Europeana concept
+          "Newspaper" (data.europeana.eu/concept/18); a dataset name
+          containing "newspaper"; or membership of a known newspaper
+          dataset id (9200300/301/338/339/355/356/357/396).
+      x_has_pdf:
+        range: boolean
+        description: >-
+          True when at least one web resource on this item has MIME type
+          application/pdf.
+      x_pdf_count:
+        range: integer
+        description: >-
+          Number of web resources on this item with MIME type
+          application/pdf. 0 when none.
+      x_web_resource_count:
+        range: integer
+        description: >-
+          Total number of web resources (edm:WebResource) on this item.
+          0 when none.
+      x_distinct_web_resources:
+        range: integer
+        description: >-
+          Number of distinct web resource URIs on this item. May be
+          lower than x_web_resource_count when the same URL appears in
+          multiple web resource entries.
+      x_has_concept_enrichment:
+        range: boolean
+        description: >-
+          True when the item has any skos:Concept entity link via a
+          Metis-recognised vocabulary. Indicates concept-level semantic
+          enrichment.
+      x_has_subject_enrichment:
+        range: boolean
+        description: >-
+          True when the item has a Metis-recognised skos:Concept link
+          specifically via the dc:subject property — the stricter
+          "subject label" enrichment most useful for classification, as
+          opposed to broad dc:type enrichment.
+      x_has_place_enrichment:
+        range: boolean
+        description: >-
+          True when the item has any edm:Place entity link via a
+          Metis-recognised vocabulary.
+      x_has_time_enrichment:
+        range: boolean
+        description: >-
+          True when the item has any edm:TimeSpan entity link via a
+          Metis-recognised vocabulary.
+      x_has_agent_enrichment:
+        range: boolean
+        description: >-
+          True when the item has any edm:Agent entity link via a
+          Metis-recognised vocabulary.
 
   # =================================================================
   # map_rights — distinct rights URIs with classification
