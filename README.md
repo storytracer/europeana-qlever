@@ -260,6 +260,8 @@ uv run europeana-qlever -d /data/europeana create-views --sample-size 10000
 uv run europeana-qlever -d /data/europeana export --all --sample-size 10000
 ```
 
+By default, exports whose `.parquet` already exists are skipped — pass `--no-skip-existing` to force a re-export.
+
 List everything with `list-exports` (add `--all-partitions` to see per-property scans).
 
 #### Filter options (apply to SPARQL exports)

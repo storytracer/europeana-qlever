@@ -1283,8 +1283,9 @@ def analyze_static(
               show_default=True, help="QLever HTTP endpoint.")
 @click.option("--timeout", default=QLEVER_QUERY_TIMEOUT, show_default=True,
               help="Per-export timeout in seconds.")
-@click.option("--skip-existing", is_flag=True, default=False,
-              help="Skip exports whose .parquet already exists.")
+@click.option("--skip-existing/--no-skip-existing", default=True,
+              help="Skip exports whose .parquet already exists (default). "
+                   "Use --no-skip-existing to force re-export.")
 @click.option("--duckdb-memory", default="auto", show_default=True,
               help="DuckDB memory budget (e.g. '4GB' or 'auto').")
 @click.option("--duckdb-threads", type=int, default=None,
