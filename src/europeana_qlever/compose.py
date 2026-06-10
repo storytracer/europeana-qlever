@@ -451,6 +451,12 @@ def _group_items_final_step(*, chunk_filter: bool = False) -> ComposeStep:
             "('9200300','9200301','9200338','9200339','9200355','9200356','9200357','9200396')),\n"
             "    false) AS x_is_newspaper"
         ),
+        (
+            "agg.v_edm_provider IN (\n"
+            "    'http://data.europeana.eu/organization/1609',\n"
+            "    'http://data.europeana.eu/organization/1482250000004671150'\n"
+            ") AS x_in_openup"
+        ),
         "COALESCE(wr.x_has_pdf, false) AS x_has_pdf",
         "COALESCE(wr.x_pdf_count, 0) AS x_pdf_count",
         "COALESCE(wr.x_web_resource_count, 0) AS x_web_resource_count",

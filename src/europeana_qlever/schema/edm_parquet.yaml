@@ -1281,6 +1281,11 @@ classes:
           "Newspaper" (data.europeana.eu/concept/18); a dataset name
           containing "newspaper"; or membership of a known newspaper
           dataset id (9200300/301/338/339/355/356/357/396).
+      x_in_openup:
+        range: boolean
+        description: >-
+          Item aggregated through OpenUp! (natural history thematic
+          aggregator).
       x_has_pdf:
         range: boolean
         description: >-
