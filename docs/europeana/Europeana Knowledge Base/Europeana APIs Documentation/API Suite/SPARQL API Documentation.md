@@ -1,14 +1,11 @@
 
 # SPARQL API Documentation
 
-The SPARQL API allows you to use the SPARQL Query language to interact with Europeana’s database, and lets you explore connections between Europeana data and outside data sources, like [VIAF](http://viaf.org/), [Iconclass](http://www.iconclass.org/), Getty Vocabularies ([AAT](http://www.getty.edu/research/tools/vocabularies/lod/)), [Geonames](http://www.geonames.org/), [Wikidata](https://www.wikidata.org/), and [DBPedia](http://wiki.dbpedia.org/). If you are looking for a way to delve into the structured metadata of Europeana (for instance, to ask the question "What are all the French 18th-century painters with at least five artworks available through Europeana'), this is the API for you. If you want to simply search Europeana in an unstructured way (for instance 'give me all results for the word 'cat'), then using the [Search API Documentation](Search%20API%20Documentation.md) is a better choice. SPARQL is part of Europeana's [Page not accessible (ID: 2386100230)] initiative.
+The SPARQL API allows you to use the SPARQL Query language to interact with Europeana’s database, and lets you explore connections between Europeana data. If you are looking for a way to delve into the structured metadata of Europeana (for instance, to ask the question "What are all the French 18th-century painters with at least five artworks available through Europeana'), this is the API for you. If you want to simply search Europeana in an unstructured way (for instance 'give me all results for the word 'cat'), then using the [Search API Documentation](Search%20API%20Documentation.md) is a better choice. SPARQL is part of Europeana's [Page not accessible (ID: 2386100230)] initiative.
 
-Before starting to use this API, we recommend reading the introduction page for an overview of the [Page not accessible (ID: 2385313809)] and reading the [Terms of Use](https://www.europeana.eu/rights/terms-of-use#europeana-api). If you want to get started with this API, go directly to the [Getting Started](#getting-started) section or try it out directly on the [Console](https://sparql.europeana.eu).
+Before starting to use this API, we recommend reading the introduction page for an overview of the [Page not accessible (ID: 2385313809)] and reading the [Terms of Use](https://www.europeana.eu/rights/terms-of-use#europeana-api). If you want to get started with this API, go directly to the [Getting Started](#getting-started) section or try it out directly on the [Console](https://api.europeana.eu/console/sparql/).
 
 If you want to learn more about SPARQL, we recommend the [sparql.dev](https://sparql.dev/) tutorial and [Wikidata SPARQL tutorial](https://www.wikidata.org/wiki/Wikidata:SPARQL_tutorial). We also recommend the [SPARQL for humanists](http://matthewlincoln.net/2014/07/10/sparql-for-humanists.html) page to help you dive into the SPARQL Query Language.
-
-> [!WARNING]
-> ### The SPARQL API is powered by a separate database (Virtuoso) which reflects the state of the Europeana datasets as of July 2017. We are working on a monthly update for this endpoint so that it is kept in sync with the main Europeana APIs.
 
 - [Getting Started](#getting-started)
 - [More examples of SPARQL Queries](#more-examples-of-sparql-queries)

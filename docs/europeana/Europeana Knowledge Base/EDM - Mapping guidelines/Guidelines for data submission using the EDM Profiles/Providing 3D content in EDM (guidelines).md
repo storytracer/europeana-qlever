@@ -150,6 +150,8 @@ This can be provided using the `schema:digitalSourceType` property with one of t
 - **3D reconstruction**: `https://cv.iptc.org/newscodes/digitalsourcetype/dataDrivenMedia`
 - **born digital**: `https://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation`
 
+When different 3D representations are made available for an object, schema:digitalSourceType should be indicated on all edm:WebResource instances. This includes the case of versions for online presentation and versions for download that are linked via dcterms:isFormatOf.
+
 Example:
 
 ```java

@@ -826,4 +826,4 @@ The DE-BIAS report opens in a modal window.
 
 ![](https://europeana.atlassian.net/wiki/download/attachments/2104295432/image-20230519-132917.png?version=1&modificationDate=1684502960800&cacheVersion=1&api=v2)
 
-Every two weeks the sandbox is emptied. It is highly possible that the dataset has been removed because of this.
+Submitted data will be removed after one month. It is highly possible that the dataset has been removed because of this.

@@ -1,6 +1,6 @@
 {
   "lockfile_version": 2,
-  "last_export": "2026-04-06T13:35:55.464260+00:00",
+  "last_export": "2026-06-10T17:48:57.859552+00:00",
   "orgs": {
     "https://europeana.atlassian.net": {
       "spaces": {
@@ -209,7 +209,7 @@
             },
             "2104295432": {
               "title": "Metis Sandbox User Guide",
-              "version": 25,
+              "version": 26,
               "export_path": "Europeana Knowledge Base/User Guides & Training/Metis Sandbox User Guide.md",
               "attachments": {
                 "att3805052929": {
@@ -627,7 +627,7 @@
             },
             "2225471493": {
               "title": "Management of organisations in Zoho CRM (for internal use)",
-              "version": 86,
+              "version": 87,
               "export_path": "Europeana Knowledge Base/Organisation entities in Europeana/Management of organisations in Zoho CRM (for internal use).md",
               "attachments": {
                 "att2846523512": {
@@ -1233,7 +1233,7 @@
             },
             "2385870903": {
               "title": "SPARQL API Documentation",
-              "version": 5,
+              "version": 7,
               "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/API Suite/SPARQL API Documentation.md",
               "attachments": {}
             },
@@ -1334,7 +1334,7 @@
             },
             "2398978088": {
               "title": "Europeana and IIIF",
-              "version": 21,
+              "version": 25,
               "export_path": "Europeana Knowledge Base/Europeana and IIIF.md",
               "attachments": {}
             },
@@ -1698,7 +1698,7 @@
             },
             "2517303316": {
               "title": "IIIF Guidance",
-              "version": 35,
+              "version": 37,
               "export_path": "Europeana Knowledge Base/User Guides & Training/IIIF Guidance.md",
               "attachments": {
                 "att2611609629": {
@@ -1717,7 +1717,7 @@
             },
             "2517368849": {
               "title": "EDM2IIIF Manifest Creation Tool",
-              "version": 18,
+              "version": 21,
               "export_path": "Europeana Knowledge Base/User Guides & Training/IIIF Guidance/EDM2IIIF Manifest Creation Tool.md",
               "attachments": {
                 "att2611511425": {
@@ -1924,9 +1924,21 @@
             },
             "2953314308": {
               "title": "Use cases",
-              "version": 8,
+              "version": 10,
               "export_path": "Europeana Knowledge Base/Europeana APIs Documentation/Use cases.md",
               "attachments": {
+                "att4443668489": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ef7600ed-c6b9-48bb-81f7-539f0fcf6d86.png"
+                },
+                "att4346740808": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/b6d3d56c-6d9a-4140-9ceb-807e19646a04.png"
+                },
+                "att4347428870": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/310bb487-aec2-487f-8486-d059201b3be4.png"
+                },
                 "att4128669704": {
                   "version": 1,
                   "path": "Europeana Knowledge Base/attachments/026ce68f-3255-4a61-8c7b-d2d92568bc9d.png"
@@ -2060,21 +2072,25 @@
             },
             "3138879489": {
               "title": "EDM (definitions)",
-              "version": 6,
+              "version": 10,
               "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM (definitions).md",
               "attachments": {}
             },
             "3255468048": {
               "title": "Providing 3D content in EDM (guidelines)",
-              "version": 39,
+              "version": 40,
               "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Guidelines for data submission using the EDM Profiles/Providing 3D content in EDM (guidelines).md",
               "attachments": {}
             },
             "3261923389": {
               "title": "Organization profile for data providers and aggregators (definitions)",
-              "version": 10,
+              "version": 13,
               "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/Organization profile for data providers and aggregators (definitions).md",
               "attachments": {
+                "att3263496221": {
+                  "version": 2,
+                  "path": "Europeana Knowledge Base/attachments/d24d754d-526e-428a-be5b-59a2af01ed60.pdf"
+                },
                 "att3761668097": {
                   "version": 1,
                   "path": "Europeana Knowledge Base/attachments/aceaec68-33bc-471f-9e38-67696bb769d6.png"
@@ -2147,7 +2163,7 @@
             },
             "3294363660": {
               "title": "3D content in EDM (definitions)",
-              "version": 13,
+              "version": 16,
               "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/3D content in EDM (definitions).md",
               "attachments": {
                 "att4144136193": {
@@ -2158,7 +2174,7 @@
             },
             "3297116185": {
               "title": "EDM namespace classes and properties (definitions)",
-              "version": 12,
+              "version": 20,
               "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM namespace classes and properties (definitions).md",
               "attachments": {}
             },
@@ -2223,7 +2239,7 @@
             },
             "3858825224": {
               "title": "EDM profile for Sound (definitions)",
-              "version": 1,
+              "version": 2,
               "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/EDM profile for Sound (definitions).md",
               "attachments": {
                 "att3859382274": {
@@ -2240,6 +2256,21 @@
                 "att4160520196": {
                   "version": 1,
                   "path": "Europeana Knowledge Base/attachments/670cbb3f-12c4-4987-9e75-1775d7cc1fb4.png"
+                }
+              }
+            },
+            "4444717061": {
+              "title": "Provenance of metadata enrichments and translations",
+              "version": 1,
+              "export_path": "Europeana Knowledge Base/Europeana Data Model/EDM profiles/Provenance of metadata enrichments and translations.md",
+              "attachments": {
+                "att4445143063": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/fa1444ea-efdc-455f-9035-3aff3ae28564.pdf"
+                },
+                "att4445143056": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/1fdf80d0-fb82-4927-8975-78edc2e5cf60.pdf"
                 }
               }
             },
@@ -2262,6 +2293,33 @@
                 "att2165637121": {
                   "version": 1,
                   "path": "Europeana Knowledge Base/attachments/de4b54cc-c7f2-4aae-a624-f19892182dab.png"
+                }
+              }
+            },
+            "987758739": {
+              "title": "Example of record mapped to EDM classes",
+              "version": 13,
+              "export_path": "Europeana Knowledge Base/EDM - Mapping guidelines/Example of record mapped to EDM classes.md",
+              "attachments": {
+                "att2299363346": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/7e5f94f1-96fd-4b28-8f8c-536dc5818f09.png"
+                },
+                "att2298707996": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/d29cd22c-617e-4110-a79c-166c6f826a41.png"
+                },
+                "att2299625473": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/ffc7a380-40a2-4ec5-94b6-2e7fcf09a7ca.png"
+                },
+                "att2297954510": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/2018ef8f-c7ab-4963-afcd-1db8307f5f8d.png"
+                },
+                "att2298642471": {
+                  "version": 1,
+                  "path": "Europeana Knowledge Base/attachments/f6f2e7d0-7d81-4ce9-be2b-c5a217c5ab4a.png"
                 }
               }
             },

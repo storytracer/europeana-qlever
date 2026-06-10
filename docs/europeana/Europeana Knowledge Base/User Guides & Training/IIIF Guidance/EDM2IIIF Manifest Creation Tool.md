@@ -32,6 +32,7 @@ The tool is realised in co-operation with Europeana and uses the same IIIF mappi
 - [9 Manifest Creation](#key-9-manifest-creation)
 - [10 EDM enrichment](#key-10-edm-enrichment)
 - [11 Troubleshooting](#key-11-troubleshooting)
+- [12 Tool link](#key-12-tool-link)
 - [Samples](#samples)
   - [Original EDM (from OAI provider)](#original-edm-from-oai-provider)
   - [.json Manifest](#json-manifest)
@@ -57,7 +58,7 @@ With this tool you can:
 
 The EDM2IIIF Manifest Creation Tool can be accessed through <https://openup.ait.co.at/edm2manifest/> *.*
 
-This tool was developed in the **Python** programming language, using the **Flask** framework. To use this tool, the user only needs Internet connection and a browser.
+This tool was developed in the **Python** programming language, using the **Flask** framework. To use the tool online, the user only needs Internet connection and a browser. Furthermore, it is possible to [download the mapping script](https://github.com/AITProjectAssistant/edm2iiif) from a GitHub repository and use the script locally on a computer.
 
 # 3 How to prepare your dataset
 
@@ -262,6 +263,10 @@ How error is produced: Writing project name in *Name* input field -> Choosing *T
 This window shows if the OAI-PMH link was not correct or one of the two URL input fields could not be processed correctly.
 
 ![](https://europeana.atlassian.net/wiki/download/attachments/2517368849/AD_4nXfu3rXytZtZkA6Wytd6xw3UThsuDou4iGumBG_0tYjPTSBQnqujA9iAMUfrKeJtchRUA-DUiZKr8R7jw_8C6hxHfs2JPqcajYjUnjuzFPXlRloiptnAjVwJyt0gobYfyq0xF6GVp7pJFwN7ssLfiGRLtl3S%3Fkey=yDJ2wl4wJcrsr0iw5AUDmg?version=1&modificationDate=1718708924205&cacheVersion=1&api=v2)
+
+# 12 Tool link
+
+If you want to use and adapt the mapping script for your specific use case you may download the script from the GitHub repository: [EDM2IIIF Manifest Creation Tool](https://github.com/AITProjectAssistant/edm2iiif).
 
 # Samples
 

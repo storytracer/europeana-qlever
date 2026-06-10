@@ -4,6 +4,8 @@
 This page presents **current and past use cases** of platforms, apps, websites and other projects that have used the Europeana APIs in some way. This page can help you find inspiration for your next project using the data that we make available, or can give you insight into how others have used the Europeana APIs.
 
 - [Current use cases](#current-use-cases)
+  - [Anorak](#anorak)
+  - [10M](#key-10m)
   - [MagnificentH](#magnificenth)
   - [Artetra](#artetra)
   - [Karlsruhe Virtual Catalog](#karlsruhe-virtual-catalog)
@@ -14,6 +16,7 @@ This page presents **current and past use cases** of platforms, apps, websites a
   - [Ajapaik / Timepatch](#ajapaik-timepatch)
   - [National Library of Ireland catalogue widget](#national-library-of-ireland-catalogue-widget)
 - [Past use cases](#past-use-cases)
+  - [Visualising Soviet posters: Master’s thesis in Digital Humanities](#visualising-soviet-posters-master-s-thesis-in-digital-humanities)
   - [Full Text in Python (2019)](#full-text-in-python-2019)
   - [Bulk Downloader (2017)](#bulk-downloader-2017)
   - [KNReise (2017)](#knreise-2017)
@@ -34,6 +37,18 @@ This page presents **current and past use cases** of platforms, apps, websites a
 ---
 
 # Current use cases
+
+## Anorak
+
+![Ontwerp zonder titel (13).png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/Ontwerp%20zonder%20titel%20(13).png?version=1&modificationDate=1777882243141&cacheVersion=1&api=v2)
+
+The discovery platform [Anorak](https://anorak.at/) positions the user between two points, Logic and Poetry, and asks them to move towards one of the poles. Users are not in control of which artwork is shown to them, only the states they want to navigate through. Featuring exclusively works made available through [Europeana.eu](http://Europeana.eu), the platform lowers barrier to entry into Europe’s cultural heritage.
+
+## 10M
+
+![Screenshot 2026-04-09 103052.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/Screenshot%202026-04-09%20103052.png?version=1&modificationDate=1777881944038&cacheVersion=1&api=v2)
+
+The platform [10M](http://10m.co) introduces a form of emotional navigation, allowing users to explore artworks from a feeling rather than a keyword. The platform features works from over 22 collections, including [Europeana.eu](http://Europeana.eu). While the ‘emotional’ categorization is not explicitly included in the metadata provided by insitutions, it helps surface relationships and meanings that traditional classification systems may overlook, offering new perspectives on familiar collections.
 
 ## MagnificentH
 
@@ -127,6 +142,12 @@ This interface allows simultaneous search of many of the Library's catalogued co
 This [interface](http://catalogue.nli.ie/Search/Results?lookfor=aran+islands&type=AllFields&filter%5B%5D=digitised%3A%22Digitised%22&view=grid) allows simultaneous search of many of the Library's catalogued collections, including digitised material. A new feature is that results from Europeana are also returned for every search, using a sidebar widget. The widget shows six items from Europeana with an option to see the full search result on the Europeana portal. Results from the National Library's contributions to Europeana are filtered out to remove duplicates.
 
 # Past use cases
+
+## Visualising Soviet posters: Master’s thesis in Digital Humanities
+
+![Elizaveta_posters.png](https://europeana.atlassian.net/wiki/download/attachments/2953314308/Elizaveta_posters.png?version=1&modificationDate=1781080150619&cacheVersion=1&api=v2)
+
+Elizaveta Berquin, Researcher based in Belgium, used the data extracted from the Europeana APIs to develop a web application for her Master’s thesis in Digital Humanities. The application visualises Soviet posters. Elizaveta shares: *“Europeana is a powerful resource that gives access to a rich collection of digitised cultural heritage across Europe and can be used in many creative ways to explore almost any topic.”*
 
 ## Full Text in Python (2019)
 

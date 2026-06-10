@@ -1,0 +1,10 @@
+
+# Provenance of metadata enrichments and translations
+
+This EDM extension supports the representation of relevant provenance information about fully automated or user-assisted enrichment and translation processes, which are increasingly applied by aggregators to improve the quality of the metadata provided to Europeana. First, it allows the separation of original metadata from aggregator's additions or changes. Second, it provides a way to indicate a confidence level for the new metadata, for the cases where automated processes that have a known margin of error are used without a complete quality assurance step (with expert validation, for example).
+
+A first part of this extension is dedicated to representing provenance in the metadata that is delivered to Europeana via EDM's "external" representation in the RDF/XML format. The second part extends the representation used by Europeana internally and in its APIs, by building upon [OAI-ORE](https://www.openarchives.org/ore/)'s *proxies* and *aggregations* to distinguish data from different sources.
+
+For reference, see attached the beta version of this profile that developed under the Europeana Generic Services Europeana XX Century of Change project. Funded under the Connecting 1 Europe Facility Programme under by European Health and Digital Executive Agency (HaDEA)
+
+[Europeana_Professional_Share_your_data_Technical_requirements_EDM_profiles_EDM_provenance_profile_internal_202203.pdf](https://europeana.atlassian.net/wiki/download/attachments/4444717061/Europeana_Professional_Share_your_data_Technical_requirements_EDM_profiles_EDM_provenance_profile_internal_202203.pdf?version=1&modificationDate=1781104703155&cacheVersion=1&api=v2)[Europeana_Professional_Share_your_data_Technical_requirements_EDM_profiles_EDM_provenance_profile_external_202111.pdf](https://europeana.atlassian.net/wiki/download/attachments/4444717061/Europeana_Professional_Share_your_data_Technical_requirements_EDM_profiles_EDM_provenance_profile_external_202111.pdf?version=1&modificationDate=1781104702956&cacheVersion=1&api=v2)
