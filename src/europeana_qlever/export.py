@@ -870,6 +870,7 @@ class ExportPipeline:
         qlever_url: str = f"http://localhost:{QLEVER_PORT}",
         timeout: int = QLEVER_QUERY_TIMEOUT,
         skip_existing: bool = False,
+        explicit: set[str] | None = None,
         memory_limit: str = "4GB",
         duckdb_threads: int | None = None,
         temp_directory: Path | None = None,
@@ -892,6 +893,10 @@ class ExportPipeline:
         self._qlever_url = qlever_url
         self._timeout = timeout
         self._skip_existing = skip_existing
+        # Exports the user named directly: always rebuilt, never skipped.
+        # Auto-resolved dependencies (and whole --all/--set batches) are not
+        # listed here and so honour --skip-existing.
+        self._explicit = explicit or set()
         self._memory_limit = memory_limit
         self._duckdb_threads = duckdb_threads
         self._temp_directory = temp_directory
@@ -1000,7 +1005,11 @@ class ExportPipeline:
                     if pending is not None and not isinstance(export, QueryExport):
                         pending = self._await_pending(pending, result, dependency_only)
 
-                    if self._skip_existing and self._artifact_exists(export, parquet_path):
+                    if (
+                        self._skip_existing
+                        and name not in self._explicit
+                        and self._artifact_exists(export, parquet_path)
+                    ):
                         if self._verbose:
                             display.console.print(f"[dim]Skipping {name} (exists)[/dim]")
                         result.succeeded.append(name)

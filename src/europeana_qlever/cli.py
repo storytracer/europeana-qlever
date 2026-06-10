@@ -930,8 +930,16 @@ def _resolve_exports(
     limit: int | None = None,
     sample_size: int | None = None,
     property_scan: str | None = None,
-) -> tuple[dict[str, "Export"], QueryFilters]:
-    """Resolve CLI args into a (exports, filters) pair."""
+) -> tuple[dict[str, "Export"], QueryFilters, set[str]]:
+    """Resolve CLI args into an (exports, filters, explicit) triple.
+
+    ``explicit`` is the set of exports the user named directly (positional
+    NAMES or ``--property``). Exports added only as auto-resolved
+    dependencies are not in this set. ``--all`` / ``--set`` name no export
+    explicitly — the whole batch is treated as dependencies — so the set is
+    empty. This distinction drives ``--skip-existing``: explicitly-requested
+    exports are always rebuilt, dependencies are skipped when they exist.
+    """
     from .export import Export, ExportRegistry
     from .schema_loader import export_classes, link_properties
 
@@ -983,14 +991,14 @@ def _resolve_exports(
             )
         pfx, local = want[2:].split("_", 1)
         scan_name = f"{parent}__{pfx}_{local}"
-        return {scan_name: registry.get(scan_name)}, filters
+        return {scan_name: registry.get(scan_name)}, filters, {scan_name}
 
     if run_all:
-        return registry.for_set("pipeline"), filters
+        return registry.for_set("pipeline"), filters, set()
     if export_set:
         if export_set == "all":
-            return registry.exports, filters
-        return registry.for_set(export_set), filters
+            return registry.exports, filters, set()
+        return registry.for_set(export_set), filters, set()
 
     # Positional names
     exports: dict[str, Export] = {}
@@ -1001,7 +1009,7 @@ def _resolve_exports(
             raise click.UsageError(
                 f"Unknown export: '{name}'. Use `list-exports` to see available exports."
             )
-    return exports, filters
+    return exports, filters, set(exports)
 
 
 def _analysis_output_path(
@@ -1111,7 +1119,7 @@ def analyze_qlever(
     from .analysis import analyze_all, render_markdown
     from .export import CompositeExport, QueryExport
 
-    all_exports, _ = _resolve_exports(
+    all_exports, _, _ = _resolve_exports(
         names, run_all, export_set,
         countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
@@ -1208,7 +1216,7 @@ def analyze_static(
     from .analysis import render_static_markdown, static_analyze_all
     from .export import CompositeExport, QueryExport
 
-    all_exports, _ = _resolve_exports(
+    all_exports, _, _ = _resolve_exports(
         names, run_all, export_set,
         countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
@@ -1353,7 +1361,7 @@ def export(
     from .export import ExportPipeline
     from .telemetry import command_span
 
-    exports, filters = _resolve_exports(
+    exports, filters, explicit = _resolve_exports(
         names, run_all, export_set,
         countries, types, reuse_level, institutions, aggregators,
         min_completeness, year_from, year_to, filter_languages,
@@ -1387,6 +1395,7 @@ def export(
             qlever_url=qlever_url,
             timeout=timeout,
             skip_existing=skip_existing,
+            explicit=explicit,
             memory_limit=duckdb_memory,
             duckdb_threads=duckdb_threads if duckdb_threads is not None else budget.duckdb_threads(),
             temp_directory=exports_dir / ".duckdb_tmp",
